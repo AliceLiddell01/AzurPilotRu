@@ -1,0 +1,27 @@
+# Канонический формат текста в Git — LF.
+* text=auto eol=lf
+
+# Windows command scripts требуют CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Бинарные файлы не подвергаются нормализации переводов строк.
+*.7z -text
+*.zip -text
+*.gz -text
+*.tar -text
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.gif -text
+*.webp -text
+*.ico -text
+*.pdf -text
+*.exe -text
+*.dll -text
+*.pdb -text
+*.wasm -text
+*.woff -text
+*.woff2 -text
+*.ttf -text
+*.otf -text

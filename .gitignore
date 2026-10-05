@@ -1,0 +1,35 @@
+# Windows / файловая система
+Thumbs.db
+Thumbs.db:encryptable
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*:Zone.Identifier
+
+# macOS metadata — не должен попадать в публичный репозиторий от внешних contributors
+.DS_Store
+
+# Visual Studio / JetBrains user state
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.rsuser
+*.sln.docstates
+*.DotSettings.user
+
+# Локальные переменные окружения и секреты
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Временные файлы и резервные копии редакторов
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# Локальное рабочее состояние Codex; не является контрактом репозитория
+/.codex/local/
