@@ -57,15 +57,15 @@
       "customType": "regex",
       "description": "Владелец точного пина артефакта OpenCV — native/opencv.json. URL обновляется с той же версией; SHA256 сохраняется для отдельной ручной проверки и обновления в PR.",
       "managerFilePatterns": [
-        "/^native/opencv\\.json$/"
+        "/^native\\/opencv\\.json$/"
       ],
       "matchStrings": [
-        "\\\"version\\\"\\s*:\\s*\\\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\\\"\\s*,\\s*\\\"url\\\"\\s*:\\s*\\\"(?<urlPrefix>https://github\\.com/opencv/opencv/releases/download/)[^\\\"]*\\\"\\s*,\\s*\\\"sha256\\\"\\s*:\\s*\\\"(?<sha256>[0-9A-Fa-f]+)\\\""
+        "\"version\"\\s*:\\s*\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"\\s*,\\s*\"url\"\\s*:\\s*\"(?<urlPrefix>https://github\\.com/opencv/opencv/releases/download/)[^\"]*\"\\s*,\\s*\"sha256\"\\s*:\\s*\"(?<sha256>[0-9A-Fa-f]+)\""
       ],
       "depNameTemplate": "opencv/opencv",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver-coerced",
-      "autoReplaceStringTemplate": "\\\"version\\\": \\\"{{{newValue}}}\\\",\\n  \\\"url\\\": \\\"{{{urlPrefix}}}{{{newValue}}}/opencv-{{{newValue}}}-windows.exe\\\",\\n  \\\"sha256\\\": \\\"{{{sha256}}}\\\""
+      "autoReplaceStringTemplate": "\"version\": \"{{{newValue}}}\",\n  \"url\": \"{{{urlPrefix}}}{{{newValue}}}/opencv-{{{newValue}}}-windows.exe\",\n  \"sha256\": \"{{{sha256}}}\""
     }
   ]
 }
