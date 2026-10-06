@@ -1,157 +1,117 @@
 # Начало работы
 
-Практическая входная точка: что установить, как собрать проект, как запускать тесты и что делать при
-типовых проблемах. Правила проекта живут в [.codex/context](../.codex/context/INDEX.md) — этот
-документ ссылается на них, а не пересказывает их.
+Практическая входная точка: что установить, как собрать проект и запустить проверки. Правила
+проектной архитектуры и владельцы manifests перечислены в
+[.codex/context/INDEX.md](../.codex/context/INDEX.md).
 
 ## 1. Prerequisites
 
-- **Windows x64.** Единственная поддерживаемая платформа
+- **Windows x64** — единственная поддерживаемая платформа
   ([architecture.md](../.codex/context/architecture.md)).
-- **.NET SDK** линии 10 (LTS). Точная версия закреплена в `dotnetSdk.version`, политика обновления —
-  `dotnetSdk.rollForward`, и ту же версию требует [global.json](../global.json).
-- **Visual Studio 2026** с workload «Desktop development with C++» (компонент
-  `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`). Сборка находит установку через `vswhere` и
-  требует toolset MSVC не ниже `toolchain.msvcMinimumVersion`.
-- **Standalone CMake** не ниже `toolchain.cmakeMinimumVersion`. CMake, входящий в состав Visual
-  Studio, отстаёт от минимума и намеренно не принимается как подстановка.
-- **PowerShell 7+** (`pwsh`) — язык канонических скриптов.
-- **Ninja** — необязательно: нужен только альтернативному пути сборки
-  (`toolchain.cmakeGeneratorAlternative`) и не влияет на канонический путь.
+- **Git** и **.NET SDK** — доступны из `PATH`. Выбранный .NET SDK задаёт [global.json](../global.json).
+- **Visual Studio 2026** с workload «Desktop development with C++» и x64 MSVC toolset. Минимум
+  compiler/toolset и CMake указан в [native/CMakeLists.txt](../native/CMakeLists.txt).
+- **CMake** не ниже указанного в `native/CMakeLists.txt`; команда `cmake` должна разрешаться через
+  `PATH`.
+- Доступ к сети требуется при первом получении OpenCV. Ручная установка не нужна: CMake configure
+  скачивает пакет из [native/opencv.json](../native/opencv.json).
 
-Все значения версий — ссылки на поля [eng/versions.json](../eng/versions.json): это единственный
-владелец закреплённых номеров. Посмотреть текущий закреплённый набор можно прямо в этом файле или в
-журнале сборки: шаг проверки toolchain печатает найденные и требуемые версии. Правила выбора и
-обновления версий — [build-contracts.md](../.codex/context/build-contracts.md).
+Версии NuGet и принципы обновления описаны в
+[build-contracts.md](../.codex/context/build-contracts.md). Точный перечень владельцев находится в
+[INDEX.md](../.codex/context/INDEX.md).
 
-## 2. Быстрый старт
+## 2. Сборка и тесты
 
-Из корня репозитория (команды работают и из любого другого текущего каталога):
+Для Release выполните native workflow из каталога `native/`, затем managed команды из корня
+репозитория:
 
-```pwsh
-pwsh ./eng/build.ps1 -Configuration Release
-pwsh ./eng/verify.ps1
+```text
+# Из native/
+cmake --workflow --preset native-x64-release
+
+# Из корня репозитория
+dotnet restore AzurPilot.slnx --locked-mode
+dotnet build AzurPilot.slnx --configuration Release --no-restore -warnaserror
+dotnet test tests/AzurPilot.Tests/AzurPilot.Tests.csproj --configuration Release --no-restore --no-build
 ```
 
-`eng/build.ps1` собирает проект целиком и запускает тесты; `eng/verify.ps1` — единая проверка: тот же
-канонический build плюс analyzers, project-owned warnings, code-style, согласованность закреплённых
-версий и git-гигиена. Ненулевой код возврата означает реальное нарушение контракта.
+Для локальной Debug-проверки используйте `cmake --workflow --preset native-x64-debug`, затем замените
+`Release` на `Debug` в managed-командах. CI вызывает стандартные команды Release напрямую из
+соответствующих каталогов.
 
 ## 3. Что происходит при сборке
 
-`eng/build.ps1` проходит шесть шагов:
+1. CMake configure читает OpenCV pin, загружает архив при необходимости, проверяет SHA256 и layout.
+2. CMake build собирает DLL и smoke test; затем CTest запускает native ABI smoke test.
+3. Native build stages production DLL и runtime DLL OpenCV в
+   `artifacts/native/runtime/<Configuration>`.
+4. `dotnet restore --locked-mode` восстанавливает закреплённый lock-файлами граф NuGet.
+5. `dotnet build` собирает solution и передаёт warnings как ошибки.
+6. `dotnet test` запускает interop и repository contract tests без повторной сборки.
 
-1. **Проверка toolchain** — dotnet, standalone CMake, MSVC через `vswhere`, Ninja (для
-   альтернативного пути). При отсутствии или слишком старой версии — понятная ошибка без
-   молчаливого fallback.
-2. **Получение закреплённых native dependencies** — пакет OpenCV скачивается по точному URL из пина
-   и проверяется по SHA256.
-3. **Сборка native части и native CTest** — CMake configure/build x64 и запуск project-owned native
-   теста.
-4. **Staging native runtime** — native библиотека и runtime OpenCV попадают в staging-каталог,
-   который далее передаётся managed сборке свойством `AzurPilotNativeRuntimeDir`.
-5. **Managed restore и сборка solution** — `AzurPilot.slnx` со staging native runtime в выходе.
-6. **Managed тесты** — interop тесты реально загружают собранную native библиотеку.
+MSBuild берёт runtime из `artifacts/native/runtime/<Configuration>` и добавляет DLL в managed outputs.
+Если там нет `AzurPilot.Native.dll` или runtime DLL OpenCV, MSBuild останавливает managed build с
+ошибкой. Подробнее о каноническом пути и границах — [architecture.md](../.codex/context/architecture.md)
+и [verification.md](../.codex/context/verification.md).
 
-## 4. Native dependency (OpenCV)
+## 4. OpenCV
 
-Шаг 2 выполняется автоматически. Отдельно его можно запустить так:
+Acquisition выполняется автоматически при CMake configure. Manifest
+[native/opencv.json](../native/opencv.json) владеет версией, URL, SHA256 и относительными путями
+внутри архива.
 
-```pwsh
-pwsh ./eng/Get-NativeDependencies.ps1
-```
+- Новый и кэшированный архив проверяется по SHA256 до распаковки.
+- Архив распаковывается в `artifacts/opencv/<version>`; configure проверяет `OpenCVConfig.cmake`
+  и runtime layout.
+- CI может кэшировать архив в `artifacts/downloads`, но configure всё равно проверяет его hash.
+- При несовпадении SHA256 или layout configure завершается ошибкой; сборка не продолжается.
 
-- Скачивается ровно тот артефакт, который закреплён в `opencv.url`; SHA256 обязателен и проверяется
-  и для скачанного, и для закэшированного файла.
-- Пакет распаковывается в `artifacts/opencv/<version>`; повторный запуск при совпадающем hash не
-  перекачивает пакет.
-- Ручная установка OpenCV не требуется: по умолчанию `OpenCV_DIR` вычисляется из пина. Явное
-  переопределение возможно только параметром `-OpenCvDir` (например для локальной диагностики) и
-  никогда не подставляется молча.
-- При расхождении SHA256 сборка не продолжается. Правила выбора и обновления зависимости —
-  [build-contracts.md](../.codex/context/build-contracts.md).
+Правила обновления и ответственность за проверку нового hash описаны в
+[build-contracts.md](../.codex/context/build-contracts.md).
 
 ## 5. Артефакты
 
-Всё генерируемое живёт внутри единственной ignored boundary `artifacts/` и стандартных managed
-`bin`/`obj` — в Git это не коммитится.
+Генерируемые файлы находятся в `artifacts/` и стандартных managed `bin`/`obj`; их не коммитят.
 
 | Путь | Содержимое |
 | --- | --- |
-| `artifacts/downloads` | скачанный пакет OpenCV (кэшируется в CI по версии и SHA256) |
-| `artifacts/opencv/<version>` | распакованный закреплённый OpenCV |
-| `artifacts/native/cmake` | каталог сборки native части; журналы CTest — в `artifacts/native/cmake/Testing/Temporary` |
-| `artifacts/native/bin/<Configuration>` | native библиотека, PDB и native smoke test |
-| `artifacts/native/runtime/<Configuration>` | staging native runtime для managed выхода |
-| `src/**/bin`, `tests/**/bin` | managed выходы проектов и тестов |
+| `artifacts/downloads` | Загруженный архив OpenCV |
+| `artifacts/opencv/<version>` | Распакованный OpenCV |
+| `artifacts/native/cmake` | CMake configure/build и CTest metadata |
+| `artifacts/native/bin/<Configuration>` | Native DLL, PDB и smoke test |
+| `artifacts/native/runtime/<Configuration>` | DLL native runtime для managed outputs |
+| `artifacts/native/abi-mismatch/<Configuration>` | Изолированная DLL для негативного ABI теста |
+| `src/**/bin`, `tests/**/bin` | Managed assemblies и тестовые outputs |
 
-## 6. Тесты
+## 6. Проверки
 
-Канонический путь запускает всё сам; ниже — что именно проверяется и как запустить то же самое
-вручную для диагностики.
+- **Native CTest** запускает project-owned код через C ABI, проверяет версию ABI и OpenCV, факт
+  выполнения OpenCV, capabilities, повторный вызов и границы буферов.
+- **Managed interop tests** загружают реальную native DLL через source-generated `LibraryImport`.
+  Негативные тесты проверяют явный отказ без production DLL и при несовместимом ABI.
+- **Repository contract tests** проверяют отсутствие machine-specific абсолютных путей,
+  фундаментального hardcode `1280x720`, Git-visible binaries и build outputs.
 
-- **Native (CTest, шаг 3)** — реально исполняет project-owned native код с OpenCV: версия ABI,
-  исполнение OpenCV-кода, capabilities, обработка малого буфера.
-- **Managed (шаг 6)** — interop тесты реально загружают собранную native библиотеку через
-  source-generated `LibraryImport` и получают данные от C ABI.
-- **Негативная проверка** — отдельная проба запускается тестом из каталога, где native библиотеки
-  заведомо нет, и подтверждает, что production-код interop сообщает об этом исключением. Это
-  тестовый инструмент, а не boundary приложения
-  ([architecture.md](../.codex/context/architecture.md)).
+Не запускайте managed interop tests без native workflow соответствующей конфигурации: MSBuild
+намеренно завершится ошибкой, если native runtime не собран.
 
-Диагностический запуск managed тестов:
+## 7. Диагностика
 
-```pwsh
-dotnet test --project ./tests/AzurPilot.Tests/AzurPilot.Tests.csproj -c Release `
-  -p:AzurPilotNativeRuntimeDir="$PWD/artifacts/native/runtime/Release"
-```
-
-Два условия, без которых команда не сработает:
-
-- Свойство `AzurPilotNativeRuntimeDir` нужно указывать явно. Канонический `eng/build.ps1` передаёт его
-  сам, но между отдельными вызовами `dotnet` оно не сохраняется: без него native библиотека не попадает
-  в выход теста, и положительные interop тесты падают с сообщением, что библиотека не загружена. Это
-  ожидаемое поведение (см. раздел 8), а не признак поломки.
-- Путь должен быть абсолютным. `$PWD` в примере раскрывается в корень репозитория. Относительный путь
-  здесь не работает: свойство разрешается в контексте каталога проекта, поэтому путь вида
-  `./artifacts/...` будет искаться не там, где лежит staging, и тесты упадут так же, как без свойства.
-
-Важно: .NET 10 SDK вместе с xunit.v3 работает в режиме `Microsoft.Testing.Platform` — opt-in уже
-включён в [global.json](../global.json). В этом режиме неизвестные опции передаются самому приложению,
-поэтому не добавляйте `--nologo`: запуск упадёт с кодом 5. Что именно обязана доказывать проверка и
-как она должна падать — [verification.md](../.codex/context/verification.md).
-
-## 7. Параметры скриптов
-
-| Скрипт | Параметры |
+| Симптом | Что проверить |
 | --- | --- |
-| `eng/build.ps1` | `-Configuration` (`Debug`/`Release`, по умолчанию `Release`), `-SkipTests`, `-SkipNative`, `-Clean` |
-| `eng/verify.ps1` | `-Configuration`, `-SkipBuild` (отладка самих проверок, не verification), `-CheckDotNetFormat` (жёсткий гейт форматирования; по умолчанию частью контракта не является) |
-| `eng/Invoke-NativeBuild.ps1` | `-Configuration` (обязателен), `-OpenCvDir` (переопределение каталога `OpenCVConfig.cmake` для локальной диагностики), `-Clean`, `-SkipTests` |
-| `eng/Get-NativeDependencies.ps1` | `-Force` (перекачать закреплённый пакет даже при наличии локальной копии) |
+| Не найден MSVC x64 toolset или compiler ниже минимума | Установите Visual Studio 2026 с workload «Desktop development with C++» и проверьте требования в `native/CMakeLists.txt` |
+| CMake не найден или ниже минимума | Добавьте подходящий CMake в `PATH`; минимум принадлежит `native/CMakeLists.txt` |
+| Не найден требуемый .NET SDK | Установите SDK согласно `global.json` |
+| Locked restore завершился ошибкой | Сверьте `Directory.Packages.props` и lock-файлы; изменение графа должно обновлять их согласованно |
+| SHA256 OpenCV не совпал | Не распаковывайте архив; проверьте URL/hash в `native/opencv.json` и удалите повреждённый архив из локального `artifacts/downloads` перед повторным configure |
+| Managed build не нашёл native runtime DLL | Запустите CMake workflow preset той же конфигурации из `native/` |
+| `dotnet test` завершился с кодом 5 из-за неизвестной опции | Проект использует `Microsoft.Testing.Platform`; не передавайте неподдерживаемые runner options, например `--nologo` |
 
-`-SkipNative` без собранного native runtime останавливает сборку, если тесты не отключены: ложный
-зелёный результат для interop boundary запрещён.
+## 8. Куда смотреть дальше
 
-## 8. Диагностика типовых проблем
-
-| Симптом | Причина и что делать |
-| --- | --- |
-| `Не найден vswhere.exe` или «не найдена ни одна установка Visual Studio с toolset MSVC x64» | установите Visual Studio 2026 с workload «Desktop development with C++» |
-| Toolset найден, но его версия ниже закреплённой | обновите Visual Studio; значение и владелец — `toolchain.msvcMinimumVersion` |
-| CMake не найден или слишком старый | поставьте standalone CMake не ниже `toolchain.cmakeMinimumVersion`; CMake из состава Visual Studio не принимается намеренно |
-| .NET SDK не соответствует пину (другая feature band или старше) | установите feature band из `dotnetSdk.version`; roll-forward допускается только внутри той же feature band |
-| SHA256 скачанного OpenCV не совпал | файл повреждён или подменён: удалите `artifacts/downloads` и повторите; сборка намеренно не продолжается |
-| Native библиотека не найдена, managed тесты падают | это ожидаемое поведение: без native части положительный interop тест обязан падать. Соберите проект канонической командой |
-| Ninja отсутствует или старее минимума | канонический путь не блокируется: Ninja нужен только альтернативному генератору, сборка сообщает об этом отдельно |
-| `dotnet test` падает с кодом 5 или сообщением о неизвестной опции | режим `Microsoft.Testing.Platform`: уберите неподдерживаемые опции (например `--nologo`) |
-| Нужен чистый прогон | `pwsh ./eng/build.ps1 -Configuration Release -Clean` очищает build outputs; закреплённый пакет OpenCV при этом сохраняется |
-
-## 9. Куда смотреть дальше
-
-- [README.md](../README.md) — назначение проекта, платформа, канонические команды.
-- [AGENTS.md](../AGENTS.md) — контракт репозитория и router для агентов.
-- [.codex/context/INDEX.md](../.codex/context/INDEX.md) — таблица владельцев правил.
-- [architecture.md](../.codex/context/architecture.md) — карта проекта, boundaries, правило зависимостей.
-- [build-contracts.md](../.codex/context/build-contracts.md) — контракт версий и зависимостей.
-- [verification.md](../.codex/context/verification.md) — что доказывает verification.
+- [README.md](../README.md) — назначение проекта и короткий build/test-путь.
+- [AGENTS.md](../AGENTS.md) — корневой контракт и router для агентов.
+- [.codex/context/INDEX.md](../.codex/context/INDEX.md) — владельцы правил и manifests.
+- [architecture.md](../.codex/context/architecture.md) — boundaries, source of truth, references, build/runtime boundaries.
+- [build-contracts.md](../.codex/context/build-contracts.md) — version ownership, OpenCV acquisition и Renovate.
+- [verification.md](../.codex/context/verification.md) — что доказывают проверки.

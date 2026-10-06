@@ -1,15 +1,27 @@
 # Архитектура проекта: карта и границы
 
-Владелец: этот файл. Правила ниже имеют единственного владельца — здесь. Контракт версий и
-acquisition зависимостей — [build-contracts.md](build-contracts.md), содержание проверок —
-[verification.md](verification.md), форма C ABI — `native/include/azurpilot_native_abi.h`.
+Владелец: этот файл. Правила ниже имеют единственного владельца — здесь. Владельцы version pins и
+acquisition зависимостей описаны в [build-contracts.md](build-contracts.md) и
+[INDEX.md](INDEX.md), содержание проверок — [verification.md](verification.md), форма C ABI —
+`native/include/azurpilot_native_abi.h`.
 
 ## Область и платформа
 
-AzurPilotRu — персональная реализация AzurPilot: Windows-only, x64. Проект не кросс-платформенный:
-другие операционные системы не поддерживаются, не эмулируются и не являются целью сборки. Managed
-часть — .NET/C# (актуальный stable SDK из `eng/versions.json`, конкретные `TargetFramework`/RID —
-владелец `Directory.Build.props`), native часть — C++ с OpenCV.
+AzurPilotRu — персональная реализация AzurPilot и текущий источник истины для своего кода, сборки и
+инструментов репозитория: Windows-only, x64. Проект не кросс-платформенный: другие операционные
+системы не поддерживаются, не эмулируются и не являются целью сборки. Managed часть — .NET/C# (SDK
+задаётся `global.json`, `TargetFramework` и RID — владелец `Directory.Build.props`), native часть —
+C++ с OpenCV.
+
+`AliceLiddell01/Anki-decks` служит архитектурным ориентиром для инструментов репозитория и
+инфраструктуры агентов. `AliceLiddell01/AzurPilot-private-Ru` служит ориентиром для поведения и
+предметной области, но не шаблоном архитектуры. Ни один из этих репозиториев не заменяет AzurPilotRu
+как текущий источник истины.
+
+Продуктовая часть приложения во время выполнения отделена от инструментов репозитория. Команды
+`cmake`, `dotnet`, CI и автоматизация обновления зависимостей обслуживают разработку репозитория, а не
+являются возможностями продукта. Будущие продуктовые CLI, REPL и agent CLI не должны включать общие
+операции инструментов репозитория: `build`, `repair` и `update`.
 
 ## Границы (boundaries)
 
@@ -57,28 +69,40 @@ managed boundaries, не поставляются как продукт и не 
 - Через границу не проходят `cv::Mat`, STL-типы, C++-исключения и владеющие указатели:
   форма границы описана в заголовке ABI и меняется только вместе с номером ABI.
 
-## Канонические entrypoints
+## Канонический build/test-путь
 
-Канонический путь сборки и проверки — repository-owned PowerShell, а не отдельные команды:
+Native configure, build и CTest выполняются через workflow preset из каталога `native/`:
 
-- `pwsh ./eng/build.ps1 -Configuration Release` — полный воспроизводимый путь: проверка toolchain →
-  получение закреплённых native dependencies → CMake configure/build native части → native CTest →
-  restore/build managed solution → staging native runtime в managed output → managed tests,
-  доказывающие interop boundary.
-- `pwsh ./eng/verify.ps1` — единый verification entrypoint; ненулевой exit code при любом нарушении
-  build/test/analyzer/format контракта.
+```text
+cmake --workflow --preset native-x64-release
+```
 
-Прямые `dotnet`/`cmake` команды допустимы для локальной диагностики, но documented canonical path
-проходит только через эти скрипты. CI вызывает те же скрипты и не содержит второй реализации
-build logic: любая логика сборки живёт в `eng/`, а не в workflow.
+Для Debug используется preset `native-x64-debug`. Workflow configure читает OpenCV pin из
+`native/opencv.json`, получает пакет при необходимости, проверяет SHA256 и layout, затем workflow
+собирает native targets и запускает CTest. Имена generator и workflow presets принадлежат
+`native/CMakePresets.json`; минимальная версия CMake и compiler/toolset floor —
+`native/CMakeLists.txt`.
+
+После native workflow из корня репозитория выполняется managed часть:
+
+```text
+dotnet restore AzurPilot.slnx --locked-mode
+dotnet build AzurPilot.slnx --configuration Release --no-restore -warnaserror
+dotnet test tests/AzurPilot.Tests/AzurPilot.Tests.csproj --configuration Release --no-restore --no-build
+```
+
+Версии .NET SDK и NuGet пакетов принадлежат `global.json`, `Directory.Packages.props` и lock-файлам.
+CI напрямую выполняет приведённые команды CMake и .NET. Отдельной точки входа PowerShell и второй
+реализации build logic в workflow нет.
 
 ## Структура репозитория
 
 - `AzurPilot.slnx` — managed solution.
-- `eng/` — repository-owned orchestration: `build.ps1`, `verify.ps1`, общие helpers и
-  `eng/versions.json` (единственный источник версий).
-- `native/` — CMake boundary: `CMakeLists.txt`, `CMakePresets.json`, `include/` (замороженный ABI),
-  `src/` (реализация), `tests/` (native CTest).
+- `native/` — CMake boundary: `CMakeLists.txt`, `CMakePresets.json`, `opencv.json`, `cmake/`,
+  `include/` (замороженный ABI), `src/` (реализация), `tests/` (native CTest).
+- `global.json`, `Directory.Packages.props` и `**/packages.lock.json` — владельцы .NET SDK и графа
+  NuGet-зависимостей; подробная карта владельцев находится в [.codex/context/INDEX.md](INDEX.md).
+- `.github/workflows/ci.yml` — CI, который вызывает стандартные CMake/.NET команды.
 - `src/` — managed проекты (три boundaries приложения), `tests/` — тестовые инструменты
   (не boundaries, см. выше).
 - `artifacts/` — единственная ignored boundary для generated/build outputs и полученных
@@ -86,23 +110,22 @@ build logic: любая логика сборки живёт в `eng/`, а не 
 
 ## Конвенция staging native runtime
 
-Native DLL и её runtime-зависимости (OpenCV DLL) попадают в выход managed проекта и managed теста
-автоматически — через MSBuild `Content`/`Link` items, без ручного копирования после сборки.
+Native build помещает DLL native boundary и runtime DLL OpenCV в
+`artifacts/native/runtime/<Configuration>`. `Directory.Build.targets` берёт их оттуда и добавляет в
+выходные каталоги managed проектов через MSBuild `Content` items. Не требуется задавать свойство или
+копировать DLL вручную.
 
-- Источник задаётся свойством `AzurPilotNativeRuntimeDir`, которое выставляет `eng/build.ps1`
-  (значение вычисляется из `eng/versions.json` и фактического расположения артефактов сборки).
-- Путь в проектном файле не хардкодится; при отсутствии свойства сборка managed части не падает.
-- Отсутствие native DLL в output не должно давать ложный успех: native-положительный тест обязан
-  явно упасть с понятным сообщением.
+MSBuild работает по принципу fail-closed и перед managed build проверяет, что в staging присутствуют
+`AzurPilot.Native.dll` и runtime DLL OpenCV. Если отсутствует любая из них, сборка завершается
+понятной ошибкой; native interop test не может дать ложный успех без production DLL.
 
 ## Запрет machine-specific путей
 
 В репозитории запрещены абсолютные пути конкретной машины: домашний каталог пользователя, буква
 диска, путь к конкретной установке Visual Studio, OpenCV, Python или иного локального инструмента
-(в том числе как значение по умолчанию и как пример в коде). Всё
-разрешается от корня репозитория (`$PSScriptRoot`, не текущая рабочая директория) и через
-стандартные механизмы обнаружения toolchain (например `vswhere`, `PATH`, cache variables CMake).
-Скрипты обязаны работать из любого текущего каталога.
+(в том числе как значение по умолчанию и как пример в коде). CMake и MSBuild разрешают пути сборки
+относительно манифестов репозитория и стандартных механизмов обнаружения toolchain; абсолютные пути
+локальной машины не фиксируются в исходниках и конфигурации.
 
 ## Продуктовые ограничения фундамента
 
@@ -110,6 +133,7 @@ Native DLL и её runtime-зависимости (OpenCV DLL) попадают 
   не должно быть такой константы или предполагаемого размера кадра. Будущий screenshot сохраняется
   в нативном разрешении, а размеры кадра приходят как данные, а не как константа проекта.
 - MuMu-first, ADB, lifecycle эмулятора и игры, ввод (tap/swipe), vision-пайплайн, OCR/ONNX/GPU
-  inference, конфигурация приложения, интерактивный REPL и agent CLI — будущие capability.
-  В текущем фундаменте они не реализуются, не объявляются абстракциями «на будущее» и не имеют
-  placeholder-документов.
+  inference, конфигурация приложения, product CLI, REPL и agent CLI — будущие capability. В текущем
+  фундаменте они не реализуются, не объявляются абстракциями «на будущее» и не имеют
+  placeholder-документов. Общие команды `build`, `repair` и `update` относятся к инструментам
+  репозитория, а не к будущим product CLI, REPL и agent CLI.

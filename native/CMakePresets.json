@@ -1,21 +1,21 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": {
-    "major": 4,
-    "minor": 4,
-    "patch": 2
-  },
   "configurePresets": [
     {
       "name": "native-x64",
       "displayName": "Native x64 (Visual Studio 18 2026, multi-config)",
-      "description": "Канонический generator из eng/versions.json; x64; outputs в ignored boundary artifacts/. OpenCV_DIR вычисляется из eng/versions.json (artifacts/opencv/<version>/<cmakeDir>) и может быть переопределён cache variable -DOpenCV_DIR=...",
+      "description": "Windows x64; outputs в artifacts/. Configure получает и проверяет закреплённый OpenCV из native/opencv.json.",
       "generator": "Visual Studio 18 2026",
       "architecture": {
         "value": "x64",
         "strategy": "set"
       },
       "binaryDir": "${sourceDir}/../artifacts/native/cmake",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
       }
@@ -43,6 +43,9 @@
       "configuration": "Release",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     },
     {
@@ -52,7 +55,30 @@
       "configuration": "Debug",
       "output": {
         "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "native-x64-release",
+      "displayName": "Native x64 Release: configure, build, CTest",
+      "steps": [
+        { "type": "configure", "name": "native-x64" },
+        { "type": "build", "name": "native-x64-release" },
+        { "type": "test", "name": "native-x64-release" }
+      ]
+    },
+    {
+      "name": "native-x64-debug",
+      "displayName": "Native x64 Debug: configure, build, CTest",
+      "steps": [
+        { "type": "configure", "name": "native-x64" },
+        { "type": "build", "name": "native-x64-debug" },
+        { "type": "test", "name": "native-x64-debug" }
+      ]
     }
   ]
 }

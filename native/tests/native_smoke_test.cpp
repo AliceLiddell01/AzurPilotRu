@@ -8,7 +8,7 @@
  *
  * Проверяется:
  *   1. замороженная раскладка AzurPilotNativeInfo (полный размер 56 байт);
- *   2. совпадение версии ABI с закреплённым значением (eng/versions.json, nativeAbi.version);
+ *   2. совпадение версии ABI с нормативным заголовком границы;
  *   3. реальное исполнение OpenCV через azurpilot_native_query: версия OpenCV из
  *      пина, подтверждённый факт исполнения в build_flags, capability core и imgcodecs;
  *   4. корректная обработка слишком маленького буфера в azurpilot_native_build_info:
@@ -32,10 +32,10 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Ожидаемые значения приходят из eng/versions.json через CMake: копии пина в тесте нет. */
-#if !defined(AZURPILOT_NATIVE_EXPECTED_ABI_VERSION) || !defined(AZURPILOT_NATIVE_EXPECTED_OPENCV_MAJOR) || \
+/* Ожидаемая версия OpenCV приходит из native/opencv.json через CMake: копии пина в тесте нет. */
+#if !defined(AZURPILOT_NATIVE_EXPECTED_OPENCV_MAJOR) || \
     !defined(AZURPILOT_NATIVE_EXPECTED_OPENCV_MINOR) || !defined(AZURPILOT_NATIVE_EXPECTED_OPENCV_PATCH)
-#error "Не заданы ожидаемые значения из eng/versions.json: тест собирается только через CMake-проект native/."
+#error "Не задана ожидаемая версия OpenCV: тест собирается только через CMake-проект native/."
 #endif
 
 #define AZURPILOT_TEST_STRINGIFY_IMPL(value) #value
@@ -107,11 +107,8 @@ int main() {
 
     // --- 2. Версия ABI ----------------------------------------------------------
     printf("\n[2/6] Версия ABI\n");
-    check_uint32(static_cast<uint32_t>(AZURPILOT_NATIVE_ABI_VERSION),
-                 static_cast<uint32_t>(AZURPILOT_NATIVE_EXPECTED_ABI_VERSION),
-                 "нормативное значение заголовка совпадает с закреплённым nativeAbi.version");
-    check_uint32(azurpilot_native_abi_version(), static_cast<uint32_t>(AZURPILOT_NATIVE_EXPECTED_ABI_VERSION),
-                 "azurpilot_native_abi_version() возвращает версию ABI из пина");
+    check_uint32(azurpilot_native_abi_version(), static_cast<uint32_t>(AZURPILOT_NATIVE_ABI_VERSION),
+                 "azurpilot_native_abi_version() возвращает версию ABI из нормативного заголовка");
 
     // --- 3. Реальное исполнение OpenCV через C ABI ------------------------------
     printf("\n[3/6] azurpilot_native_query: реальное исполнение OpenCV\n");
@@ -122,8 +119,8 @@ int main() {
     AzurPilotNativeInfo info{};
     check_uint32(static_cast<uint32_t>(azurpilot_native_query(&info)), static_cast<uint32_t>(AZURPILOT_NATIVE_OK),
                  "query(&info) возвращает OK");
-    check_uint32(info.abi_version, static_cast<uint32_t>(AZURPILOT_NATIVE_EXPECTED_ABI_VERSION),
-                 "abi_version в структуре совпадает с пином");
+    check_uint32(info.abi_version, static_cast<uint32_t>(AZURPILOT_NATIVE_ABI_VERSION),
+                 "abi_version в структуре совпадает с нормативным заголовком");
     check_uint32(info.opencv_major, static_cast<uint32_t>(AZURPILOT_NATIVE_EXPECTED_OPENCV_MAJOR),
                  "opencv_major совпадает с закреплённой линией OpenCV");
     check_uint32(info.opencv_minor, static_cast<uint32_t>(AZURPILOT_NATIVE_EXPECTED_OPENCV_MINOR),

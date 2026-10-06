@@ -41,8 +41,8 @@
 
 #include <stdint.h>
 
-/* Версия ABI. Нормативный владелец значения — этот заголовок; eng/versions.json (nativeAbi.version)
- * зеркалит его для build/CI инструментов. Расхождение обязано валить verification. */
+/* Версия ABI. Единственный нормативный владелец значения — этот заголовок.
+ * Managed и native стороны проверяют совместимость границы до использования данных. */
 #define AZURPILOT_NATIVE_ABI_VERSION 1
 #define AZURPILOT_NATIVE_ABI_VERSION_STRING "1"
 
@@ -105,8 +105,8 @@ typedef struct AzurPilotNativeInfo {
     uint32_t build_flags;
     /* Биты AZURPILOT_NATIVE_CAPABILITY_*. */
     uint32_t capabilities;
-    /* Версия OpenCV строкой в формате "major.minor.patch" (значение — opencv.version из
-     * eng/versions.json). Всегда NUL-терминирована; при усечении последний байт массива — NUL.
+    /* Версия OpenCV строкой в формате "major.minor.patch" (pin — native/opencv.json).
+     * Всегда NUL-терминирована; при усечении последний байт массива — NUL.
      * Кодировка ASCII/UTF-8 без BOM. */
     char opencv_version_string[32];
 } AzurPilotNativeInfo;

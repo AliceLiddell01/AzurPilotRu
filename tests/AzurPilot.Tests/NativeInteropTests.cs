@@ -43,9 +43,7 @@ public sealed class NativeInteropTests
         NativeBoundaryInfo info = AzurPilotNativeBridge.Query();
 
         Assert.Equal(NativeBoundaryContract.ExpectedAbiVersion, info.AbiVersion);
-        Assert.Equal(5, info.OpencvVersion.Major);
-        Assert.Equal(PinnedVersions.OpenCv.Minor, info.OpencvVersion.Minor);
-        Assert.Equal(PinnedVersions.OpenCv.Build, info.OpencvVersion.Build);
+        Assert.Equal(PinnedVersions.OpenCv, info.OpencvVersion);
         Assert.False(string.IsNullOrWhiteSpace(info.BuildInfo));
     }
 

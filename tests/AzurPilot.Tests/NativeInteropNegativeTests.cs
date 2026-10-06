@@ -6,14 +6,13 @@ namespace AzurPilot.Tests;
 
 /// <summary>
 /// Негативные проверки interop boundary: доказательство, что положительные проверки не проходят на
-/// моке и что production-код interop честно сообщает об отсутствии native библиотеки.
+/// моке и что production-код interop честно сообщает об отсутствии DLL и несовместимом ABI.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Проверки выполняют production-код interop в отдельном процессе, из каталога которого native
-/// библиотека заведомо убрана. В процессе теста загруженный модуль остаётся доступным до завершения
-/// процесса, поэтому «библиотеки нет» там воспроизвести нельзя: проверка должна идти там, где файла
-/// действительно нет.
+/// Проверки выполняют production-код interop в отдельных процессах. Каждый получает собственный
+/// каталог с заданной негативной fixture. В процессе положительного теста загруженный модуль
+/// остаётся доступным до завершения процесса, поэтому негативную загрузку там воспроизвести нельзя.
 /// </para>
 /// <para>
 /// Тест, который в такой ситуации проходит или пропускается, доказательством границы не является.
@@ -25,13 +24,12 @@ public sealed class NativeInteropNegativeTests
 {
     private const string NativeLibraryFileName = AzurPilotNativeBridge.LibraryName + ".dll";
     private const string ProbeAssemblyFileName = "AzurPilot.NativeAbsenceProbe.dll";
-    private const string ProbeDirectoryName = "probe";
     private const string ProbeExpectedMarker = "Проба: получено ожидаемое исключение";
 
     [Fact(DisplayName = "Отсутствующая native библиотека обязана выбросить исключение, а не пропустить проверку")]
     public void MissingNativeLibraryThrowsInsteadOfSkipping()
     {
-        ProbeResult result = RunProbe(brokenLibrary: false);
+        ProbeResult result = RunProbe(ProbeMode.MissingLibrary);
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains(ProbeExpectedMarker, result.StandardOutput, StringComparison.Ordinal);
@@ -41,52 +39,76 @@ public sealed class NativeInteropNegativeTests
     [Fact(DisplayName = "Повреждённая native библиотека обязана выбросить исключение с диагностикой")]
     public void BrokenNativeLibraryThrowsWithDiagnostics()
     {
-        ProbeResult result = RunProbe(brokenLibrary: true);
+        ProbeResult result = RunProbe(ProbeMode.BrokenLibrary);
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains(ProbeExpectedMarker, result.StandardOutput, StringComparison.Ordinal);
         Assert.Contains(AzurPilotNativeBridge.LibraryName, result.StandardOutput, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Запускает пробу в каталоге без native библиотеки и возвращает результат её работы.
-    /// </summary>
-    /// <param name="brokenLibrary">
-    /// Если <see langword="true"/>, в каталог пробы кладётся файл с именем библиотеки, который не
-    /// является корректной библиотекой x64: проверяется ветка BadImageFormatException.
-    /// </param>
-    /// <returns>Код выхода и вывод пробы.</returns>
-    private static ProbeResult RunProbe(bool brokenLibrary)
+    [Fact(DisplayName = "Несовместимый ABI реально загруженной DLL отвергается до чтения данных")]
+    public void IncompatibleNativeAbiThrowsBeforeReadingData()
     {
-        string probeDirectory = Path.Combine(Path.GetTempPath(), "azurpilot-native-absence-probe", ProbeDirectoryName);
-        if (Directory.Exists(probeDirectory))
+        ProbeResult result = RunProbe(ProbeMode.AbiMismatch);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("Проба: получено ожидаемое исключение несовместимого ABI", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains(AzurPilotNativeBridge.LibraryName, result.StandardOutput, StringComparison.Ordinal);
+    }
+
+    /// <summary>Запускает production interop в отдельном процессе с заданной негативной fixture.</summary>
+    /// <param name="mode">Отсутствующая DLL, повреждённая DLL или DLL с несовместимым ABI.</param>
+    /// <returns>Код выхода и вывод пробы.</returns>
+    private static ProbeResult RunProbe(ProbeMode mode)
+    {
+        string probeDirectory = Path.Combine(Path.GetTempPath(), "azurpilot-native-boundary-probe", Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(probeDirectory);
+        try
+        {
+            CopyProbeFiles(probeDirectory);
+            if (mode == ProbeMode.BrokenLibrary)
+            {
+                File.WriteAllText(Path.Combine(probeDirectory, NativeLibraryFileName), "не библиотека");
+            }
+            else if (mode == ProbeMode.AbiMismatch)
+            {
+                string fixture = Path.Combine(AppContext.BaseDirectory, "abi-mismatch", NativeLibraryFileName);
+                Assert.True(File.Exists(fixture), $"Не собрана негативная ABI fixture: {fixture}");
+                File.Copy(fixture, Path.Combine(probeDirectory, NativeLibraryFileName));
+            }
+
+            ProcessStartInfo startInfo = new("dotnet")
+            {
+                WorkingDirectory = probeDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            startInfo.ArgumentList.Add("exec");
+            startInfo.ArgumentList.Add(Path.Combine(probeDirectory, ProbeAssemblyFileName));
+            if (mode == ProbeMode.AbiMismatch)
+            {
+                startInfo.ArgumentList.Add("--abi-mismatch");
+            }
+
+            using Process process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("Не удалось запустить процесс-пробу.");
+            Task<string> output = process.StandardOutput.ReadToEndAsync();
+            Task<string> error = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(30_000))
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit();
+                throw new TimeoutException("Процесс-проба native boundary не завершился за 30 секунд.");
+            }
+
+            return new ProbeResult(process.ExitCode, output.GetAwaiter().GetResult() + error.GetAwaiter().GetResult());
+        }
+        finally
         {
             Directory.Delete(probeDirectory, recursive: true);
         }
-
-        _ = Directory.CreateDirectory(probeDirectory);
-        CopyProbeFiles(probeDirectory);
-
-        if (brokenLibrary)
-        {
-            File.WriteAllText(Path.Combine(probeDirectory, NativeLibraryFileName), "не библиотека");
-        }
-
-        ProcessStartInfo startInfo = new("dotnet", $"exec \"{Path.Combine(probeDirectory, ProbeAssemblyFileName)}\"")
-        {
-            WorkingDirectory = probeDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-
-        using Process process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Не удалось запустить процесс-пробу.");
-
-        string output = process.StandardOutput.ReadToEnd();
-        string error = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-
-        return new ProbeResult(process.ExitCode, output + error);
     }
 
     private static void CopyProbeFiles(string probeDirectory)
@@ -109,4 +131,11 @@ public sealed class NativeInteropNegativeTests
     /// <param name="ExitCode">Код выхода процесса.</param>
     /// <param name="StandardOutput">Объединённый вывод процесса.</param>
     private sealed record ProbeResult(int ExitCode, string StandardOutput);
+
+    private enum ProbeMode
+    {
+        MissingLibrary,
+        BrokenLibrary,
+        AbiMismatch,
+    }
 }

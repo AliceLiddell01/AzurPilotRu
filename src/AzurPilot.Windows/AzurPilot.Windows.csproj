@@ -18,20 +18,7 @@
     <ProjectReference Include="..\AzurPilot.Core\AzurPilot.Core.csproj" />
   </ItemGroup>
 
-  <!-- Staging native runtime: native DLL, её runtime-зависимости (OpenCV) и PDB попадают в выход
-       автоматически. Источник задаёт eng/build.ps1 через AzurPilotNativeRuntimeDir; при отсутствии
-       свойства проект собирается без ошибок, а native-положительный тест падает явно. -->
-  <ItemGroup>
-    <Content Include="$(AzurPilotNativeRuntimeDir)\**\*.dll"
-             Condition="'$(AzurPilotNativeRuntimeDir)' != ''"
-             Link="%(RecursiveDir)%(Filename)%(Extension)"
-             CopyToOutputDirectory="PreserveNewest"
-             Visible="false" />
-    <Content Include="$(AzurPilotNativeRuntimeDir)\**\*.pdb"
-             Condition="'$(AzurPilotNativeRuntimeDir)' != ''"
-             Link="%(RecursiveDir)%(Filename)%(Extension)"
-             CopyToOutputDirectory="PreserveNewest"
-             Visible="false" />
-  </ItemGroup>
+  <!-- Автоматический staging native runtime и проверка его наличия принадлежат
+       Directory.Build.targets; native build graph подготавливает файлы через CMake. -->
 
 </Project>

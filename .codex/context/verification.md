@@ -1,87 +1,67 @@
 # Verification: что именно доказывается
 
-Владелец: этот файл. Здесь описано, какие свойства фундамента обязаны быть доказаны автоматически и
-какие результаты считаются ложными. Канонические команды — [architecture.md](architecture.md),
-контракт версий и toolchain — [build-contracts.md](build-contracts.md), форма C ABI —
+Владелец: этот файл. Здесь описаны свойства фундамента, которые доказывают native CTest и managed
+тесты, а также результаты, которые считаются ложными. Канонический build/test-путь принадлежит
+[architecture.md](architecture.md), владельцы toolchain и dependency manifests перечислены в
+[build-contracts.md](build-contracts.md) и [INDEX.md](INDEX.md), форма C ABI —
 `native/include/azurpilot_native_abi.h`.
 
-## Единый entrypoint
+## Команды CI
 
-- Единая точка проверки — `pwsh ./eng/verify.ps1`. Она возвращает `0` только при полном успехе и
-  ненулевой exit code при любом реальном нарушении build/test/analyzer/format контракта.
-- `eng/verify.ps1` не дублирует build-логику: он переиспользует `eng/build.ps1` и общие helpers,
-  поэтому local и CI проверяют одно и то же одним и тем же кодом.
-- Проверки детерминированные: без фиксированных `sleep` как части корректности, без зависимости от
-  порядка и от текущей рабочей директории.
-- Диагностика — на русском и называет, что именно нарушено, с диагностическими данными (версия,
-  путь, код возврата). Ненулевой exit code — обязательная часть контракта, а не деталь реализации.
+CI выполняет стандартные команды CMake и .NET, а не отдельный orchestration entrypoint. Из каталога
+`native/` запускается Release workflow; следующие команды выполняются из корня репозитория:
 
-## Что обязан доказать native уровень
+```text
+cmake --workflow --preset native-x64-release
+dotnet restore AzurPilot.slnx --locked-mode
+dotnet build AzurPilot.slnx --configuration Release --no-restore -warnaserror
+dotnet test tests/AzurPilot.Tests/AzurPilot.Tests.csproj --configuration Release --no-restore --no-build
+```
 
-- CMake реально конфигурируется против закреплённого OpenCV 5.x (`find_package(OpenCV ... CONFIG)`
-  с `OpenCV_DIR` из `eng/versions.json`), а не содержит неиспользуемую декларацию зависимости.
-- CTest запускает project-owned native тест, который линкуется с OpenCV и реально исполняет
-  project-owned native код через замороженный C ABI.
-- Native тест проверяет: `azurpilot_native_abi_version()` возвращает версию ABI из пина;
-  `azurpilot_native_query()` возвращает успешный код, `opencv_major == 5`, `build_flags`
-  подтверждает фактическое исполнение OpenCV-кода, `capabilities` содержит `core` и `imgcodecs`.
-- Отдельно проверяется обработка слишком маленького буфера в `azurpilot_native_build_info`:
-  требуемый размер возвращается, буфер не переполняется и не изменяется частично.
-- Тест-заглушка, который ничего не вызывает и ничего не проверяет, доказательством не считается.
+CMake workflow включает configure, build и CTest. Restore работает в locked mode и завершается
+ошибкой, если manifests не соответствуют lock-файлам. Managed test запускается после build без
+повторной сборки. Для локальной Debug-проверки используется CMake workflow preset
+`native-x64-debug` и те же managed-команды с `--configuration Debug`.
 
-## Что обязан доказать managed уровень
+## Что доказывает native CTest
 
-- Интеграционный тест реально загружает собранную native DLL `AzurPilot.Native.dll` через
-  source-generated `LibraryImport` и получает от C ABI реальные данные, а не значения из мока.
-- Тест проверяет: совпадение `abi_version` с ожидаемой версией, `opencv_major/minor/patch` из пина,
-  непустую `opencv_version_string`, подтверждённый `build_flags` и наличие capability `core` и
-  `imgcodecs`.
-- Размер managed-объявления структуры обязан совпадать с раскладкой из заголовка ABI (значение
-  размера и смещений — владелец `native/include/azurpilot_native_abi.h`); расхождение — ошибка
-  контракта, а не деталь маршалинга.
+- CMake configure находит закреплённый OpenCV из `native/opencv.json`; configure получает пакет и
+  проверяет SHA256 и ожидаемый layout, в том числе для кэшированного архива.
+- Workflow собирает native library с OpenCV и исполняет `native_abi_smoke`. Пустой набор CTest
+  считается ошибкой.
+- Smoke test вызывает native code через C ABI и проверяет версию и раскладку ABI, версию OpenCV из
+  manifest, фактическое выполнение OpenCV-кода, capability `core` и `imgcodecs`, стабильность
+  повторного вызова и обработку малого буфера без частичной записи.
 
-## Негативные проверки (обязательная часть контракта)
+Тест-заглушка без вызова project-owned native code доказательством не считается.
 
-Ложный зелёный результат запрещён: проверка обязана падать, когда доказательство исчезает.
+## Что доказывают managed тесты
 
-- Удаление, переименование или поломка native DLL приводит к явному падению interop теста, а не к
-  пропуску (`skip`) и не к успеху на моке. Отсутствие DLL должно давать понятное сообщение.
-- Несовместимая версия ABI (несовпадение `abi_version` с ожидаемой) обязана валить тест: сборка,
-  которая «работает» при несовпадении версии границы, не доказывает ничего.
-- Тест, который проходит без native DLL или подменяет её поведение, не является доказательством
-  interop boundary и не принимается.
+- Тест загружает собранную `AzurPilot.Native.dll` через source-generated `LibraryImport` и получает
+  реальные данные C ABI; мок не заменяет native boundary.
+- Проверяются версия ABI и OpenCV, размер managed-структуры, capability и факт выполнения OpenCV.
+- Негативные тесты запускают probe-процесс без production native DLL и с изолированной ABI mismatch
+  fixture. Отсутствие DLL и несовместимый ABI должны приводить к ожидаемому явному отказу.
+- Repository contract tests проверяют machine-specific absolute paths и hardcode
+  `1280x720` в исходниках/конфигурации, а также отсутствие Git-visible binaries и build outputs.
+  Документация исключена из этих source checks.
 
-## Analyzer, format и warnings
+MSBuild берёт native runtime из `artifacts/native/runtime/<Configuration>`. До managed build он
+завершается ошибкой, если staging не содержит `AzurPilot.Native.dll` или runtime DLL OpenCV; поэтому
+положительный interop test не может пройти без native runtime.
 
-- Warnings as errors реально включены для project-owned кода; проверка обязана падать на
-  project-owned warning, а не только декларировать настройку.
-- Code-style проверки выполняются в режиме, пригодном для CI, и падают при нарушении. Конкретный
-  механизм и его владелец: `Directory.Build.props`, `.editorconfig` и `eng/verify.ps1`; если
-  применяется `dotnet format --verify-no-changes`, это фиксируется как контракт.
-- Проверка не должна ломаться из-за warning сторонних NuGet-пакетов: строгость применяется к
-  project-owned коду.
+## Warnings и анализаторы
 
-## Repository-wide проверки
+Managed build запускается с `-warnaserror`; общие compiler/analyzer и code-style настройки принадлежат
+`Directory.Build.props`. Native targets собираются с `/W4` и `/WX`. Реальный build CI тем самым
+проверяет warnings на ошибку вместе с компиляцией; отдельный неиспользуемый formatter entrypoint не
+является частью CI-контракта.
 
-- Отсутствие machine-specific абсолютных путей в созданном фундаменте.
-- Отсутствие случайного hardcode `1280x720` как фундаментального разрешения.
-- Отсутствие committed third-party бинарников и build outputs.
-- Область поиска: project-owned код, конфигурация и build-файлы (например `.cs`, `.h`, `.cpp`,
-  `.ps1`, `.json`, `.yml`, `.cmake`, `CMakeLists.txt`, `Directory.*.props`). Документация и
-  `.codex/context/**` из поиска исключаются: там эти правила сформулированы словами, и текстовый
-  поиск по `.md` давал бы ложное срабатывание на самом тексте запрета. Проверка должна падать на
-  реальном hardcode в коде и конфигурации, а не на формулировке правила.
-- Согласованность закреплённых версий с `eng/versions.json`: один номер — один владелец, значения
-  не разъехались по нескольким местам (включая `global.json` и `CMakePresets.json`).
-- Согласованность версии ABI между `native/include/azurpilot_native_abi.h` и
-  `eng/versions.json` (`nativeAbi.version`), а также согласованность CMake generator между
-  `eng/versions.json` и `CMakePresets.json`.
+## Границы проверки
 
-## Границы verification
+Проверка доказывает только фундамент: native CMake build, OpenCV acquisition и линковку, C ABI,
+managed interop, тесты repository contracts и закреплённый .NET/native toolchain.
 
-Verification доказывает только build/runtime фундамент: сборку managed и native частей, реальную
-линковку OpenCV, реальный вызов C ABI из managed кода и работоспособность закреплённого toolchain.
-
-Она не доказывает и не должна имитировать: работу MuMu, ADB, lifecycle игры, реальный screenshot,
-корректность будущих vision алгоритмов, OCR/ONNX/GPU inference и любую real-device acceptance. Такие
-проверки — будущие capability; фейковые шаги для них в CI запрещены.
+Она не доказывает и не должна имитировать работу MuMu, ADB, lifecycle игры, реальный screenshot,
+корректность будущих vision algorithms, OCR/ONNX/GPU inference и real-device acceptance. Эти
+capabilities отсутствуют в текущем фундаменте; фиктивные шаги для них в CI запрещены.

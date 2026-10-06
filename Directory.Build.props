@@ -1,8 +1,7 @@
 <Project>
 
   <!-- Единственный владелец общих compiler/analyzer/build свойств managed проектов.
-       Значения версий здесь не вводятся: версия .NET SDK живёт в eng/versions.json (потребитель —
-       global.json), версии NuGet-пакетов — в Directory.Packages.props. -->
+       Версия .NET SDK принадлежит global.json, версии NuGet-пакетов — Directory.Packages.props. -->
   <PropertyGroup>
     <!-- Фундамент Windows-only, x64 (см. .codex/context/architecture.md), поэтому Windows TFM
          используется всеми managed проектами: проектные ссылки между ними остаются совместимыми. -->
@@ -24,8 +23,7 @@
     <Deterministic>true</Deterministic>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Воспроизводимый restore: packages.lock.json фиксирует разрешённый граф пакетов.
-         Свойство задаётся здесь, а не в NuGet.config: NuGet читает его как MSBuild-свойство проекта,
-         а NuGet.config фиксирует намерение в конфигурации restore. -->
+         RestorePackagesWithLockFile задаётся здесь как свойство MSBuild проекта. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <!-- Проверка актуальности пакетов не должна превращать offline-сборку в ошибку. -->
     <NuGetAudit>true</NuGetAudit>

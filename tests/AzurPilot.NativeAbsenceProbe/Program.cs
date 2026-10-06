@@ -7,7 +7,37 @@ using AzurPilot.Windows;
 // действительно недоступна: в процессе теста загруженный модуль остаётся доступным до его завершения,
 // поэтому отсутствие файла там доказать нельзя.
 //
-// Коды выхода: 0 — ожидаемое исключение получено; 1 — исключения не было или оно другого типа.
+// Режим --abi-mismatch загружает отдельную тестовую DLL с несовместимой версией ABI и доказывает,
+// что Query отвергает её до чтения остальных данных.
+// Коды выхода: 0 — ожидаемое исключение получено; 1 — исключения не было или диагностика неверна.
+
+if (args.Length == 1 && string.Equals(args[0], "--abi-mismatch", StringComparison.Ordinal))
+{
+    try
+    {
+        _ = AzurPilotNativeBridge.Query();
+    }
+    catch (NativeAbiMismatchException exception)
+    {
+        if (!exception.Message.Contains(AzurPilotNativeBridge.LibraryName, StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine($"Проба: диагностика несовместимого ABI не называет библиотеку: {exception.Message}");
+            return 1;
+        }
+
+        Console.WriteLine($"Проба: получено ожидаемое исключение несовместимого ABI: {exception.Message}");
+        return 0;
+    }
+
+    Console.Error.WriteLine("Проба: несовместимый ABI не привёл к NativeAbiMismatchException.");
+    return 1;
+}
+
+if (args.Length != 0)
+{
+    Console.Error.WriteLine("Проба: неизвестные аргументы; допустим только --abi-mismatch.");
+    return 1;
+}
 
 try
 {

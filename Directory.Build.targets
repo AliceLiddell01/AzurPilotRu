@@ -8,29 +8,44 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 
-  <!-- Staging native runtime. Item-группа Content с wildcard вычисляется на этапе вычисления
-       проекта, а инкрементальная сборка копирует файлы только при изменении входов. Когда
-       eng/build.ps1 впервые выставляет AzurPilotNativeRuntimeDir, входы проекта не меняются, и без
-       этой цели копирование могло бы не выполниться. Штамп с значением свойства делает смену
-       источника staging явным входом сборки. -->
-  <Target Name="AzurPilotRecordNativeRuntimeSource"
-          BeforeTargets="BeforeBuild"
-          Condition="'$(AzurPilotNativeRuntimeDir)' != ''">
-    <PropertyGroup>
-      <_AzurPilotNativeRuntimeStamp>$(BaseIntermediateOutputPath)azurpilot-native-runtime-dir.txt</_AzurPilotNativeRuntimeStamp>
-      <_AzurPilotNativeRuntimeStampPath>$([System.IO.Path]::GetFullPath($(_AzurPilotNativeRuntimeStamp)))</_AzurPilotNativeRuntimeStampPath>
-      <_AzurPilotNativeRuntimeValue>$(AzurPilotNativeRuntimeDir)</_AzurPilotNativeRuntimeValue>
-      <_AzurPilotNativeRuntimeRecorded Condition="Exists('$(_AzurPilotNativeRuntimeStampPath)')">$([System.IO.File]::ReadAllText('$(_AzurPilotNativeRuntimeStampPath)'))</_AzurPilotNativeRuntimeRecorded>
-    </PropertyGroup>
+  <!-- CMake готовит runtime по соглашению относительно репозитория. MSBuild получает его
+       автоматически; Content передаётся также проектам-потребителям Windows boundary. -->
+  <PropertyGroup>
+    <_AzurPilotRuntimeDirectory>$(MSBuildThisFileDirectory)artifacts/native/runtime/$(Configuration)</_AzurPilotRuntimeDirectory>
+    <_AzurPilotAbiMismatchFixture>$(MSBuildThisFileDirectory)artifacts/native/abi-mismatch/$(Configuration)/AzurPilot.Native.dll</_AzurPilotAbiMismatchFixture>
+  </PropertyGroup>
 
-    <ItemGroup Condition="'$(_AzurPilotNativeRuntimeValue)' != '$(_AzurPilotNativeRuntimeRecorded)'">
-      <FileWrites Include="$(_AzurPilotNativeRuntimeStampPath)" />
+  <Target Name="AzurPilotIncludeNativeRuntime"
+          BeforeTargets="AssignTargetPaths"
+          Condition="'$(MSBuildProjectName)' == 'AzurPilot.Windows' and '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(_AzurPilotRuntimeDirectory)/AzurPilot.Native.dll')"
+           Text="Не найден native runtime: $(_AzurPilotRuntimeDirectory)/AzurPilot.Native.dll. Сначала из каталога native выполните CMake workflow preset native-x64-release (для Release) или native-x64-debug (для Debug)." />
+    <ItemGroup>
+      <_AzurPilotOpenCvRuntime Include="$(_AzurPilotRuntimeDirectory)/opencv_world*.dll" />
     </ItemGroup>
+    <Error Condition="'@(_AzurPilotOpenCvRuntime)' == ''"
+           Text="Не найдена runtime DLL OpenCV в $(_AzurPilotRuntimeDirectory). Соберите соответствующий CMake workflow preset native-x64-release или native-x64-debug из каталога native." />
+    <ItemGroup>
+      <Content Include="$(_AzurPilotRuntimeDirectory)/*.dll;$(_AzurPilotRuntimeDirectory)/*.pdb"
+               Link="%(Filename)%(Extension)"
+               CopyToOutputDirectory="PreserveNewest"
+               CopyToPublishDirectory="PreserveNewest"
+               Visible="false" />
+    </ItemGroup>
+  </Target>
 
-    <WriteLinesToFile File="$(_AzurPilotNativeRuntimeStampPath)"
-                      Lines="$(_AzurPilotNativeRuntimeValue)"
-                      Overwrite="true"
-                      WriteOnlyWhenDifferent="true" />
+  <!-- ABI fixture остаётся в отдельном каталоге теста и не подменяет production DLL. -->
+  <Target Name="AzurPilotIncludeAbiMismatchFixture"
+          BeforeTargets="AssignTargetPaths"
+          Condition="'$(MSBuildProjectName)' == 'AzurPilot.Tests' and '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(_AzurPilotAbiMismatchFixture)')"
+           Text="Не найдена негативная ABI fixture: $(_AzurPilotAbiMismatchFixture). Сначала соберите соответствующий CMake workflow preset native-x64-release или native-x64-debug из каталога native." />
+    <ItemGroup>
+      <Content Include="$(_AzurPilotAbiMismatchFixture)"
+               Link="abi-mismatch/AzurPilot.Native.dll"
+               CopyToOutputDirectory="PreserveNewest"
+               Visible="false" />
+    </ItemGroup>
   </Target>
 
   <!-- Копирование пробы негативной проверки interop boundary в выход тестового проекта: тест

@@ -250,8 +250,8 @@ public static partial class AzurPilotNativeBridge
     {
         return new NativeBoundaryUnavailableException(
             $"Native библиотека «{LibraryName}» не загружена: {exception.Message} Соберите native часть "
-            + "и положите её в выход managed проекта (в canonical build это делает eng/build.ps1 через "
-            + "свойство AzurPilotNativeRuntimeDir).",
+            + "через CMake preset и повторите managed сборку: Directory.Build.targets автоматически "
+            + "копирует native runtime в выход проекта.",
             exception);
     }
 
