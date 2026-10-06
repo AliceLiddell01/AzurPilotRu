@@ -161,10 +161,10 @@ reviews:
     - path: ".coderabbit.yaml"
       instructions: >-
         Конфигурация CodeRabbit должна соответствовать актуальной schema v2 и
-        фактической архитектуре AzurPilotRu. Не возвращай Anki/CrowdAnki/Rust
-        инструкции, не включай auto-review без отдельного решения и не добавляй
-        несуществующие анализаторы. Provider configuration не должна дублировать
-        полный repository contract.
+        фактической архитектуре AzurPilotRu. Не переноси предметные контракты
+        других репозиториев, не включай auto-review без отдельного решения и не
+        добавляй несуществующие анализаторы. Provider configuration не должна
+        дублировать полный repository contract.
 
   tools:
     clang:
@@ -178,6 +178,8 @@ reviews:
     yamllint:
       enabled: true
     gitleaks:
+      enabled: true
+    skillspector:
       enabled: true
 
   auto_review:
