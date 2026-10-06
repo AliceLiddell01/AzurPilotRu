@@ -53,7 +53,7 @@ C ABI — `native/include/azurpilot_native_abi.h`.
 тот же configure и локально, и в CI. Runtime staging принадлежит
 [architecture.md](architecture.md).
 
-## Dependency automation
+## Автоматизация обновления зависимостей
 
 `renovate.json` использует реальные manifests проекта: NuGet manager отслеживает `global.json` и
 `Directory.Packages.props`, lock-file maintenance обслуживает `packages.lock.json`, GitHub Actions

@@ -1,4 +1,4 @@
-# Verification: что именно доказывается
+# Проверка: что именно доказывается
 
 Владелец: этот файл. Здесь описаны свойства фундамента, которые доказывают native CTest и managed
 тесты, а также результаты, которые считаются ложными. Канонический build/test-путь принадлежит
@@ -50,7 +50,7 @@ MSBuild берёт native runtime из `artifacts/native/runtime/<Configuration>
 завершается ошибкой, если staging не содержит `AzurPilot.Native.dll` или runtime DLL OpenCV; поэтому
 положительный interop test не может пройти без native runtime.
 
-## Warnings и анализаторы
+## Предупреждения и анализаторы
 
 Managed build запускается с `-warnaserror`; общие compiler/analyzer и code-style настройки принадлежат
 `Directory.Build.props`. Native targets собираются с `/W4` и `/WX`. Реальный build CI тем самым

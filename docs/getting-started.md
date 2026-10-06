@@ -4,7 +4,7 @@
 проектной архитектуры и владельцы manifests перечислены в
 [.codex/context/INDEX.md](../.codex/context/INDEX.md).
 
-## 1. Prerequisites
+## 1. Требования
 
 - **Windows x64** — единственная поддерживаемая платформа
   ([architecture.md](../.codex/context/architecture.md)).
