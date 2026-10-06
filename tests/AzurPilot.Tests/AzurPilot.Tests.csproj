@@ -8,9 +8,7 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!-- Тестовый код project-owned, поэтому строгость сохраняется; отключается только там, где
-         предупреждение приходит из сторонних тестовых пакетов, а не из нашего кода. -->
-    <AzurPilotStrictProject>false</AzurPilotStrictProject>
+    <!-- Код тестов принадлежит проекту; общие TreatWarningsAsErrors остаются включёнными. -->
   </PropertyGroup>
 
   <ItemGroup>

@@ -142,10 +142,10 @@ dotnet_analyzer_diagnostic.category-Usage.severity = error
 [tests/**/*.cs]
 # Имена тестов читаются как утверждение; подчёркивание — допустимый разделитель.
 dotnet_diagnostic.CA1707.severity = none
-# Тестовый код явно использует arrange/act/assert и не обязан документировать каждый член.
+# CA1709 проверяет корректность регистра букв в идентификаторах.
 dotnet_diagnostic.CA1709.severity = none
 # Тестовые методы обязаны быть public для тестовой платформы; их смысл выражен именем и DisplayName,
 # а не XML-doc, поэтому требование документации на тестовый код не распространяется.
 dotnet_diagnostic.CS1591.severity = none
-# Отсутствие проверок в методе-заготовке теста не является дефектом тестового кода.
+# IDE0051 сообщает о неиспользуемых private-членах.
 dotnet_diagnostic.IDE0051.severity = suggestion

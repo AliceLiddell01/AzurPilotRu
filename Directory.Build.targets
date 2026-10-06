@@ -1,13 +1,5 @@
 <Project>
 
-  <!-- Directory.Build.props задаёт TreatWarningsAsErrors=true безусловно, а этот файл исполняется
-       после NuGet-generated кода и выключает строгость там, где проект объявил
-       AzurPilotStrictProject=false. Такой проект собирается без падения на предупреждениях
-       сторонних NuGet/analyzer/targets, при этом все остальные свойства наследуются как есть. -->
-  <PropertyGroup Condition="'$(AzurPilotStrictProject)' == 'false'">
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-  </PropertyGroup>
-
   <!-- CMake готовит runtime по соглашению относительно репозитория. MSBuild получает его
        автоматически; Content передаётся также проектам-потребителям Windows boundary. -->
   <PropertyGroup>
