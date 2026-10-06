@@ -40,9 +40,38 @@
     </ItemGroup>
   </Target>
 
+  <!-- Полный output приложения ставится в отдельный подкаталог тестового выхода: тест запускает
+       реальный AzurPilot.App.exe отдельным процессом, поэтому нужен самодостаточный набор файлов —
+       apphost, .deps.json, .runtimeconfig.json, managed и native runtime. Свойство задаёт тестовый
+       проект, чтобы staging не появлялся у остальных проектов. -->
+  <Target Name="AzurPilotStageApplicationHost"
+          AfterTargets="Build"
+          Condition="'$(AzurPilotApplicationHostProject)' != ''">
+    <MSBuild Projects="$(AzurPilotApplicationHostProject)"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_AzurPilotApplicationAssembly" />
+    </MSBuild>
+
+    <PropertyGroup>
+      <_AzurPilotApplicationOutputDirectory>@(_AzurPilotApplicationAssembly->'%(RootDir)%(Directory)')</_AzurPilotApplicationOutputDirectory>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_AzurPilotApplicationOutputFile Include="$(_AzurPilotApplicationOutputDirectory)**\*" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_AzurPilotApplicationOutputFile)"
+          DestinationFolder="$(OutDir)app-host\%(RecursiveDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <!-- Копирование пробы негативной проверки interop boundary в выход тестового проекта: тест
        запускает пробу процессом из каталога, где native библиотеки заведомо нет, поэтому проба
-       должна быть отдельной сборкой рядом с тестом, а не ссылкой на код. -->
+       должна быть отдельной сборкой рядом с тестом, а не ссылкой на код.
+       Дополнительно полный output пробы (со ссылкой на composition root приложения и его
+       зависимостями) ставится в отдельный подкаталог: режим пробы выполняет application startup и
+       нуждается в самодостаточном каталоге прогона, которым управляет тест. -->
   <Target Name="AzurPilotStageNativeAbsenceProbe"
           AfterTargets="Build"
           Condition="'$(AzurPilotNativeAbsenceProbeProject)' != ''">
@@ -60,6 +89,18 @@
 
     <Copy SourceFiles="@(_AzurPilotProbeFile)"
           DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+
+    <PropertyGroup>
+      <_AzurPilotProbeOutputDirectory>@(_AzurPilotProbeAssembly->'%(RootDir)%(Directory)')</_AzurPilotProbeOutputDirectory>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_AzurPilotProbeOutputFile Include="$(_AzurPilotProbeOutputDirectory)**\*" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_AzurPilotProbeOutputFile)"
+          DestinationFolder="$(OutDir)native-absence-probe\%(RecursiveDir)"
           SkipUnchangedFiles="true" />
   </Target>
 

@@ -44,7 +44,10 @@ reviews:
         от Windows. Флагай прямые зависимости на Win32, P/Invoke, OpenCV,
         AzurPilot.Windows, AzurPilot.App, filesystem/process infrastructure и
         другие platform-specific детали. Не предлагай новую abstraction без
-        реальной границы ответственности.
+        реальной границы ответственности. Контракт конфигурации v1 и
+        application-level отказы принадлежат своим владельцам в .codex/context;
+        флагай второй source of truth для версии схемы, значений defaults,
+        перечня кодов отказа и machine-specific путей конфигурации.
 
     - path: "src/AzurPilot.Windows/**/*.cs"
       instructions: >-
@@ -54,14 +57,20 @@ reviews:
         LibraryImport, marshaling и lifetime на C ABI, явные failure modes и
         отсутствие второго source of truth для ABI/runtime staging. Форма C ABI
         принадлежит native/include/azurpilot_native_abi.h и не должна
-        переопределяться независимо в managed коде.
+        переопределяться независимо в managed коде. Проекция ошибок границы в
+        application-отказ должна использовать существующие коды и не
+        добавлять новые или дублировать коды строковыми литералами.
 
     - path: "src/AzurPilot.App/**/*.cs"
       instructions: >-
-        AzurPilot.App является composition root и будущей host/presentation
-        boundary. Проверяй направление App -> Windows -> Core и не допускай
-        переноса repository tooling, build/repair/update logic или
-        platform/native реализации в App без продуктовой причины.
+        AzurPilot.App является composition root и application host. Проверяй
+        направление App -> Windows -> Core и не допускай переноса repository
+        tooling, build/repair/update logic или platform/native реализации в App
+        без продуктовой причины. Host не должен подключать нежелательные
+        configuration/logging providers, возвращать полный дамп конфигурации в
+        логи или диагностику, засорять stdout structured logs, маскировать
+        ожидаемый отказ как успешный запуск, дублировать проекцию отказов или
+        вводить командную строку, doctor, REPL и hot reload.
 
     - path: "native/**/*.cpp"
       instructions: >-
@@ -222,6 +231,12 @@ knowledge_base:
         applyTo: "src/**/*,native/**/*,tests/**/*,.github/workflows/**/*,Directory.Build.*,Directory.Packages.props,global.json"
       - files: .codex/context/build-contracts.md
         applyTo: "native/**/*,.github/workflows/**/*,Directory.Packages.props,global.json,renovate.json"
+      - files: .codex/context/application-configuration.md
+        applyTo: "src/AzurPilot.Core/**/*,src/AzurPilot.App/**/*,tests/**/*,docs/**/*"
+      - files: .codex/context/application-failures.md
+        applyTo: "src/**/*,tests/**/*"
+      - files: .codex/context/runtime-diagnostics.md
+        applyTo: "src/AzurPilot.App/**/*,tests/**/*"
       - files: .codex/context/verification.md
         applyTo: "src/**/*,native/**/*,tests/**/*,.github/workflows/**/*"
       - files: .codex/context/language.md

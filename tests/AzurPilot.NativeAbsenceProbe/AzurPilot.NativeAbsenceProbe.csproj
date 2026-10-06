@@ -13,6 +13,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Composition root приложения: режим пробы выполняет реальный startup из каталога, которым
+         управляет тест. Ссылка на продукт, а не его копия: проба остаётся тестовым инструментом. -->
+    <ProjectReference Include="..\..\src\AzurPilot.App\AzurPilot.App.csproj" />
     <ProjectReference Include="..\..\src\AzurPilot.Windows\AzurPilot.Windows.csproj" />
   </ItemGroup>
 

@@ -6,4 +6,12 @@
     <RootNamespace>AzurPilot.Core</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Единственная внешняя зависимость Core: тип LogLevel принадлежит стандартному logging stack,
+         поэтому уровень логирования типизирован им, а не второй копией списка допустимых значений.
+         Пакет кроссплатформенный и не даёт Core знания о Windows API. Версия — владелец
+         Directory.Packages.props. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
 </Project>

@@ -9,6 +9,7 @@
   ],
   "ignoreUnstable": true,
   "respectLatest": true,
+  "separateMajorMinor": true,
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": [
@@ -17,21 +18,10 @@
   },
   "packageRules": [
     {
-      "description": "Предлагать stable major, minor и patch обновления; предрелизы отсекаются глобальными ignoreUnstable и respectLatest.",
-      "matchUpdateTypes": [
-        "major",
-        "minor",
-        "patch"
-      ],
-      "ignoreUnstable": true,
-      "respectLatest": true
-    },
-    {
-      "description": "Stable major-обновления рассматриваются наравне с minor и patch и идут отдельной ветвью.",
+      "description": "Помечать стабильные major-обновления отдельной меткой; разделение major и minor задаётся глобальным separateMajorMinor.",
       "matchUpdateTypes": [
         "major"
       ],
-      "separateMajorMinor": true,
       "labels": [
         "dependencies",
         "major-update"

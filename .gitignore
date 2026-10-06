@@ -34,6 +34,10 @@ $RECYCLE.BIN/
 # Локальное рабочее состояние Codex; не является контрактом репозитория
 /.codex/local/
 
+# Локальное рабочее состояние agent team (DSH AgentTeams): описания задач, отчёты и
+# машинно-зависимые пути. Не является контрактом репозитория и не публикуется.
+/.agent-teams/
+
 # Единственная ignored boundary для generated/build outputs и полученных native
 # dependencies (включая native build directories и распакованный OpenCV).
 /artifacts/

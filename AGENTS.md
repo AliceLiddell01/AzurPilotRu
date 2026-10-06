@@ -8,9 +8,10 @@
 
 AzurPilotRu — персональная реализация AzurPilot: Windows-only x64, managed часть на .NET/C#, тяжёлая
 image/vision часть — отдельная native DLL на C++ с OpenCV, связь между ними — узкий versioned C ABI.
-Репозиторные инструменты разработчика отделены от product runtime. MuMu, ADB, lifecycle игры, ввод,
-vision-пайплайн, конфигурация приложения, product CLI/REPL и agent CLI — будущие capability: в
-текущем фундаменте их нет.
+Репозиторные инструменты разработчика отделены от product runtime. Приложение уже имеет application
+host, строгую пользовательскую конфигурацию, application-level отказы, structured logging с
+correlation и runtime-диагностику. MuMu, ADB, lifecycle игры, ввод, vision-пайплайн, OCR/ONNX,
+product CLI/REPL и agent CLI — будущие capability: в текущем приложении их нет.
 
 ## Минимальные инварианты (до чтения контекста)
 
@@ -48,6 +49,9 @@ vision-пайплайн, конфигурация приложения, product 
 | Какой документ владеет каким правилом | [.codex/context/INDEX.md](.codex/context/INDEX.md) |
 | Карта проекта, boundaries, правило зависимостей, entrypoints, staging, ограничения | [.codex/context/architecture.md](.codex/context/architecture.md) |
 | Владельцы version pins, acquisition зависимостей, checksum, Renovate и диагностика toolchain | [.codex/context/build-contracts.md](.codex/context/build-contracts.md) и [.codex/context/INDEX.md](.codex/context/INDEX.md) |
+| Схема конфигурации v1, runtime-путь файла конфигурации, правила загрузки и строгой валидации, владелец defaults и отсутствие hot reload | [.codex/context/application-configuration.md](.codex/context/application-configuration.md) |
+| Стабильные application-коды отказа, признак повторяемости, structured details, проекция отказов boundary и коды выхода процесса | [.codex/context/application-failures.md](.codex/context/application-failures.md) |
+| Composition root и состав host-а, structured logging и граница `stdout`/`stderr`, correlation identity, состав диагностического snapshot | [.codex/context/runtime-diagnostics.md](.codex/context/runtime-diagnostics.md) |
 | Что именно доказывают проверки и как падает verification | [.codex/context/verification.md](.codex/context/verification.md) |
 | Язык комментариев, диагностики и документации | [.codex/context/language.md](.codex/context/language.md) |
 | Git/GitHub lifecycle: ветка, staging, commit, push, remote postcondition, PR, Draft/Ready, merge и cleanup | [`.agents/skills/azurpilot-git-workflow/`](.agents/skills/azurpilot-git-workflow/) |

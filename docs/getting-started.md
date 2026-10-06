@@ -83,19 +83,46 @@ Acquisition выполняется автоматически при CMake confi
 | `artifacts/native/abi-mismatch/<Configuration>` | Изолированная DLL для негативного ABI теста |
 | `src/**/bin`, `tests/**/bin` | Managed assemblies и тестовые outputs |
 
-## 6. Проверки
+## 6. Запуск приложения
+
+`AzurPilot.App` — application host: после сборки Release он запускается без параметров, сам собирает
+зависимости, загружает конфигурацию и выполняет runtime-диагностику. Командной строки и
+пользовательских опций запуска у приложения нет.
+
+Путь файла конфигурации вычисляет его владелец `AzurPilotConfigurationPath`, а каталог приложение не
+создаёт. Если файла нет, запуск идёт на встроенной конфигурации по умолчанию. Существующий невалидный
+файл не подменяется defaults: запуск завершается явным отказом и ненулевым кодом выхода.
+
+Путь файла и схема v1 принадлежат
+[application-configuration.md](../.codex/context/application-configuration.md), коды отказа и коды
+выхода процесса — [application-failures.md](../.codex/context/application-failures.md).
+
+Что видно при запуске:
+
+- `stdout` — человекочитаемый итог: identity сборки, runtime и процесса, источник и версия схемы
+  конфигурации, фактические сведения native boundary (версия ABI, версия OpenCV, capability) и итог
+  запуска;
+- `stderr` — structured runtime logs в JSON-формате; каждая запись несёт correlation identifier
+  операции. Логи в `stdout` не попадают, поэтому вывод остаётся presentation surface.
+
+Проверить это поведение целиком, включая границу `stdout`/`stderr`, можно командой из раздела 2:
+`dotnet test` запускает реальный процесс приложения вместе с его диагностикой.
+
+## 7. Проверки
 
 - **Native CTest** запускает project-owned код через C ABI, проверяет версию ABI и OpenCV, факт
   выполнения OpenCV, capabilities, повторный вызов и границы буферов.
 - **Managed interop tests** загружают реальную native DLL через source-generated `LibraryImport`.
   Негативные тесты проверяют явный отказ без production DLL и при несовместимом ABI.
+- **Application-проверки** доказывают строгую конфигурацию, проекцию отказов native boundary, состав
+  application host, correlation identity, содержимое диагностики и границу `stdout`/`stderr`.
 - **Repository contract tests** проверяют отсутствие machine-specific абсолютных путей,
   фундаментального hardcode `1280x720`, Git-visible binaries и build outputs.
 
 Не запускайте managed interop tests без native workflow соответствующей конфигурации: MSBuild
 намеренно завершится ошибкой, если native runtime не собран.
 
-## 7. Диагностика
+## 8. Диагностика
 
 | Симптом | Что проверить |
 | --- | --- |
@@ -105,13 +132,17 @@ Acquisition выполняется автоматически при CMake confi
 | Locked restore завершился ошибкой | Сверьте `Directory.Packages.props` и lock-файлы; изменение графа должно обновлять их согласованно |
 | SHA256 OpenCV не совпал | Не распаковывайте архив; проверьте URL/hash в `native/opencv.json` и удалите повреждённый архив из локального `artifacts/downloads` перед повторным configure |
 | Managed build не нашёл native runtime DLL | Запустите CMake workflow preset той же конфигурации из `native/` |
+| Приложение завершилось ненулевым кодом выхода | Прочитайте код отказа в итоге на `stdout` и в structured logs на `stderr`; значения кодов принадлежат [application-failures.md](../.codex/context/application-failures.md), правила схемы — [application-configuration.md](../.codex/context/application-configuration.md) |
 | `dotnet test` завершился с кодом 5 из-за неизвестной опции | Проект использует `Microsoft.Testing.Platform`; не передавайте неподдерживаемые runner options, например `--nologo` |
 
-## 8. Куда смотреть дальше
+## 9. Куда смотреть дальше
 
-- [README.md](../README.md) — назначение проекта и короткий build/test-путь.
+- [README.md](../README.md) — назначение проекта, build/test-путь и поведение при запуске.
 - [AGENTS.md](../AGENTS.md) — корневой контракт и router для агентов.
 - [.codex/context/INDEX.md](../.codex/context/INDEX.md) — владельцы правил и manifests.
 - [architecture.md](../.codex/context/architecture.md) — boundaries, source of truth, references, build/runtime boundaries.
 - [build-contracts.md](../.codex/context/build-contracts.md) — version ownership, OpenCV acquisition и Renovate.
+- [application-configuration.md](../.codex/context/application-configuration.md) — схема конфигурации, путь файла и правила загрузки.
+- [application-failures.md](../.codex/context/application-failures.md) — коды отказа и коды выхода процесса.
+- [runtime-diagnostics.md](../.codex/context/runtime-diagnostics.md) — composition, логирование, correlation и диагностика.
 - [verification.md](../.codex/context/verification.md) — что доказывают проверки.

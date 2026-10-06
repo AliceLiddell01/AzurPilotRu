@@ -1,10 +1,13 @@
 # Проверка: что именно доказывается
 
-Владелец: этот файл. Здесь описаны свойства фундамента, которые доказывают native CTest и managed
-тесты, а также результаты, которые считаются ложными. Канонический build/test-путь принадлежит
-[architecture.md](architecture.md), владельцы toolchain и dependency manifests перечислены в
-[build-contracts.md](build-contracts.md) и [INDEX.md](INDEX.md), форма C ABI —
-`native/include/azurpilot_native_abi.h`.
+Владелец: этот файл. Здесь описаны свойства фундамента и текущих application-контрактов, которые
+доказывают native CTest и managed тесты, а также результаты, которые считаются ложными. Канонический
+build/test-путь принадлежит [architecture.md](architecture.md), владельцы toolchain и dependency
+manifests перечислены в [build-contracts.md](build-contracts.md) и [INDEX.md](INDEX.md), форма C ABI —
+`native/include/azurpilot_native_abi.h`, правила конфигурации, отказов и диагностики —
+[application-configuration.md](application-configuration.md),
+[application-failures.md](application-failures.md) и
+[runtime-diagnostics.md](runtime-diagnostics.md).
 
 ## Команды CI
 
@@ -50,6 +53,62 @@ MSBuild берёт native runtime из `artifacts/native/runtime/<Configuration>
 завершается ошибкой, если staging не содержит `AzurPilot.Native.dll` или runtime DLL OpenCV; поэтому
 положительный interop test не может пройти без native runtime.
 
+## Что доказывают проверки application-контрактов
+
+Правила конфигурации, отказов и диагностики принадлежат
+[application-configuration.md](application-configuration.md),
+[application-failures.md](application-failures.md) и
+[runtime-diagnostics.md](runtime-diagnostics.md); здесь описано только то, что доказывается.
+
+Строгая конфигурация:
+
+- отсутствие файла даёт snapshot встроенных defaults, значения берутся у владельца defaults, а файл
+  при загрузке не создаётся;
+- валидный файл схемы v1 читается полностью, а путь файла сохраняется в snapshot;
+- документ, не соответствующий схеме, отклоняется: синтаксически невалидный и пустой документ,
+  документ без JSON-объекта в корне, неизвестное свойство, включая секции будущих capability,
+  duplicate property, неверный регистр имени свойства и значения, нарушение required/nullable
+  contract, trailing comma, комментарий, числовая форма уровня логирования, неверный тип
+  `schemaVersion`;
+- неподдерживаемая версия схемы отклоняется отдельным стабильным отказом и распознаётся даже тогда,
+  когда документ содержит секции будущей схемы;
+- существующий, но нечитаемый файл и путь, указывающий на каталог, отклоняются, а не подменяются
+  defaults;
+- UTF-8 BOM допускается и не ослабляет строгость;
+- относительный или пустой путь остаётся ошибкой программирования, а не ожидаемым отказом;
+- изменение и удаление файла после загрузки не меняет уже полученный snapshot.
+
+Composition и отказы:
+
+- построенный host не подключает нежелательные configuration providers и logging providers:
+  пользовательская конфигурация приходит одним строгим JSON snapshot, а действующий formatter —
+  JSON console;
+- в DI попадает тот же экземпляр snapshot, который вернул загрузчик, и минимальный уровень
+  логирования из конфигурации действительно применяется к логированию;
+- runtime services host-а — snapshot конфигурации, диагностическая операция и проекция ошибок
+  платформенной/native boundary — резолвятся из контейнера, а не создаются вручную;
+- проекция отказов проверяется на реальных типах production-исключений, включая сохранение кода
+  возврата native стороны, ограниченность details и отсутствие утечки текста неожиданного исключения;
+- недоступная native DLL и несовместимый ABI дают ожидаемые application-коды отказа, а не общее
+  сообщение об ошибке.
+
+Диагностика и граница вывода:
+
+- здоровый диагностический snapshot содержит реальные evidence native boundary, а не заглушку:
+  версию ABI, версию OpenCV, capability, факт исполнения кода OpenCV и строку сведений о сборке;
+- недоступная и несовместимая native boundary проверяются в изолированной копии каталога запуска,
+  где библиотека удалена или подменена fixture с несовместимым ABI, поэтому проверяется реальный
+  failure mode, а не мок;
+- проверки выполняются на реальном процессе приложения, а не только на исходном тексте composition;
+- structured runtime logs уходят в `stderr`, а `stdout` остаётся человекочитаемым итогом: в `stdout`
+  нет ни одной записи structured log;
+- один correlation identifier связывает события startup, конфигурации и native-диагностики и
+  присутствует в каждой записи операции, включая её scopes, а не только в тексте одного сообщения;
+- диагностика не печатает полный документ конфигурации ни в `stdout`, ни в `stderr`, а сообщает
+  bounded сведения о ней;
+- проверки конфигурации используют явно переданный путь, поэтому результат не зависит от
+  пользовательского `%LOCALAPPDATA%\AzurPilot\config.json`.
+
 ## Предупреждения и анализаторы
 
 Managed build запускается с `-warnaserror`; общие compiler/analyzer и code-style настройки принадлежат
@@ -59,9 +118,10 @@ Managed build запускается с `-warnaserror`; общие compiler/anal
 
 ## Границы проверки
 
-Проверка доказывает только фундамент: native CMake build, OpenCV acquisition и линковку, C ABI,
-managed interop, тесты repository contracts и закреплённый .NET/native toolchain.
+Проверка доказывает только текущее состояние: native CMake build, OpenCV acquisition и линковку, C ABI,
+managed interop, строгую конфигурацию, application-level отказы, диагностику и границу вывода
+application host, тесты repository contracts и закреплённый .NET/native toolchain.
 
 Она не доказывает и не должна имитировать работу MuMu, ADB, lifecycle игры, реальный screenshot,
 корректность будущих vision algorithms, OCR/ONNX/GPU inference и real-device acceptance. Эти
-capabilities отсутствуют в текущем фундаменте; фиктивные шаги для них в CI запрещены.
+capabilities отсутствуют в текущем приложении; фиктивные шаги для них в CI запрещены.
