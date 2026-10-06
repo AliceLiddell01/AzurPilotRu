@@ -1,3 +1,4 @@
+using System.Text;
 using AzurPilot.Windows;
 
 // Проба для негативной проверки interop boundary.
@@ -10,6 +11,8 @@ using AzurPilot.Windows;
 // Режим --abi-mismatch загружает отдельную тестовую DLL с несовместимой версией ABI и доказывает,
 // что Query отвергает её до чтения остальных данных.
 // Коды выхода: 0 — ожидаемое исключение получено; 1 — исключения не было или диагностика неверна.
+
+Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
 if (args.Length == 1 && string.Equals(args[0], "--abi-mismatch", StringComparison.Ordinal))
 {

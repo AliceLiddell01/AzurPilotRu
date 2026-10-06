@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using AzurPilot.Windows;
 using Xunit;
 
@@ -82,6 +83,8 @@ public sealed class NativeInteropNegativeTests
                 WorkingDirectory = probeDirectory,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
