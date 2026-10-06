@@ -1,6 +1,8 @@
 using System.Globalization;
+using System.Text;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
+using AzurPilot.Core.MuMu;
 
 namespace AzurPilot.App;
 
@@ -21,6 +23,9 @@ namespace AzurPilot.App;
 /// </remarks>
 public sealed record AzurPilotStartupResult
 {
+    /// <summary>Описание состояния MuMu, которое не доказано наблюдением.</summary>
+    private const string UnprovenMuMuState = "не доказано";
+
     private AzurPilotStartupResult(
         int exitCode,
         string correlationId,
@@ -112,11 +117,12 @@ public sealed record AzurPilotStartupResult
             $"  Сборка: {application.AssemblyName} {application.InformationalVersion}",
             $"  Runtime: {application.RuntimeFramework} ({application.RuntimeIdentifier}); "
                 + $"процесс {application.ProcessArchitecture}, x64: {DescribeFlag(application.Is64BitProcess)}",
-            $"  Конфигурация: {DescribeConfigurationSource(configuration)}; схема v{configuration.SchemaVersion}; "
+            $"  Конфигурация: {DescribeConfigurationSource(configuration)}; {DescribeSchema(configuration)}; "
                 + $"статус: {configuration.ValidationStatus}; минимальный уровень логирования: {configuration.MinimumLevel}",
             $"  Native boundary: ABI {DescribeAbiVersion(native)}; OpenCV {DescribeOpencvVersion(native)}; "
                 + $"capability: {DescribeCapabilities(native)}; OpenCV исполнялся: {DescribeFlag(native.OpencvExecuted)}",
             $"  Совместимость native boundary: {native.CompatibilityReason}",
+            $"  MuMu: {DescribeMuMu(diagnostics.MuMu)}",
             "Итог: запуск успешен",
         ];
     }
@@ -141,7 +147,7 @@ public sealed record AzurPilotStartupResult
         {
             AzurPilotConfigurationDiagnostics configuration = diagnostics.Configuration;
             lines.Add(
-                $"  Конфигурация: {DescribeConfigurationSource(configuration)}; схема v{configuration.SchemaVersion}; "
+                $"  Конфигурация: {DescribeConfigurationSource(configuration)}; {DescribeSchema(configuration)}; "
                 + $"статус: {configuration.ValidationStatus}; минимальный уровень логирования: {configuration.MinimumLevel}");
 
             // Отказ native boundary уже описывается итогом ниже, поэтому строка секции добавляется
@@ -150,6 +156,10 @@ public sealed record AzurPilotStartupResult
             {
                 lines.Add($"  Native boundary: {diagnostics.Native.CompatibilityReason}");
             }
+
+            // MuMu-отказ не является отказом запуска, поэтому секция MuMu описывается данными: она
+            // сообщает, на каком шаге диагностика остановилась, а не меняет исход запуска.
+            lines.Add($"  MuMu: {DescribeMuMu(diagnostics.MuMu)}");
         }
 
         lines.Add(
@@ -162,6 +172,69 @@ public sealed record AzurPilotStartupResult
         => configuration.Source == AzurPilotConfigurationSource.File
             ? $"файл «{configuration.FilePath}»"
             : "встроенные defaults";
+
+    /// <summary>Описывает версию эффективной схемы и, при различии, версию схемы источника.</summary>
+    /// <remarks>
+    /// Legacy-документ v1 нормализуется к v2 в памяти, и на диск при этом ничего не пишется. Чтобы
+    /// нормализация не выглядела молчаливой подменой конфигурации, различие версий сообщается явно, а
+    /// сам документ конфигурации не печатается.
+    /// </remarks>
+    /// <param name="configuration">Configuration-секция диагностики.</param>
+    /// <returns>Описание версии эффективной схемы и, при нормализации, версии схемы источника.</returns>
+    private static string DescribeSchema(AzurPilotConfigurationDiagnostics configuration)
+        => configuration.IsLegacySchemaNormalized
+            ? $"схема v{configuration.SchemaVersion} (нормализована из v{configuration.SourceSchemaVersion})"
+            : $"схема v{configuration.SchemaVersion}";
+
+    /// <summary>Описывает bounded MuMu-секцию диагностики для оператора.</summary>
+    /// <remarks>
+    /// Значения приходят из внешних источников, поэтому они уже bounded и однострочны: отображаемое имя
+    /// экземпляра не может добавить строку в человекочитаемый итог. Evidence в итог не печатается — оно
+    /// остаётся данными snapshot.
+    /// </remarks>
+    /// <param name="muMu">MuMu-секция диагностики.</param>
+    /// <returns>Строка MuMu-секции человекочитаемого итога.</returns>
+    private static string DescribeMuMu(AzurPilotMuMuDiagnostics muMu)
+    {
+        StringBuilder builder = new();
+        _ = builder.Append(muMu.IsInstallationDiscovered
+            ? $"установка обнаружена (версия {muMu.Version})"
+            : "установка не обнаружена");
+        _ = builder.Append($"; control surface: {muMu.ControlSurfaceStatus}");
+        _ = builder.Append($"; конфигурация: {muMu.ConfiguredInstance}");
+
+        if (muMu.SelectedInstanceId is string instanceId)
+        {
+            _ = builder.Append($"; instance: {instanceId}");
+
+            if (!string.IsNullOrEmpty(muMu.SelectedInstanceDisplayName))
+            {
+                _ = builder.Append($" «{muMu.SelectedInstanceDisplayName}»");
+            }
+        }
+
+        _ = builder.Append(muMu.LifecycleState is MuMuLifecycleState state
+            ? $"; состояние: {DescribeMuMuState(state)}"
+            : "; состояние: не наблюдалось");
+
+        if (muMu.Failure is ApplicationFailure failure)
+        {
+            _ = builder.Append($"; код: {failure.Code}");
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>Описывает доказанное host-side состояние экземпляра MuMu для оператора.</summary>
+    /// <param name="state">Доказанное host-side состояние экземпляра.</param>
+    /// <returns>Человекочитаемое описание состояния.</returns>
+    private static string DescribeMuMuState(MuMuLifecycleState state) => state switch
+    {
+        MuMuLifecycleState.Unknown => UnprovenMuMuState,
+        MuMuLifecycleState.Stopped => "остановлен",
+        MuMuLifecycleState.Running => "запущен",
+        _ => UnprovenMuMuState,
+    };
 
     private static string DescribeAbiVersion(AzurPilotNativeDiagnostics native)
         => native.AbiVersion?.ToString(CultureInfo.InvariantCulture) ?? "неизвестна";

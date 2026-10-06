@@ -37,6 +37,33 @@ public static class AzurPilotExitCode
     /// <summary>Операция отменена.</summary>
     public const int OperationCancelled = 6;
 
+    /// <summary>Установка MuMuPlayer не обнаружена.</summary>
+    public const int MuMuInstallationNotFound = 7;
+
+    /// <summary>Выбранный Android-экземпляр MuMu не найден в установке.</summary>
+    public const int MuMuInstanceNotFound = 8;
+
+    /// <summary>Автоматический выбор Android-экземпляра MuMu неоднозначен.</summary>
+    public const int MuMuInstanceAmbiguous = 9;
+
+    /// <summary>Control surface установки MuMu не поддерживает запрошенный примитив.</summary>
+    public const int MuMuControlSurfaceUnsupported = 10;
+
+    /// <summary>Lifecycle-операция MuMu не привела к требуемому postcondition.</summary>
+    public const int MuMuLifecyclePostconditionNotMet = 11;
+
+    /// <summary>Deadline lifecycle-операции MuMu достигнут без требуемого состояния.</summary>
+    public const int MuMuLifecycleTimeout = 12;
+
+    /// <summary>
+    /// Обнаружено несколько установок MuMuPlayer, а доказуемого выбора между ними нет.
+    /// </summary>
+    /// <remarks>
+    /// Новый код получает следующее свободное значение и добавляется в конец блока: значения уже
+    /// опубликованных кодов не меняются, потому что код выхода — часть контракта startup.
+    /// </remarks>
+    public const int MuMuInstallationAmbiguous = 13;
+
     /// <summary>Возвращает код выхода для application-level отказа.</summary>
     /// <param name="failure">Ожидаемый отказ application boundary.</param>
     /// <returns>Код выхода процесса, соответствующий коду отказа.</returns>
@@ -52,6 +79,13 @@ public static class AzurPilotExitCode
             ApplicationFailure.NativeUnavailable => NativeUnavailable,
             ApplicationFailure.NativeIncompatible => NativeIncompatible,
             ApplicationFailure.OperationCancelled => OperationCancelled,
+            ApplicationFailure.MuMuInstallationNotFound => MuMuInstallationNotFound,
+            ApplicationFailure.MuMuInstallationAmbiguous => MuMuInstallationAmbiguous,
+            ApplicationFailure.MuMuInstanceNotFound => MuMuInstanceNotFound,
+            ApplicationFailure.MuMuInstanceAmbiguous => MuMuInstanceAmbiguous,
+            ApplicationFailure.MuMuControlSurfaceUnsupported => MuMuControlSurfaceUnsupported,
+            ApplicationFailure.MuMuLifecyclePostconditionNotMet => MuMuLifecyclePostconditionNotMet,
+            ApplicationFailure.MuMuLifecycleTimeout => MuMuLifecycleTimeout,
             _ => InternalError,
         };
     }

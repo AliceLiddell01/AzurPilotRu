@@ -1,0 +1,192 @@
+using System.Globalization;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+
+namespace AzurPilot.MuMuAcceptance;
+
+/// <summary>
+/// Снимок диагностики, выведенной production-кодом за прогон приёмки.
+/// </summary>
+/// <remarks>
+/// Приёмке нужен не только вывод в <c>stderr</c>, но и факт диагностики production-кода: по ней
+/// фиксируется, был ли задействован повтор launch. Источником служат записи самого production-кода
+/// (уровня Warning и выше), а не догадка по времени.
+/// </remarks>
+/// <param name="Total">Число выведенных записей уровня Information и выше.</param>
+/// <param name="Warnings">Число выведенных записей уровня Warning.</param>
+/// <param name="Errors">Число выведенных записей уровня Error и выше.</param>
+/// <param name="Sequence">Метка последней диагностической записи.</param>
+internal readonly record struct AcceptanceLogDiagnostics(int Total, int Warnings, int Errors, long Sequence);
+
+/// <summary>
+/// Logging provider инструмента приёмки: structured записи идут в <c>stderr</c>.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Инструмент использует существующий стек <c>Microsoft.Extensions.Logging</c>, но не подключает
+/// сторонних provider-ов: новых пакетов в репозитории не появляется. Записи уходят в <c>stderr</c>,
+/// поэтому человекочитаемый отчёт в <c>stdout</c> остаётся единственной поверхностью итога и
+/// structured log с ним не смешивается.
+/// </para>
+/// <para>
+/// Уровень <see cref="LogLevel.Debug"/> не выводится: bounded polling lifecycle сообщает наблюдения на
+/// уровне Debug, и для приёмки достаточно итоговых событий уровня Information и выше.
+/// </para>
+/// <para>
+/// Дополнительно provider запоминает тексты записей уровня Warning и выше: это bounded диагностика
+/// production-кода (например, «launch без эффекта» и «launch повторён»), по которой приёмка фиксирует
+/// факт повтора, не измеряя время.
+/// </para>
+/// </remarks>
+internal sealed class StderrLoggerProvider : ILoggerProvider
+{
+    /// <summary>Минимальный уровень выводимых записей.</summary>
+    internal const LogLevel MinimumLevel = LogLevel.Information;
+
+    /// <summary>Сколько последних диагностических текстов удерживается в памяти.</summary>
+    internal const int RetainedDiagnosticCount = 64;
+
+    private static readonly Lock DiagnosticsLock = new();
+    private static readonly List<KeyValuePair<long, string>> DiagnosticMessages = [];
+
+    private static int _writtenRecordCount;
+    private static int _warningRecordCount;
+    private static int _errorRecordCount;
+    private static long _diagnosticSequence;
+
+    /// <summary>Число записей, выведенных в <c>stderr</c> за прогон.</summary>
+    internal static int WrittenRecordCount => Volatile.Read(ref _writtenRecordCount);
+
+    /// <summary>Возвращает снимок счётчиков диагностики production-кода.</summary>
+    /// <returns>Снимок с числом записей и меткой последней диагностической записи.</returns>
+    internal static AcceptanceLogDiagnostics DiagnosticsSnapshot()
+        => new(
+            Volatile.Read(ref _writtenRecordCount),
+            Volatile.Read(ref _warningRecordCount),
+            Volatile.Read(ref _errorRecordCount),
+            Volatile.Read(ref _diagnosticSequence));
+
+    /// <summary>Возвращает тексты диагностических записей, появившихся после метки.</summary>
+    /// <param name="sequence">Метка, полученная предыдущим снимком.</param>
+    /// <returns>Bounded список текстов записей уровня Warning и выше.</returns>
+    internal static IReadOnlyList<string> DiagnosticMessagesAfter(long sequence)
+    {
+        lock (DiagnosticsLock)
+        {
+            List<string> messages = [];
+            foreach (KeyValuePair<long, string> entry in DiagnosticMessages)
+            {
+                if (entry.Key > sequence)
+                {
+                    messages.Add(entry.Value);
+                }
+            }
+
+            return messages;
+        }
+    }
+
+    /// <inheritdoc />
+    public ILogger CreateLogger(string categoryName) => new StderrLogger(categoryName);
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        // Ресурсов, требующих освобождения, у provider-а нет.
+    }
+
+    /// <summary>Учитывает выведенную запись и сохраняет её диагностический текст.</summary>
+    /// <param name="logLevel">Уровень выведенной записи.</param>
+    /// <param name="message">Текст выведенной записи.</param>
+    internal static void CountRecord(LogLevel logLevel, string message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        _ = Interlocked.Increment(ref _writtenRecordCount);
+
+        if (logLevel >= LogLevel.Warning)
+        {
+            _ = logLevel >= LogLevel.Error
+                ? Interlocked.Increment(ref _errorRecordCount)
+                : Interlocked.Increment(ref _warningRecordCount);
+
+            lock (DiagnosticsLock)
+            {
+                long sequence = Interlocked.Increment(ref _diagnosticSequence);
+                DiagnosticMessages.Add(new KeyValuePair<long, string>(sequence, message));
+                while (DiagnosticMessages.Count > RetainedDiagnosticCount)
+                {
+                    DiagnosticMessages.RemoveAt(0);
+                }
+            }
+        }
+    }
+}
+
+/// <summary>
+/// Structured logger инструмента приёмки, пишущий одну JSON-запись в строку <c>stderr</c>.
+/// </summary>
+internal sealed class StderrLogger : ILogger
+{
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    private readonly string _category;
+
+    /// <summary>Создаёт logger для категории.</summary>
+    /// <param name="category">Категория logger-а.</param>
+    internal StderrLogger(string category)
+    {
+        _category = category;
+    }
+
+    /// <inheritdoc />
+    public IDisposable? BeginScope<TState>(TState state)
+        where TState : notnull
+    {
+        // Correlation scope приёмке не нужен: прогон однопоточный и однократный, а operation identity
+        // несёт сам отчёт.
+        return null;
+    }
+
+    /// <inheritdoc />
+    public bool IsEnabled(LogLevel logLevel)
+        => logLevel != LogLevel.None && logLevel >= StderrLoggerProvider.MinimumLevel;
+
+    /// <inheritdoc />
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        ArgumentNullException.ThrowIfNull(formatter);
+
+        if (!IsEnabled(logLevel))
+        {
+            return;
+        }
+
+        string message = formatter(state, exception);
+        if (exception is not null)
+        {
+            message = message + " [" + exception.GetType().FullName + "]";
+        }
+
+        Dictionary<string, string> record = new(StringComparer.Ordinal)
+        {
+            ["Timestamp"] = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture),
+            ["LogLevel"] = logLevel.ToString(),
+            ["EventId"] = eventId.Id.ToString(CultureInfo.InvariantCulture),
+            ["Category"] = _category,
+            ["Message"] = message,
+        };
+
+        Console.Error.WriteLine(JsonSerializer.Serialize(record, SerializerOptions));
+        StderrLoggerProvider.CountRecord(logLevel, message);
+    }
+}

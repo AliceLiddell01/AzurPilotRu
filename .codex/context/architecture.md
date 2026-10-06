@@ -5,7 +5,8 @@ acquisition зависимостей описаны в [build-contracts.md](buil
 [INDEX.md](INDEX.md), пользовательская конфигурация — в
 [application-configuration.md](application-configuration.md), runtime-логирование и диагностика — в
 [runtime-diagnostics.md](runtime-diagnostics.md), application-level отказы — в
-[application-failures.md](application-failures.md), содержание проверок — [verification.md](verification.md),
+[application-failures.md](application-failures.md), MuMu-capability — в
+[mumu-lifecycle.md](mumu-lifecycle.md), содержание проверок — [verification.md](verification.md),
 форма C ABI — `native/include/azurpilot_native_abi.h`.
 
 ## Область и платформа
@@ -33,9 +34,9 @@ C++ с OpenCV.
 
 | Boundary | Путь | Ответственность |
 | --- | --- | --- |
-| `AzurPilot.Core` | `src/AzurPilot.Core` | Доменные и application-контракты, логика, независимая от Windows |
-| `AzurPilot.Windows` | `src/AzurPilot.Windows` | Windows-specific adapters/infrastructure, включая managed сторону native interop |
-| `AzurPilot.App` | `src/AzurPilot.App` | Composition root и application host: сборка host-а, startup, structured logging, correlation и runtime-диагностика. Командной строки у приложения нет; presentation boundary (REPL, CLI) не реализована |
+| `AzurPilot.Core` | `src/AzurPilot.Core` | Доменные и application-контракты, логика, независимая от Windows, включая MuMu-контракты и orchestration lifecycle |
+| `AzurPilot.Windows` | `src/AzurPilot.Windows` | Windows-specific adapters/infrastructure, включая managed сторону native interop и MuMu-adapter |
+| `AzurPilot.App` | `src/AzurPilot.App` | Composition root и application host: сборка host-а, startup, structured logging, correlation, runtime-диагностика и интеграция MuMu-capability. Командной строки у приложения нет; presentation boundary (REPL, CLI) не реализована |
 | native | `native/` | Отдельная CMake boundary: C++ + OpenCV shared library `AzurPilot.Native.dll` с узким C ABI |
 
 Managed boundaries приложения — ровно три: `AzurPilot.Core`, `AzurPilot.Windows`, `AzurPilot.App`.
@@ -49,8 +50,8 @@ Managed solution — `AzurPilot.slnx` в корне репозитория.
 Проекты в `tests/` существуют только для проверок и не поставляются:
 
 - `tests/AzurPilot.Tests` — основной проект проверок: interop boundary, строгая конфигурация,
-  application-level отказы и поведение application host. Часть проверок выполняется на реальном
-  процессе приложения, часть — в процессе самого теста; что именно доказывается, принадлежит
+  application-level отказы, MuMu-capability и поведение application host. Часть проверок выполняется на
+  реальном процессе приложения, часть — в процессе самого теста; что именно доказывается, принадлежит
   [verification.md](verification.md).
 - `tests/AzurPilot.NativeAbsenceProbe` — исполняемая проба, которая запускается тестом отдельным
   процессом и используется в двух режимах: негативная проверка загрузки native boundary (библиотеки
@@ -58,28 +59,37 @@ Managed solution — `AzurPilot.slnx` в корне репозитория.
   переданным путём конфигурации. Во втором режиме проба сообщает полученный код выхода приложения и
   стабильный application failure code; её собственный код выхода описывает только корректность
   прогона, а не результат запуска.
+- `tests/AzurPilot.MuMuAcceptance` — исполняемый инструмент реальной приёмки MuMu-capability на
+  Windows-машине с установленной MuMuPlayer. Он собирает production-поверхность capability
+  (`IMuMuHost` из `AzurPilot.Windows` и orchestration lifecycle из `AzurPilot.Core`) и выполняет
+  lifecycle-матрицу с восстановлением начального состояния; аргументы разбирает только он сам, а в
+  hosted CI он не запускается и в состав продуктовых артефактов не входит.
 
-Отдельный процесс нужен обоим режимам по одной причине: загруженный native модуль остаётся доступным
-до завершения процесса, поэтому отсутствие библиотеки в процессе теста невоспроизводимо. Второй режим
-— режим самой пробы, а не пользовательская опция приложения: продукт аргументов запуска не разбирает,
-поэтому startup с заданной конфигурацией и полностью управляемым каталогом прогона вызывается кодом
-composition, а не командной строкой. Пользовательский `%LOCALAPPDATA%\AzurPilot\config.json` при этом
-не читается.
+Отдельный процесс нужен первым двум режимам по одной причине: загруженный native модуль остаётся
+доступным до завершения процесса, поэтому отсутствие библиотеки в процессе теста невоспроизводимо.
+Второй режим — режим самой пробы, а не пользовательская опция приложения: продукт аргументов запуска
+не разбирает, поэтому startup с заданной конфигурацией и полностью управляемым каталогом прогона
+вызывается кодом composition, а не командной строкой. Пользовательский
+`%LOCALAPPDATA%\AzurPilot\config.json` при этом не читается.
 
-Оба проекта — инструменты проверки. Они не являются boundary приложения, не входят в число трёх
-managed boundaries, не поставляются как продукт и не должны описываться как boundary в `README.md`,
-`AGENTS.md` и `docs/**`.
+Все проекты в `tests/` — инструменты проверки. Они не являются boundary приложения, не входят в число
+трёх managed boundaries, не поставляются как продукт и не должны описываться как boundary в `README.md`,
+`AGENTS.md` и `docs/**`. Инструмент реальной приёмки MuMu — тоже тестовый инструмент, а не продуктовая
+командная строка: пользовательских команд у приложения он не добавляет.
 
 ## Runtime-контракты приложения
 
-Приложение уже имеет реальные runtime-контракты: строгую пользовательскую конфигурацию схемы v1,
-application-level модель отказов, structured logging с correlation identity и runtime-диагностический
-snapshot. Их правила имеют собственных владельцев — [application-configuration.md](application-configuration.md),
-[application-failures.md](application-failures.md) и [runtime-diagnostics.md](runtime-diagnostics.md);
-здесь они не повторяются. Пользовательских опций запуска и командной строки у приложения нет:
-startup вычисляет runtime-путь конфигурации сам. Границы остаются прежними: `AzurPilot.Core` владеет
-контрактами конфигурации и отказов, не зависящими от Windows, `AzurPilot.Windows` — проекцией ошибок
-платформенной/native boundary, `AzurPilot.App` — composition и диагностикой.
+Приложение уже имеет реальные runtime-контракты: строгую пользовательскую конфигурацию,
+application-level модель отказов, structured logging с correlation identity,
+runtime-диагностический snapshot и первую реальную Windows-возможность — MuMu-capability: обнаружение
+установки, выбор Android-экземпляра и host-side lifecycle с доказуемым postcondition. Их правила имеют
+собственных владельцев — [application-configuration.md](application-configuration.md),
+[application-failures.md](application-failures.md), [runtime-diagnostics.md](runtime-diagnostics.md) и
+[mumu-lifecycle.md](mumu-lifecycle.md); здесь они не повторяются. Пользовательских опций запуска и
+командной строки у приложения нет: startup вычисляет runtime-путь конфигурации сам. Границы остаются
+прежними: `AzurPilot.Core` владеет контрактами конфигурации, отказов и MuMu, не зависящими от Windows,
+`AzurPilot.Windows` — проекцией ошибок платформенной/native boundary и MuMu-adapter, `AzurPilot.App` —
+composition и диагностикой.
 
 ## Правило зависимостей
 
@@ -94,6 +104,10 @@ startup вычисляет runtime-путь конфигурации сам. Г�
   только OpenCV и стандартная библиотека C++.
 - Через границу не проходят `cv::Mat`, STL-типы, C++-исключения и владеющие указатели:
   форма границы описана в заголовке ABI и меняется только вместе с номером ABI.
+- MuMu-capability не меняет направление зависимостей: доменные контракты и orchestration lifecycle
+  живут в `AzurPilot.Core`, Windows-адаптер control surface — в `AzurPilot.Windows`, интеграция в
+  host — в `AzurPilot.App`. Core не знает о Windows API и не заводит общий filesystem/process layer:
+  доступ к реестру, файловой системе и запуску процессов приходит через объявленные им узкие границы.
 
 ## Канонический путь сборки и тестирования
 
@@ -158,8 +172,13 @@ MSBuild работает по принципу fail-closed и перед managed
 - `1280x720` не является фундаментальным разрешением архитектуры: в фундаменте и native API нет и
   не должно быть такой константы или предполагаемого размера кадра. Будущий screenshot сохраняется
   в нативном разрешении, а размеры кадра приходят как данные, а не как константа проекта.
-- MuMu-first, ADB, lifecycle эмулятора и игры, ввод (tap/swipe), vision-пайплайн, OCR/ONNX/GPU
-  inference, product CLI, REPL и agent CLI — будущие capability. Они не реализуются, не объявляются
-  абстракциями «на будущее» и не имеют placeholder-документов; секции конфигурации, коды отказов и
-  диагностические секции для них не создаются заранее. Общие команды `build`, `repair` и `update`
-  относятся к инструментам репозитория, а не к будущим product CLI, REPL и agent CLI.
+- MuMu-capability реализована как первая реальная Windows-возможность: обнаружение установки
+  MuMuPlayer, стабильная identity и выбор Android-экземпляра, host-side состояние экземпляра и
+  безопасные start/stop/restart с доказуемым postcondition. Правила принадлежат
+  [mumu-lifecycle.md](mumu-lifecycle.md); секция `mumu` конфигурации, MuMu-коды отказа, MuMu-секция
+  диагностики и проверки существуют вместе с этой capability.
+- Отсутствуют и не объявляются абстракциями «на будущее»: ADB и device readiness, lifecycle игры
+  внутри Android, ввод (tap/swipe), screenshot/vision-пайплайн, OCR/ONNX/GPU inference, product CLI,
+  REPL и agent CLI. Для них не создаются placeholder-документы, секции конфигурации, коды отказов и
+  диагностические секции. Общие команды `build`, `repair` и `update` относятся к инструментам
+  репозитория, а не к будущим product CLI, REPL и agent CLI.

@@ -42,12 +42,17 @@ reviews:
       instructions: >-
         AzurPilot.Core владеет доменными и application-контрактами, независимыми
         от Windows. Флагай прямые зависимости на Win32, P/Invoke, OpenCV,
-        AzurPilot.Windows, AzurPilot.App, filesystem/process infrastructure и
-        другие platform-specific детали. Не предлагай новую abstraction без
-        реальной границы ответственности. Контракт конфигурации v1 и
-        application-level отказы принадлежат своим владельцам в .codex/context;
-        флагай второй source of truth для версии схемы, значений defaults,
-        перечня кодов отказа и machine-specific путей конфигурации.
+        AzurPilot.Windows, AzurPilot.App и произвольную platform/filesystem
+        infrastructure. Общий filesystem/process layer в Core не создаётся.
+        BCL filesystem/environment допустимы только там, где это явный
+        owner-contract существующей capability: application configuration владеет
+        runtime-путём файла конфигурации, а MuMu domain-контракты описывают
+        control surface, identity экземпляра и lifecycle. Не предлагай новую
+        abstraction без реальной границы ответственности. Контракты конфигурации,
+        отказов и MuMu принадлежат своим владельцам в .codex/context; флагай
+        второй source of truth для версии схемы, значений defaults, перечня
+        кодов отказа, грамматики identity экземпляра и machine-specific путей
+        конфигурации.
 
     - path: "src/AzurPilot.Windows/**/*.cs"
       instructions: >-
@@ -237,6 +242,8 @@ knowledge_base:
         applyTo: "src/**/*,tests/**/*"
       - files: .codex/context/runtime-diagnostics.md
         applyTo: "src/AzurPilot.App/**/*,tests/**/*"
+      - files: .codex/context/mumu-lifecycle.md
+        applyTo: "src/**/*,tests/**/*"
       - files: .codex/context/verification.md
         applyTo: "src/**/*,native/**/*,tests/**/*,.github/workflows/**/*"
       - files: .codex/context/language.md

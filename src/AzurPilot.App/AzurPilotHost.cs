@@ -1,6 +1,8 @@
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
+using AzurPilot.Core.MuMu;
 using AzurPilot.Windows;
+using AzurPilot.Windows.MuMu;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -111,7 +113,8 @@ public static class AzurPilotHost
                 logger.ConfigurationLoaded(
                     operation.CorrelationId,
                     configurationSource,
-                    snapshot.Configuration.SchemaVersion,
+                    snapshot.EffectiveSchemaVersion,
+                    snapshot.SourceSchemaVersion,
                     minimumLevel);
 
                 return await RunHostAsync(host, logger, operation, cancellationToken).ConfigureAwait(false);
@@ -159,11 +162,12 @@ public static class AzurPilotHost
 
         // Минимальный уровень логирования принадлежит загруженному snapshot. Если конфигурация
         // отклонена, snapshot не существует: тогда действует встроенный уровень, потому что настройку
-        // отвергнутого файла применять нельзя.
+        // отвергнутого файла применять нельзя. Значение встроенного уровня читается у его владельца
+        // AzurPilotConfigurationDefaults: второго литерала уровня в App нет.
         _ = builder.Logging.SetMinimumLevel(
             configuration.IsSuccess
                 ? configuration.Value!.Configuration.Diagnostics.MinimumLevel
-                : LogLevel.Information);
+                : AzurPilotConfigurationDefaults.Create().Diagnostics.MinimumLevel);
     }
 
     /// <summary>Регистрирует реальные runtime services этого этапа в DI.</summary>
@@ -187,7 +191,54 @@ public static class AzurPilotHost
             // загрузка, и hot reload/file watcher отсутствует.
             _ = builder.Services.AddSingleton(configuration.Value!);
             _ = builder.Services.AddSingleton<AzurPilotDiagnosticService>();
+
+            RegisterMuMuServices(builder);
         }
+    }
+
+    /// <summary>Регистрирует MuMu-сервисы этого этапа в DI.</summary>
+    /// <remarks>
+    /// <para>
+    /// Production host-side поверхность MuMu приходит из платформенной boundary
+    /// <c>AzurPilot.Windows</c>: App только связывает узкие внешние границы адаптеров, не перенося в себя
+    /// ни registry, ни файловую систему, ни запуск процессов.
+    /// </para>
+    /// <para>
+    /// Все MuMu-зависимости — singleton-ы одного application host. Координация mutation
+    /// <see cref="MuMuInstanceMutationGate"/> обязана быть единственной на процесс, иначе гарантия
+    /// «одновременных mutation одного экземпляра нет» перестала бы действовать. Числа времени приходят
+    /// от владельца <see cref="MuMuLifecycleTimings"/>, часы — от <see cref="TimeProvider.System"/>:
+    /// optional-зависимостей с молчаливыми значениями у orchestration нет.
+    /// </para>
+    /// <para>
+    /// MuMu-операции резолвятся из DI: ни один MuMu-сервис не создаётся вручную и второй экземпляр
+    /// координации не заводится.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">Построитель host-а.</param>
+    private static void RegisterMuMuServices(HostApplicationBuilder builder)
+    {
+        _ = builder.Services.AddSingleton<IMuMuFileSystemProbe, WindowsMuMuFileSystemProbe>();
+        _ = builder.Services.AddSingleton<IMuMuInstallationRegistrySource, WindowsMuMuInstallationRegistrySource>();
+        _ = builder.Services.AddSingleton<IMuMuInstallMetadataSource>(
+            static services => new WindowsMuMuInstallMetadataSource(
+                services.GetRequiredService<IMuMuFileSystemProbe>()));
+        _ = builder.Services.AddSingleton<IMuMuProcessRunner, MuMuProcessRunner>();
+
+        // Реализация выбирается явной фабрикой: MuMuWindowsHost имеет несколько конструкторов, и какой
+        // из них использован, должно быть видно в composition root, а не выводиться DI-эвристикой.
+        _ = builder.Services.AddSingleton<IMuMuHost>(
+            static services => new MuMuWindowsHost(
+                services.GetRequiredService<IMuMuInstallationRegistrySource>(),
+                services.GetRequiredService<IMuMuInstallMetadataSource>(),
+                services.GetRequiredService<IMuMuFileSystemProbe>(),
+                services.GetRequiredService<IMuMuProcessRunner>(),
+                services.GetRequiredService<ILogger<MuMuWindowsHost>>()));
+
+        _ = builder.Services.AddSingleton<MuMuInstanceMutationGate>();
+        _ = builder.Services.AddSingleton(TimeProvider.System);
+        _ = builder.Services.AddSingleton(MuMuLifecycleTimings.Default);
+        _ = builder.Services.AddSingleton<MuMuLifecycleService>();
     }
 
     /// <summary>Запускает host, выполняет диагностическую операцию и завершает host.</summary>
@@ -210,6 +261,11 @@ public static class AzurPilotHost
             {
                 report = host.Services.GetRequiredService<AzurPilotDiagnosticService>().Capture();
             }
+
+            // MuMu-секция — диагностический результат, а не причина отказа: отсутствие установки,
+            // неподдерживаемая control surface и остановленный экземпляр остаются данными, и startup их
+            // не «исправляет». Запуск эмулятора диагностикой не выполняется никогда.
+            LogMuMuDiagnostics(logger, operation.CorrelationId, report.MuMu);
 
             if (report.Native.Failure is not null)
             {
@@ -240,5 +296,36 @@ public static class AzurPilotHost
         {
             await host.StopAsync(CancellationToken.None).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Записывает bounded результат MuMu-диагностики в существующий structured log.</summary>
+    /// <remarks>
+    /// Событие остаётся в существующем logging stack и несёт correlation identifier операции, поэтому
+    /// MuMu-диагностика одного запуска связана с остальными его событиями. Полный вывод control utility,
+    /// список процессов и пути установки в событие не попадают.
+    /// </remarks>
+    /// <param name="logger">Логгер application host.</param>
+    /// <param name="correlationId">Correlation identifier операции.</param>
+    /// <param name="muMu">MuMu-секция собранного диагностического snapshot.</param>
+    private static void LogMuMuDiagnostics(
+        ILogger logger,
+        string correlationId,
+        AzurPilotMuMuDiagnostics muMu)
+    {
+        // Отображаемые значения готовятся до вызова логирования: сообщение остаётся статическим
+        // шаблоном, а его аргументы — уже готовыми строками.
+        if (muMu.Failure is ApplicationFailure failure)
+        {
+            logger.MuMuDiagnosticsFailed(correlationId, failure.Code, muMu.ControlSurfaceStatus);
+            return;
+        }
+
+        logger.MuMuDiagnosticsCaptured(
+            correlationId,
+            muMu.IsInstallationDiscovered,
+            muMu.Version ?? string.Empty,
+            muMu.ControlSurfaceStatus,
+            muMu.ConfiguredInstance,
+            muMu.SelectedInstanceId ?? string.Empty);
     }
 }

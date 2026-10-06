@@ -27,6 +27,10 @@ public sealed class AzurPilotHostCompositionTests
 {
     private const string WarningLevelConfiguration = """{"schemaVersion":1,"diagnostics":{"minimumLevel":"Warning"}}""";
 
+    /// <summary>Документ, который существует, но не соответствует схеме: snapshot не создаётся.</summary>
+    private const string RejectedLevelConfiguration =
+        """{"schemaVersion":1,"diagnostics":{"minimumLevel":"Verbose"}}""";
+
     [Fact(DisplayName = "Host не подключает нежелательные configuration и logging providers")]
     public void HostDoesNotAttachUnwantedProviders()
     {
@@ -75,6 +79,27 @@ public sealed class AzurPilotHostCompositionTests
         ILogger logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AzurPilot.Tests");
         Assert.False(logger.IsEnabled(LogLevel.Information));
         Assert.True(logger.IsEnabled(LogLevel.Warning));
+    }
+
+    [Fact(DisplayName = "Отклонённая конфигурация применяет встроенный уровень логирования его владельца")]
+    public void RejectedConfigurationFallsBackToBuiltInMinimumLevel()
+    {
+        using TemporaryConfigurationDirectory directory = new();
+        _ = directory.WriteConfiguration(RejectedLevelConfiguration);
+        ApplicationResult<AzurPilotConfigurationSnapshot> configuration =
+            AzurPilotConfigurationLoader.Load(directory.ConfigurationFilePath);
+        Assert.True(configuration.IsFailure, configuration.ToString());
+
+        HostApplicationBuilder builder = AzurPilotHost.CreateBuilder(configuration);
+        using IHost host = builder.Build();
+
+        // Настройку отвергнутого файла применять нельзя, поэтому действует встроенный уровень. Значение
+        // сверяется с его владельцем AzurPilotConfigurationDefaults: второго владельца уровня в App нет.
+        LogLevel builtInLevel = AzurPilotConfigurationDefaults.Create().Diagnostics.MinimumLevel;
+        ILogger logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AzurPilot.Tests");
+
+        Assert.True(logger.IsEnabled(builtInLevel));
+        Assert.False(logger.IsEnabled(builtInLevel - 1));
     }
 
     [Fact(DisplayName = "Изменение файла конфигурации не меняет уже загруженный snapshot")]

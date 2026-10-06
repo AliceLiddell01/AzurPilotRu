@@ -20,6 +20,11 @@ namespace AzurPilot.Core.Configuration;
 /// дополнительно документирует camelCase-имена.
 /// </para>
 /// <para>
+/// Строгость применяется к каждой поддерживаемой source schema: у эффективной схемы v2 и у
+/// legacy-схемы v1 свой контракт, поэтому неизвестное свойство для v1 (в том числе секция
+/// <c>mumu</c>) и неизвестное свойство для v2 отвергаются, а не игнорируются.
+/// </para>
+/// <para>
 /// Метаданные типов приходят из source-generated контекста, поэтому reflection resolver из
 /// <see cref="JsonSerializerOptions.Strict"/> снимается: единственным источником метаданных остаётся
 /// <see cref="AzurPilotConfigurationJsonContext"/>. Reflection-based десериализация типов конфигурации
@@ -50,6 +55,7 @@ internal static class AzurPilotConfigurationJson
     }
 }
 
-/// <summary>Source-generated метаданные схемы v1.</summary>
+/// <summary>Source-generated метаданные эффективной схемы v2 и legacy-контракта v1.</summary>
 [JsonSerializable(typeof(AzurPilotConfiguration))]
+[JsonSerializable(typeof(AzurPilotConfigurationV1))]
 internal sealed partial class AzurPilotConfigurationJsonContext : JsonSerializerContext;

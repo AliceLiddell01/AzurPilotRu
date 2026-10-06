@@ -7,15 +7,17 @@ using Microsoft.Extensions.Logging;
 namespace AzurPilot.App;
 
 /// <summary>
-/// Bounded диагностический snapshot одного запуска: приложение, конфигурация и native boundary.
+/// Bounded диагностический snapshot одного запуска: приложение, конфигурация, native boundary и MuMu.
 /// </summary>
 /// <param name="Application">Сведения о сборке, runtime и процессе.</param>
 /// <param name="Configuration">Bounded сведения о загруженной конфигурации без её полного дампа.</param>
 /// <param name="Native">Сведения о native boundary: доступность, совместимость и фактические evidence.</param>
+/// <param name="MuMu">Сведения о MuMu: обнаружение установки, выбор экземпляра и host-side состояние.</param>
 public sealed record AzurPilotDiagnosticReport(
     AzurPilotApplicationDiagnostics Application,
     AzurPilotConfigurationDiagnostics Configuration,
-    AzurPilotNativeDiagnostics Native);
+    AzurPilotNativeDiagnostics Native,
+    AzurPilotMuMuDiagnostics MuMu);
 
 /// <summary>Application-секция диагностического snapshot.</summary>
 /// <param name="AssemblyName">Простое имя сборки application host.</param>
@@ -42,17 +44,26 @@ public sealed record AzurPilotApplicationDiagnostics(
 
 /// <summary>Configuration-секция диагностического snapshot.</summary>
 /// <remarks>
+/// <para>
 /// Секция намеренно не содержит ни документа конфигурации, ни её секций: диагностика сообщает только
-/// источник, версию схемы, статус валидации и минимальный уровень логирования.
+/// источник, версии схемы, статус валидации и минимальный уровень логирования.
+/// </para>
+/// <para>
+/// Версия схемы источника и версия эффективной схемы различаются для legacy-входа: документ v1
+/// нормализуется к v2 в памяти, и на диск при этом ничего не пишется. Обе версии нужны диагностике,
+/// чтобы нормализация была видна, а не выглядела молчаливой подменой конфигурации.
+/// </para>
 /// </remarks>
 /// <param name="Source">Источник конфигурации: встроенные defaults или файл.</param>
-/// <param name="SchemaVersion">Версия схемы загруженной конфигурации.</param>
+/// <param name="SchemaVersion">Версия эффективной схемы загруженной конфигурации.</param>
+/// <param name="SourceSchemaVersion">Версия схемы, которую объявил источник конфигурации.</param>
 /// <param name="ValidationStatus">Статус валидации конфигурации.</param>
 /// <param name="MinimumLevel">Минимальный уровень логирования из конфигурации.</param>
 /// <param name="FilePath">Путь файла конфигурации; <see langword="null"/> для встроенных defaults.</param>
 public sealed record AzurPilotConfigurationDiagnostics(
     AzurPilotConfigurationSource Source,
     int SchemaVersion,
+    int SourceSchemaVersion,
     string ValidationStatus,
     LogLevel MinimumLevel,
     string? FilePath)
@@ -64,6 +75,13 @@ public sealed record AzurPilotConfigurationDiagnostics(
     /// </remarks>
     internal const string ValidStatus = "valid";
 
+    /// <summary>Признак того, что источником был legacy-документ, нормализованный к эффективной схеме.</summary>
+    /// <value>
+    /// <see langword="true"/>, если версии схемы источника и эффективной схемы различаются: диагностика
+    /// сообщает о нормализации, не дампя конфигурацию.
+    /// </value>
+    public bool IsLegacySchemaNormalized => SourceSchemaVersion != SchemaVersion;
+
     /// <summary>Создаёт секцию из провалидированного snapshot конфигурации.</summary>
     /// <param name="snapshot">Загруженный snapshot конфигурации.</param>
     /// <returns>Bounded сведения о конфигурации.</returns>
@@ -73,7 +91,8 @@ public sealed record AzurPilotConfigurationDiagnostics(
 
         return new AzurPilotConfigurationDiagnostics(
             snapshot.Source,
-            snapshot.Configuration.SchemaVersion,
+            snapshot.EffectiveSchemaVersion,
+            snapshot.SourceSchemaVersion,
             ValidStatus,
             snapshot.Configuration.Diagnostics.MinimumLevel,
             snapshot.FilePath);

@@ -93,15 +93,16 @@ Acquisition выполняется автоматически при CMake confi
 создаёт. Если файла нет, запуск идёт на встроенной конфигурации по умолчанию. Существующий невалидный
 файл не подменяется defaults: запуск завершается явным отказом и ненулевым кодом выхода.
 
-Путь файла и схема v1 принадлежат
+Путь файла и правила схемы принадлежат
 [application-configuration.md](../.codex/context/application-configuration.md), коды отказа и коды
 выхода процесса — [application-failures.md](../.codex/context/application-failures.md).
 
 Что видно при запуске:
 
 - `stdout` — человекочитаемый итог: identity сборки, runtime и процесса, источник и версия схемы
-  конфигурации, фактические сведения native boundary (версия ABI, версия OpenCV, capability) и итог
-  запуска;
+  конфигурации, фактические сведения native boundary (версия ABI, версия OpenCV, capability),
+  строка MuMu-секции (обнаружение установки, выбранный экземпляр и его наблюдённое состояние) и итог
+  запуска. Startup MuMu не запускает и не останавливает;
 - `stderr` — structured runtime logs в JSON-формате; каждая запись несёт correlation identifier
   операции. Логи в `stdout` не попадают, поэтому вывод остаётся presentation surface.
 
@@ -116,6 +117,11 @@ Acquisition выполняется автоматически при CMake confi
   Негативные тесты проверяют явный отказ без production DLL и при несовместимом ABI.
 - **Application-проверки** доказывают строгую конфигурацию, проекцию отказов native boundary, состав
   application host, correlation identity, содержимое диагностики и границу `stdout`/`stderr`.
+- **MuMu-проверки** прогоняют production-код capability через управляемые внешние границы и доказывают
+  orchestration lifecycle без установленной MuMu; поведение реальной установки доказывает отдельная
+  локальная приёмка `tests/AzurPilot.MuMuAcceptance --instance mumu:<index>`, которая требует
+  установленной MuMuPlayer и в hosted CI не запускается. Что именно доказывает каждая проверка —
+  [verification.md](../.codex/context/verification.md).
 - **Repository contract tests** проверяют отсутствие machine-specific абсолютных путей,
   фундаментального hardcode `1280x720`, Git-visible binaries и build outputs.
 
@@ -134,6 +140,7 @@ Acquisition выполняется автоматически при CMake confi
 | Managed build не нашёл native runtime DLL | Запустите CMake workflow preset той же конфигурации из `native/` |
 | Приложение завершилось ненулевым кодом выхода | Прочитайте код отказа в итоге на `stdout` и в structured logs на `stderr`; значения кодов принадлежат [application-failures.md](../.codex/context/application-failures.md), правила схемы — [application-configuration.md](../.codex/context/application-configuration.md) |
 | `dotnet test` завершился с кодом 5 из-за неизвестной опции | Проект использует `Microsoft.Testing.Platform`; не передавайте неподдерживаемые runner options, например `--nologo` |
+| MuMu-секция сообщает, что установка не обнаружена или экземпляр не выбран | Это диагностический результат, а не отказ запуска: startup MuMu не запускает и не останавливает, а правила принадлежат [mumu-lifecycle.md](../.codex/context/mumu-lifecycle.md) |
 
 ## 9. Куда смотреть дальше
 
@@ -145,4 +152,5 @@ Acquisition выполняется автоматически при CMake confi
 - [application-configuration.md](../.codex/context/application-configuration.md) — схема конфигурации, путь файла и правила загрузки.
 - [application-failures.md](../.codex/context/application-failures.md) — коды отказа и коды выхода процесса.
 - [runtime-diagnostics.md](../.codex/context/runtime-diagnostics.md) — composition, логирование, correlation и диагностика.
+- [mumu-lifecycle.md](../.codex/context/mumu-lifecycle.md) — MuMu-capability: установка, экземпляр и lifecycle.
 - [verification.md](../.codex/context/verification.md) — что доказывают проверки.

@@ -6,9 +6,11 @@
 В репозитории собраны managed solution из трёх boundaries, native CMake boundary с OpenCV и
 замороженный C ABI между ними, стандартный путь сборки и тестирования средствами CMake и .NET,
 Windows CI и автоматизация обновления зависимостей. Приложение уже является application host:
-строгая пользовательская конфигурация схемы v1, application-level отказы, structured logging в
-`stderr` с correlation identity и runtime-диагностика. MuMu, ADB, работа с игрой, vision-пайплайн,
-OCR/ONNX, продуктовые CLI/REPL и agent CLI — будущие возможности: в текущее приложение они не входят.
+строгая пользовательская конфигурация, application-level отказы, structured logging в `stderr` с
+correlation identity, runtime-диагностика и первая реальная Windows-возможность — MuMu: обнаружение
+установки MuMuPlayer, выбор Android-экземпляра и host-side запуск, остановка и перезапуск с
+доказуемым postcondition. ADB, работа с игрой, vision-пайплайн, OCR/ONNX, продуктовые CLI/REPL и
+agent CLI — будущие возможности: в текущее приложение они не входят.
 
 ## Платформа
 
@@ -59,19 +61,22 @@ CI использует эти стандартные команды напря�
   невалидный файл не подменяется defaults и завершает запуск явным отказом с ненулевым кодом выхода.
 - В `stdout` уходит человекочитаемый итог, в `stderr` — structured runtime logs в JSON-формате с
   correlation identifier операции.
+- Диагностика включает bounded MuMu-секцию: обнаружение установки, выбранный экземпляр и его
+  наблюдённое состояние. Запуск приложения экземпляр MuMu не запускает и не останавливает.
 
-Путь конфигурации, схема v1 и коды отказа принадлежат
+Путь конфигурации, правила схемы и коды отказа принадлежат
 [application-configuration.md](.codex/context/application-configuration.md) и
 [application-failures.md](.codex/context/application-failures.md), состав логирования и диагностики —
-[runtime-diagnostics.md](.codex/context/runtime-diagnostics.md), проверяемые свойства —
+[runtime-diagnostics.md](.codex/context/runtime-diagnostics.md), правила MuMu-capability —
+[mumu-lifecycle.md](.codex/context/mumu-lifecycle.md), проверяемые свойства —
 [verification.md](.codex/context/verification.md) и тесты `tests/AzurPilot.Tests/`.
 
 ## Структура репозитория
 
 - `AzurPilot.slnx` — managed solution: `src/AzurPilot.Core`, `src/AzurPilot.Windows`, `src/AzurPilot.App`.
 - `native/` — CMake boundary: C++ с OpenCV и C ABI, workflow presets, manifest и configure/staging helpers.
-- `tests/` — тестовые проекты (interop тесты и проба для негативной проверки); это инструменты
-  проверки, а не boundaries приложения.
+- `tests/` — тестовые проекты: interop и application-проверки, проба для негативной проверки native
+  boundary и инструмент реальной приёмки MuMu. Это инструменты проверки, а не boundaries приложения.
 - `global.json`, `Directory.Packages.props` и `packages.lock.json` — манифесты зависимостей managed-проектов.
 - `artifacts/` — единственная исключённая из Git область для build outputs и полученных зависимостей.
 
@@ -86,6 +91,7 @@ CI использует эти стандартные команды напря�
 - [.codex/context/application-configuration.md](.codex/context/application-configuration.md) — схема конфигурации, путь файла и правила загрузки.
 - [.codex/context/application-failures.md](.codex/context/application-failures.md) — стабильные коды отказа и коды выхода процесса.
 - [.codex/context/runtime-diagnostics.md](.codex/context/runtime-diagnostics.md) — composition, логирование, correlation и диагностика.
+- [.codex/context/mumu-lifecycle.md](.codex/context/mumu-lifecycle.md) — MuMu-capability: установка, экземпляр и lifecycle.
 - [.codex/context/verification.md](.codex/context/verification.md) — что именно доказывает verification.
 
 ## Лицензия

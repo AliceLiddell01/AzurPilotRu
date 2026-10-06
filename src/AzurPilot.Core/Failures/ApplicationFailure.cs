@@ -8,11 +8,19 @@ namespace AzurPilot.Core.Failures;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Контракт фиксирован: допустимы ровно шесть кодов — <see cref="ConfigurationInvalid"/>,
+/// Контракт фиксирован: допустимы ровно тринадцать кодов — <see cref="ConfigurationInvalid"/>,
 /// <see cref="ConfigurationSchemaUnsupported"/>, <see cref="NativeUnavailable"/>,
-/// <see cref="NativeIncompatible"/>, <see cref="OperationCancelled"/> и <see cref="InternalError"/>.
-/// Каталог кодов под будущие capability (adb, package, game, screenshot, vision и подобные) намеренно
-/// не заводится: код появляется вместе с реальной capability.
+/// <see cref="NativeIncompatible"/>, <see cref="OperationCancelled"/>, <see cref="InternalError"/> и семь
+/// кодов MuMu-отказов: <see cref="MuMuInstallationNotFound"/>,
+/// <see cref="MuMuInstallationAmbiguous"/>, <see cref="MuMuInstanceNotFound"/>,
+/// <see cref="MuMuInstanceAmbiguous"/>, <see cref="MuMuControlSurfaceUnsupported"/>,
+/// <see cref="MuMuLifecyclePostconditionNotMet"/> и <see cref="MuMuLifecycleTimeout"/>. Каталог кодов под
+/// будущие capability (adb, package, game, screenshot, vision и подобные) намеренно не заводится: код
+/// появляется вместе с реальной capability.
+/// </para>
+/// <para>
+/// Ожидаемые MuMu-отказы не подменяются <see cref="InternalError"/>: <see cref="InternalError"/>
+/// остаётся только для действительно неожиданного нарушения контракта.
 /// </para>
 /// <para>
 /// Экземпляр неизменяем: <see cref="Details"/> копируется в immutable словарь при создании, поэтому
@@ -30,7 +38,7 @@ namespace AzurPilot.Core.Failures;
 /// </remarks>
 public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
 {
-    /// <summary>Код отказа: существующий файл конфигурации не читается или не соответствует схеме v1.</summary>
+    /// <summary>Код отказа: существующий файл конфигурации не читается или не соответствует своей схеме.</summary>
     public const string ConfigurationInvalid = "configuration_invalid";
 
     /// <summary>Код отказа: версия схемы конфигурации не поддерживается этой сборкой.</summary>
@@ -48,6 +56,27 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <summary>Код отказа: внутренняя ошибка application host, не сводимая к ожидаемым отказам выше.</summary>
     public const string InternalError = "internal_error";
 
+    /// <summary>Код отказа: установка MuMuPlayer не обнаружена.</summary>
+    public const string MuMuInstallationNotFound = "mumu_installation_not_found";
+
+    /// <summary>Код отказа: обнаружено несколько установок MuMuPlayer, а доказуемого выбора между ними нет.</summary>
+    public const string MuMuInstallationAmbiguous = "mumu_installation_ambiguous";
+
+    /// <summary>Код отказа: выбранный Android-экземпляр MuMu не найден в установке.</summary>
+    public const string MuMuInstanceNotFound = "mumu_instance_not_found";
+
+    /// <summary>Код отказа: автоматический выбор экземпляра неоднозначен, подходящих экземпляров больше одного.</summary>
+    public const string MuMuInstanceAmbiguous = "mumu_instance_ambiguous";
+
+    /// <summary>Код отказа: установка MuMu не предоставляет нужную control surface для экземпляра.</summary>
+    public const string MuMuControlSurfaceUnsupported = "mumu_control_surface_unsupported";
+
+    /// <summary>Код отказа: lifecycle-операция MuMu не привела к требуемому postcondition.</summary>
+    public const string MuMuLifecyclePostconditionNotMet = "mumu_lifecycle_postcondition_not_met";
+
+    /// <summary>Код отказа: deadline lifecycle-операции MuMu достигнут без нужного terminal state.</summary>
+    public const string MuMuLifecycleTimeout = "mumu_lifecycle_timeout";
+
     private static readonly FrozenSet<string> AllowedCodes =
         new[]
         {
@@ -57,6 +86,13 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
             NativeIncompatible,
             OperationCancelled,
             InternalError,
+            MuMuInstallationNotFound,
+            MuMuInstallationAmbiguous,
+            MuMuInstanceNotFound,
+            MuMuInstanceAmbiguous,
+            MuMuControlSurfaceUnsupported,
+            MuMuLifecyclePostconditionNotMet,
+            MuMuLifecycleTimeout,
         }.ToFrozenSet(StringComparer.Ordinal);
 
     private readonly FrozenDictionary<string, string>? _details;
@@ -65,8 +101,12 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <value>
     /// Одно из значений: <see cref="ConfigurationInvalid"/>, <see cref="ConfigurationSchemaUnsupported"/>,
     /// <see cref="NativeUnavailable"/>, <see cref="NativeIncompatible"/>, <see cref="OperationCancelled"/>,
-    /// <see cref="InternalError"/>. Любое другое значение — ошибка программирования и приводит
-    /// к <see cref="ArgumentException"/> при создании отказа.
+    /// <see cref="InternalError"/>, <see cref="MuMuInstallationNotFound"/>,
+    /// <see cref="MuMuInstallationAmbiguous"/>, <see cref="MuMuInstanceNotFound"/>,
+    /// <see cref="MuMuInstanceAmbiguous"/>, <see cref="MuMuControlSurfaceUnsupported"/>,
+    /// <see cref="MuMuLifecyclePostconditionNotMet"/>, <see cref="MuMuLifecycleTimeout"/>. Любое другое
+    /// значение — ошибка программирования и приводит к <see cref="ArgumentException"/> при создании
+    /// отказа.
     /// </value>
     public required string Code
     {
