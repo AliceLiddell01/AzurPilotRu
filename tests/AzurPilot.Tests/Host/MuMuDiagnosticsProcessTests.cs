@@ -95,10 +95,12 @@ public sealed class MuMuDiagnosticsProcessTests
             StructuredLogRecord.Read(failure.State, FailureCodeProperty));
         Assert.NotEmpty(failureCode);
 
-        // Lifecycle-коды синтезируются только выполненной mutation, поэтому их отсутствие доказывает, что
-        // диагностика эмулятор не запускала и не останавливала: отказ сообщается, а не «исправляется».
+        // Код postcondition-отказа синтезируется только выполненной mutation, поэтому его отсутствие
+        // подтверждает, что диагностика эмулятор не запускала и не останавливала. Отсутствие
+        // MuMuLifecycleTimeout об этом не говорит: adapter сообщает этот код и для команды, которая ничего
+        // не меняет и не уложилась в свой дедлайн. Доказательство «диагностика не выполняет mutation»
+        // принадлежит проверкам с host-double, которые считают mutation (AzurPilotMuMuDiagnosticsTests).
         Assert.NotEqual(ApplicationFailure.MuMuLifecyclePostconditionNotMet, failureCode);
-        Assert.NotEqual(ApplicationFailure.MuMuLifecycleTimeout, failureCode);
     }
 
     [Fact(DisplayName = "Legacy-схема v1 сообщается как нормализованная, без дампа конфигурации")]
