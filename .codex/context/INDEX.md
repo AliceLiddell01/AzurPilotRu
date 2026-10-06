@@ -40,3 +40,4 @@
 | OpenCV version pin, URL, SHA256 и layout | `native/opencv.json` |
 | .NET SDK version и roll-forward policy | `global.json` |
 | Версии C# code-style правил | `.editorconfig` |
+| Git/GitHub lifecycle текущей задачи: branch, staging, commit, push, проверка remote SHA, PR body, Draft/Ready, merge, конфликты и cleanup | `.agents/skills/azurpilot-git-workflow/SKILL.md` |

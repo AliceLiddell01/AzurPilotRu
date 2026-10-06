@@ -33,6 +33,10 @@ vision-пайплайн, конфигурация приложения, product 
   Visual Studio/OpenCV/Python) в репозитории запрещены.
 - Project-owned комментарии, диагностика и документация — на русском; идентификаторы, ключи
   конфигурации и общепринятые технические термины — латиницей.
+- Одна самостоятельная публикуемая задача — одна рабочая ветка и один PR; напрямую в default
+  branch разработка не ведётся. Git/GitHub lifecycle принадлежит
+  [`.agents/skills/azurpilot-git-workflow/`](.agents/skills/azurpilot-git-workflow/): локальный
+  commit не завершает публикацию, а merge выполняется только по отдельной текущей явной команде.
 
 ## Маршрутизация
 
@@ -43,6 +47,7 @@ vision-пайплайн, конфигурация приложения, product 
 | Владельцы version pins, acquisition зависимостей, checksum, Renovate и диагностика toolchain | [.codex/context/build-contracts.md](.codex/context/build-contracts.md) и [.codex/context/INDEX.md](.codex/context/INDEX.md) |
 | Что именно доказывают проверки и как падает verification | [.codex/context/verification.md](.codex/context/verification.md) |
 | Язык комментариев, диагностики и документации | [.codex/context/language.md](.codex/context/language.md) |
+| Git/GitHub lifecycle: ветка, staging, commit, push, remote postcondition, PR, Draft/Ready, merge и cleanup | [`.agents/skills/azurpilot-git-workflow/`](.agents/skills/azurpilot-git-workflow/) |
 | Форма C ABI v1: структура, экспорты, коды возврата, семантика буферов | [native/include/azurpilot_native_abi.h](native/include/azurpilot_native_abi.h) |
 | Канонические команды и рабочий путь разработки | [README.md](README.md), правила и источники — [.codex/context/architecture.md](.codex/context/architecture.md) |
 | Установка prerequisites, сборка, тесты, типовые проблемы | [docs/getting-started.md](docs/getting-started.md) |
