@@ -71,6 +71,8 @@ if(NOT extracted_hash STREQUAL expected_hash OR
    NOT IS_DIRECTORY "${AZURPILOT_OPENCV_RUNTIME_DIR}")
   # Windows bsdtar умеет распаковывать официальный самораспаковывающийся EXE.
   find_program(AZURPILOT_ARCHIVE_TOOL NAMES tar.exe REQUIRED)
+  # Повторная попытка не должна смешивать пакет с остатками прерванной распаковки.
+  file(REMOVE_RECURSE "${extract_dir}")
   file(MAKE_DIRECTORY "${extract_dir}")
   execute_process(COMMAND "${AZURPILOT_ARCHIVE_TOOL}" -x -f "${archive_file}" -C "${extract_dir}"
     RESULT_VARIABLE extract_code ERROR_VARIABLE extract_error)

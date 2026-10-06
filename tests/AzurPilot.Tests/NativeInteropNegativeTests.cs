@@ -47,8 +47,8 @@ public sealed class NativeInteropNegativeTests
         Assert.Contains(AzurPilotNativeBridge.LibraryName, result.StandardOutput, StringComparison.Ordinal);
     }
 
-    [Fact(DisplayName = "Несовместимый ABI реально загруженной DLL отвергается до чтения данных")]
-    public void IncompatibleNativeAbiThrowsBeforeReadingData()
+    [Fact(DisplayName = "Несовместимый ABI отвергается до вызова native query")]
+    public void IncompatibleNativeAbiThrowsBeforeQuery()
     {
         ProbeResult result = RunProbe(ProbeMode.AbiMismatch);
 

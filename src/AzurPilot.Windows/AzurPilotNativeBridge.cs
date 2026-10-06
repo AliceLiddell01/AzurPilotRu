@@ -76,6 +76,8 @@ public static partial class AzurPilotNativeBridge
     /// <exception cref="AzurPilotNativeBoundaryException">Native сторона вернула код ошибки.</exception>
     public static NativeBoundaryInfo Query()
     {
+        uint abiVersion = NativeAbiVersion();
+        EnsureExpectedAbiVersion(abiVersion);
         _ = VerifyStructLayout();
 
         int status;
@@ -100,14 +102,7 @@ public static partial class AzurPilotNativeBridge
                 + $"{DescribeStatus(status)}. Сведения о native boundary использовать нельзя.");
         }
 
-        uint abiVersion = nativeInfo.AbiVersion;
-        if (abiVersion != NativeBoundaryContract.ExpectedAbiVersion)
-        {
-            throw new NativeAbiMismatchException(
-                $"Версия ABI native библиотеки «{LibraryName}»: {abiVersion}; ожидается: "
-                + $"{NativeBoundaryContract.ExpectedAbiVersion}. Native библиотека несовместима с "
-                + "managed фундаментом: пересоберите native часть или обновите контракт ABI.");
-        }
+        EnsureExpectedAbiVersion(nativeInfo.AbiVersion);
 
         Version opencvVersion = new(
             ToVersionComponent(nativeInfo.OpencvMajor),
@@ -253,6 +248,17 @@ public static partial class AzurPilotNativeBridge
             + "через CMake preset и повторите managed сборку: Directory.Build.targets автоматически "
             + "копирует native runtime в выход проекта.",
             exception);
+    }
+
+    private static void EnsureExpectedAbiVersion(uint abiVersion)
+    {
+        if (abiVersion != NativeBoundaryContract.ExpectedAbiVersion)
+        {
+            throw new NativeAbiMismatchException(
+                $"Версия ABI native библиотеки «{LibraryName}»: {abiVersion}; ожидается: "
+                + $"{NativeBoundaryContract.ExpectedAbiVersion}. Native библиотека несовместима с "
+                + "managed фундаментом: пересоберите native часть или обновите контракт ABI.");
+        }
     }
 
     /// <summary>

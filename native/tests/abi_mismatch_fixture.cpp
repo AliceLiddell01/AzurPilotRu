@@ -1,7 +1,6 @@
-/* Изолированная DLL для негативной managed проверки. Она сохраняет форму C ABI,
- * но сообщает несовместимый номер. OpenCV и production runtime она не подменяет:
- * fixture копируется только в отдельный процесс-пробу. Отсутствие build_info
- * дополнительно доказывает, что Query отвергает ABI до чтения остальных данных. */
+/* Изолированная DLL для негативной managed проверки. Она сообщает несовместимый
+ * номер ABI и отклоняет azurpilot_native_query. Поэтому успешная проба доказывает,
+ * что managed сторона проверила версию до вызова query. */
 
 #include "azurpilot_native_abi.h"
 
@@ -15,6 +14,5 @@ int32_t azurpilot_native_query(AzurPilotNativeInfo* out_info) noexcept {
     }
 
     *out_info = {};
-    out_info->abi_version = azurpilot_native_abi_version();
-    return AZURPILOT_NATIVE_OK;
+    return AZURPILOT_NATIVE_ERROR_INTERNAL;
 }
