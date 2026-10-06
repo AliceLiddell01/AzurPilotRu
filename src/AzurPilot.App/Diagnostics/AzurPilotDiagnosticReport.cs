@@ -109,13 +109,19 @@ public sealed record AzurPilotNativeDiagnostics(
     /// <summary>Создаёт секцию из реально полученных сведений о native boundary.</summary>
     /// <param name="info">Сведения, полученные от native библиотеки.</param>
     /// <param name="compatibility">Результат проверки совместимости границы.</param>
+    /// <param name="mapIncompatibility">
+    /// Проекция несовместимости границы в application-level отказ: отказ собирает владелец проекции
+    /// <see cref="NativeBoundaryFailureMapper"/>, а не эта секция диагностики.
+    /// </param>
     /// <returns>Секция с фактическими evidence native boundary.</returns>
     internal static AzurPilotNativeDiagnostics FromBoundary(
         NativeBoundaryInfo info,
-        NativeBoundaryCompatibility compatibility)
+        NativeBoundaryCompatibility compatibility,
+        Func<string, ApplicationFailure> mapIncompatibility)
     {
         ArgumentNullException.ThrowIfNull(info);
         ArgumentNullException.ThrowIfNull(compatibility);
+        ArgumentNullException.ThrowIfNull(mapIncompatibility);
 
         return new AzurPilotNativeDiagnostics(
             IsAvailable: true,
@@ -126,7 +132,7 @@ public sealed record AzurPilotNativeDiagnostics(
             (info.BuildFlags & AzurPilotNativeBridge.BuildFlagOpencvExecuted) != 0,
             info.BuildInfo,
             compatibility.Reason,
-            compatibility.IsCompatible ? null : CreateIncompatibleFailure(compatibility.Reason));
+            compatibility.IsCompatible ? null : mapIncompatibility(compatibility.Reason));
     }
 
     /// <summary>Создаёт секцию для недоступной или отвергнутой native boundary.</summary>
@@ -147,15 +153,4 @@ public sealed record AzurPilotNativeDiagnostics(
             CompatibilityReason: failure.Message,
             Failure: failure);
     }
-
-    /// <summary>Создаёт отказ для границы, загруженной, но не подтвердившей контракт.</summary>
-    /// <param name="reason">Причина несовместимости, полученная из проверки контракта.</param>
-    /// <returns>Отказ с кодом <see cref="ApplicationFailure.NativeIncompatible"/>.</returns>
-    private static ApplicationFailure CreateIncompatibleFailure(string reason)
-        => new()
-        {
-            Code = ApplicationFailure.NativeIncompatible,
-            Message = reason,
-            IsRetryable = false,
-        };
 }

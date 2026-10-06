@@ -1,6 +1,7 @@
 using AzurPilot.App;
 using AzurPilot.Core.Failures;
 using AzurPilot.Tests.Configuration;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace AzurPilot.Tests.Host;
@@ -35,6 +36,9 @@ public sealed class AzurPilotApplicationProcessTests
     private const string InvalidConfiguration =
         """{"schemaVersion":1,"diagnostics":{"minimumLevel":"Verbose"}}""";
 
+    /// <summary>Начало строки человекочитаемого итога, сообщающей application-код отказа.</summary>
+    private const string FailureSummaryPrefix = "Итог: запуск отклонён; код: ";
+
     [Fact(DisplayName = "Реальный запуск: stdout без structured JSON, stderr только project-owned события")]
     public void StructuredLogsStayOffStandardOutput()
     {
@@ -46,8 +50,12 @@ public sealed class AzurPilotApplicationProcessTests
         Assert.NotEmpty(run.StandardOutput.Trim());
         Assert.Empty(StructuredLogRecord.ReadFrom(run.StandardOutput));
 
-        // stderr — только project-owned события приложения: чужих категорий логирования здесь нет.
-        Assert.All(run.Logs, log => Assert.Equal("AzurPilot.App", log.Category));
+        // stderr — только project-owned события приложения: чужих категорий логирования на уровне
+        // Information и выше здесь нет. Пользовательская конфигурация может опустить минимальный уровень
+        // до Debug/Trace, и тогда внутренний шум generic host попадает в stderr по её выбору.
+        Assert.All(
+            run.Logs.Where(log => log.IsAtLeast(LogLevel.Information)),
+            log => Assert.Equal("AzurPilot.App", log.Category));
     }
 
     [Fact(DisplayName = "Код выхода согласован с отчётом: healthy — ноль, отказ — ненулевой и не маскируется")]
@@ -60,16 +68,21 @@ public sealed class AzurPilotApplicationProcessTests
         string? failureCode = ReadFailureCodeOrNull(run);
         if (failureCode is null)
         {
-            // Ни одно событие не заявляет отказ: запуск обязан быть успешным.
+            // Ни отчёт, ни события не заявляют отказ: запуск обязан быть успешным.
             Assert.Equal(AzurPilotExitCode.Success, run.ExitCode);
             return;
         }
 
-        // Отказ заявлен: он обязан быть виден и в человекочитаемом итоге, и в коде выхода, причём код
-        // выхода берётся из того же соответствия, что и в продукте.
+        // Отказ заявлен: он обязан быть виден и в коде выхода, причём код выхода берётся из того же
+        // соответствия, что и в продукте.
         Assert.NotEqual(AzurPilotExitCode.Success, run.ExitCode);
         Assert.Equal(ExpectedExitCode(failureCode), run.ExitCode);
-        Assert.Contains(failureCode, run.StandardOutput, StringComparison.Ordinal);
+
+        // Политика логирования пользовательской конфигурации может подавить запись отказа, но когда
+        // запись есть, structured diagnostics обязаны заявлять тот же код, что и человекочитаемый итог.
+        Assert.All(
+            run.Logs.Select(log => log.FailureCode).OfType<string>(),
+            loggedCode => Assert.Equal(failureCode, loggedCode));
     }
 
     [Fact(DisplayName = "Один correlation identifier связывает события запуска и человекочитаемый итог")]
@@ -118,21 +131,43 @@ public sealed class AzurPilotApplicationProcessTests
     }
 
     /// <summary>Возвращает код выхода, соответствующий заявленному application-level отказу.</summary>
-    /// <param name="failureCode">Код отказа, прочитанный из structured diagnostics.</param>
+    /// <param name="failureCode">Код отказа, прочитанный из человекочитаемого итога запуска.</param>
     /// <returns>Код выхода процесса из контракта <see cref="AzurPilotExitCode"/>.</returns>
     private static int ExpectedExitCode(string failureCode)
         => AzurPilotExitCode.FromFailure(
             new ApplicationFailure
             {
                 Code = failureCode,
-                Message = "Отказ, прочитанный из structured diagnostics реального процесса.",
+                Message = "Отказ, прочитанный из итога реального процесса.",
             });
 
     /// <summary>Читает application-level код отказа, если запуск его заявил.</summary>
+    /// <remarks>
+    /// Источник — человекочитаемый итог, а не structured log: итог выдаётся при любом исходе запуска,
+    /// тогда как записи structured diagnostics могут быть подавлены минимальным уровнем логирования
+    /// пользовательской конфигурации.
+    /// </remarks>
     /// <param name="run">Результат запуска приложения.</param>
-    /// <returns>Код отказа либо <see langword="null"/>, если отказа не было.</returns>
+    /// <returns>Код отказа либо <see langword="null"/>, если итог сообщает успешный запуск.</returns>
     private static string? ReadFailureCodeOrNull(ApplicationHostRun run)
-        => run.Logs.Select(log => log.FailureCode).FirstOrDefault(code => code is not null);
+    {
+        foreach (string line in run.StandardOutput.Split('\n'))
+        {
+            string candidate = line.Trim();
+            if (!candidate.StartsWith(FailureSummaryPrefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            int end = candidate.IndexOf(';', FailureSummaryPrefix.Length);
+            string code = end < 0
+                ? candidate[FailureSummaryPrefix.Length..]
+                : candidate[FailureSummaryPrefix.Length..end];
+            return code.Trim();
+        }
+
+        return null;
+    }
 
     /// <summary>Находит correlation identifiers операции в человекочитаемом итоге.</summary>
     /// <param name="text">Содержимое stdout процесса.</param>

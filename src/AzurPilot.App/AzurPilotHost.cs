@@ -23,6 +23,10 @@ namespace AzurPilot.App;
 /// Ожидаемые отказы (невалидная конфигурация, недоступная или несовместимая native boundary)
 /// завершают запуск явным ненулевым кодом выхода и не маскируются как здоровый запуск.
 /// </para>
+/// <para>
+/// Непредвиденная ошибка startup проецируется в application-отказ тем же production-маппером, поэтому
+/// исход запуска единообразен и до появления логгера, и после него.
+/// </para>
 /// </remarks>
 public static class AzurPilotHost
 {
@@ -55,52 +59,71 @@ public static class AzurPilotHost
         string? configurationPath = null,
         CancellationToken cancellationToken = default)
     {
-        string path = configurationPath ?? AzurPilotConfigurationPath.GetDefaultRuntimePath();
+        // Операция начинается первой: её correlation identifier нужен и человекочитаемому итогу, и каждой
+        // записи диагностики. Собственный отказ операции поэтому не проецируется в результат запуска —
+        // идентичности операции ещё нет, а итог без неё неполон.
         using AzurPilotOperation operation = AzurPilotOperation.Start();
 
         ApplicationResult<AzurPilotConfigurationSnapshot> configuration;
-        using (operation.StartStep(AzurPilotOperation.ConfigurationActivityName))
-        {
-            configuration = AzurPilotConfigurationLoader.Load(path);
-        }
-
-        HostApplicationBuilder builder = CreateBuilder(configuration);
-        using IHost host = builder.Build();
-        ILogger logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(AzurPilotLog.Category);
-
+        IHost host;
         try
         {
-            logger.StartupStarted(operation.CorrelationId);
+            string path = configurationPath ?? AzurPilotConfigurationPath.GetDefaultRuntimePath();
 
-            if (configuration.IsFailure)
+            using (operation.StartStep(AzurPilotOperation.ConfigurationActivityName))
             {
-                ApplicationFailure configurationFailure = configuration.FailureInfo!;
-                logger.ConfigurationRejected(operation.CorrelationId, configurationFailure.Code);
-                return AzurPilotStartupResult.Failure(operation.CorrelationId, configurationFailure);
+                configuration = AzurPilotConfigurationLoader.Load(path);
             }
 
-            AzurPilotConfigurationSnapshot snapshot = configuration.Value!;
-
-            // Отображаемые значения готовятся до вызова логирования: сообщение остаётся статическим
-            // шаблоном, а его аргументы — уже готовыми строками.
-            string configurationSource = snapshot.Source.ToString();
-            string minimumLevel = snapshot.Configuration.Diagnostics.MinimumLevel.ToString();
-
-            logger.ConfigurationLoaded(
-                operation.CorrelationId,
-                configurationSource,
-                snapshot.Configuration.SchemaVersion,
-                minimumLevel);
-
-            return await RunHostAsync(host, logger, operation, cancellationToken).ConfigureAwait(false);
+            host = CreateBuilder(configuration).Build();
         }
         catch (Exception exception)
         {
-            // Ожидаемый отказ возвращается значением; сюда попадают только непредвиденные ошибки
-            // startup. Их проекция в application failure делает исход запуска единообразным.
-            ApplicationFailure failure = NativeBoundaryFailureMapper.Map(exception);
-            logger.StartupRejected(operation.CorrelationId, failure.Code, failure.IsRetryable, failure.Message);
-            return AzurPilotStartupResult.Failure(operation.CorrelationId, failure);
+            // Непредвиденная ошибка startup до появления логгера: исход запуска всё равно единообразен,
+            // но записать отказ в structured log ещё нечем.
+            return AzurPilotStartupResult.Failure(
+                operation.CorrelationId,
+                NativeBoundaryFailureMapper.Map(exception));
+        }
+
+        using (host)
+        {
+            ILogger logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(AzurPilotLog.Category);
+
+            try
+            {
+                logger.StartupStarted(operation.CorrelationId);
+
+                if (configuration.IsFailure)
+                {
+                    ApplicationFailure configurationFailure = configuration.FailureInfo!;
+                    logger.ConfigurationRejected(operation.CorrelationId, configurationFailure.Code);
+                    return AzurPilotStartupResult.Failure(operation.CorrelationId, configurationFailure);
+                }
+
+                AzurPilotConfigurationSnapshot snapshot = configuration.Value!;
+
+                // Отображаемые значения готовятся до вызова логирования: сообщение остаётся статическим
+                // шаблоном, а его аргументы — уже готовыми строками.
+                string configurationSource = snapshot.Source.ToString();
+                string minimumLevel = snapshot.Configuration.Diagnostics.MinimumLevel.ToString();
+
+                logger.ConfigurationLoaded(
+                    operation.CorrelationId,
+                    configurationSource,
+                    snapshot.Configuration.SchemaVersion,
+                    minimumLevel);
+
+                return await RunHostAsync(host, logger, operation, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                // Ожидаемый отказ возвращается значением; сюда попадают только непредвиденные ошибки
+                // startup. Их проекция в application failure делает исход запуска единообразным.
+                ApplicationFailure failure = NativeBoundaryFailureMapper.Map(exception);
+                logger.StartupRejected(operation.CorrelationId, failure.Code, failure.IsRetryable, failure.Message);
+                return AzurPilotStartupResult.Failure(operation.CorrelationId, failure);
+            }
         }
     }
 
@@ -151,9 +174,12 @@ public static class AzurPilotHost
         ApplicationResult<AzurPilotConfigurationSnapshot> configuration)
     {
         // Маппер native boundary — production-проекция платформенных ошибок в application failure.
-        // Host не создаёт её вручную и не дублирует: он получает готовую проекцию из DI.
+        // Host не создаёт её вручную и не дублирует: он получает готовые проекции из DI — и для ошибки
+        // границы, и для несовместимости, подтверждённой значением проверки контракта.
         Func<Exception, ApplicationFailure> mapFailure = NativeBoundaryFailureMapper.Map;
         _ = builder.Services.AddSingleton(mapFailure);
+        _ = builder.Services.AddSingleton<Func<string, ApplicationFailure>>(
+            NativeBoundaryFailureMapper.MapIncompatibility);
 
         if (configuration.IsSuccess)
         {

@@ -25,22 +25,29 @@ public sealed class AzurPilotDiagnosticService
 {
     private readonly AzurPilotConfigurationSnapshot _configuration;
     private readonly Func<Exception, ApplicationFailure> _mapFailure;
+    private readonly Func<string, ApplicationFailure> _mapIncompatibility;
 
     /// <summary>Создаёт диагностическую операцию приложения.</summary>
     /// <param name="configuration">Загруженный snapshot конфигурации.</param>
     /// <param name="mapFailure">Проекция ошибок native boundary в application-level отказ.</param>
+    /// <param name="mapIncompatibility">
+    /// Проекция несовместимости native boundary, подтверждённой значением, в application-level отказ.
+    /// </param>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="configuration"/> или <paramref name="mapFailure"/> равен <see langword="null"/>.
+    /// Любой из аргументов равен <see langword="null"/>.
     /// </exception>
     public AzurPilotDiagnosticService(
         AzurPilotConfigurationSnapshot configuration,
-        Func<Exception, ApplicationFailure> mapFailure)
+        Func<Exception, ApplicationFailure> mapFailure,
+        Func<string, ApplicationFailure> mapIncompatibility)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(mapFailure);
+        ArgumentNullException.ThrowIfNull(mapIncompatibility);
 
         _configuration = configuration;
         _mapFailure = mapFailure;
+        _mapIncompatibility = mapIncompatibility;
     }
 
     /// <summary>Собирает bounded диагностический snapshot текущего запуска.</summary>
@@ -83,7 +90,10 @@ public sealed class AzurPilotDiagnosticService
         try
         {
             NativeBoundaryInfo info = AzurPilotNativeBridge.Query();
-            return AzurPilotNativeDiagnostics.FromBoundary(info, NativeBoundaryContract.Canonical.Check(info));
+            return AzurPilotNativeDiagnostics.FromBoundary(
+                info,
+                NativeBoundaryContract.Canonical.Check(info),
+                _mapIncompatibility);
         }
         catch (Exception exception)
         {

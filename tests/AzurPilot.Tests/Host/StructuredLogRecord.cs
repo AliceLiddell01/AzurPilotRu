@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace AzurPilot.Tests.Host;
 
@@ -45,6 +46,12 @@ internal sealed record StructuredLogRecord(
 
     /// <summary>Trace identifier операции из scopes записи.</summary>
     internal string? TraceId => Read(Scopes, "TraceId");
+
+    /// <summary>Проверяет, что уровень записи не ниже указанного порога.</summary>
+    /// <param name="threshold">Порог уровня логирования.</param>
+    /// <returns><see langword="true"/>, если уровень записи прошёл порог.</returns>
+    internal bool IsAtLeast(LogLevel threshold)
+        => Enum.TryParse(LogLevel, ignoreCase: false, out LogLevel recordLevel) && recordLevel >= threshold;
 
     /// <summary>Читает значение structured property записи.</summary>
     /// <param name="properties">Набор properties записи.</param>

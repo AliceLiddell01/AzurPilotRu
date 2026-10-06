@@ -108,13 +108,18 @@ public sealed class ApplicationResult<T>
             : $"failure:{_failure!.Code}";
 
     /// <summary>Разбирает результат на признак успеха и значение.</summary>
+    /// <remarks>
+    /// Разбор не выбрасывает исключение: результат-отказ даёт <see langword="default"/> вместо значения,
+    /// а признак успеха сообщается отдельным элементом разбора. Строгими остаются свойства
+    /// <see cref="Value"/> и <see cref="FailureInfo"/>: обращение к ним в неподходящем состоянии —
+    /// ошибка программирования.
+    /// </remarks>
     /// <param name="isSuccess">Признак успешного завершения операции.</param>
-    /// <param name="value">Значение успешного результата.</param>
-    /// <exception cref="InvalidOperationException">Результат является отказом: значения нет.</exception>
+    /// <param name="value">Значение успешного результата; для результата-отказа — <see langword="default"/>.</param>
     public void Deconstruct(out bool isSuccess, [MaybeNullWhen(false)] out T value)
     {
         isSuccess = _isSuccess;
-        value = Value!;
+        value = _value!;
     }
 }
 

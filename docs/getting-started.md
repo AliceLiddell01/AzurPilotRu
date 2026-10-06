@@ -89,23 +89,13 @@ Acquisition выполняется автоматически при CMake confi
 зависимости, загружает конфигурацию и выполняет runtime-диагностику. Командной строки и
 пользовательских опций запуска у приложения нет.
 
-Конфигурация читается из `%LOCALAPPDATA%\AzurPilot\config.json`; путь вычисляется через BCL API, а
-каталог приложение не создаёт. Если файла нет, запуск идёт на встроенной конфигурации по умолчанию.
-Минимальный документ схемы v1:
+Путь файла конфигурации вычисляет его владелец `AzurPilotConfigurationPath`, а каталог приложение не
+создаёт. Если файла нет, запуск идёт на встроенной конфигурации по умолчанию. Существующий невалидный
+файл не подменяется defaults: запуск завершается явным отказом и ненулевым кодом выхода.
 
-```json
-{
-  "schemaVersion": 1,
-  "diagnostics": {
-    "minimumLevel": "Information"
-  }
-}
-```
-
-Существующий невалидный файл не подменяется defaults: запуск завершается явным отказом и ненулевым
-кодом выхода. Схема, правила загрузки и коды отказа описаны в
-[application-configuration.md](../.codex/context/application-configuration.md) и
-[application-failures.md](../.codex/context/application-failures.md).
+Путь файла и схема v1 принадлежат
+[application-configuration.md](../.codex/context/application-configuration.md), коды отказа и коды
+выхода процесса — [application-failures.md](../.codex/context/application-failures.md).
 
 Что видно при запуске:
 

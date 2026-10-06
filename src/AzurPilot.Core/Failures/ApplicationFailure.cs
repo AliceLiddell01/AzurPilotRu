@@ -30,7 +30,7 @@ namespace AzurPilot.Core.Failures;
 /// </remarks>
 public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
 {
-    /// <summary>Код отказа: конфигурация отсутствует, повреждена или не читается.</summary>
+    /// <summary>Код отказа: существующий файл конфигурации не читается или не соответствует схеме v1.</summary>
     public const string ConfigurationInvalid = "configuration_invalid";
 
     /// <summary>Код отказа: версия схемы конфигурации не поддерживается этой сборкой.</summary>

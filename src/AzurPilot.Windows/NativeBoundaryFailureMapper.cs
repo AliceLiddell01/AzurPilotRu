@@ -107,6 +107,31 @@ public static class NativeBoundaryFailureMapper
         };
     }
 
+    /// <summary>
+    /// Проецирует несовместимость native boundary в application-level отказ.
+    /// </summary>
+    /// <remarks>
+    /// Второй вход той же проекции: контракт границы может быть не подтверждён значением, а не
+    /// исключением — проверка совместимости сообщает причину данными. Код отказа выбирает эта проекция,
+    /// поэтому application host не решает его повторно и не собирает отказ вручную.
+    /// </remarks>
+    /// <param name="reason">Причина несовместимости, полученная из проверки контракта границы.</param>
+    /// <returns>
+    /// Отказ с кодом <see cref="ApplicationFailure.NativeIncompatible"/>: повтор без пересборки бесполезен.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="reason"/> пуст или состоит из пробелов.</exception>
+    public static ApplicationFailure MapIncompatibility(string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        return new ApplicationFailure
+        {
+            Code = ApplicationFailure.NativeIncompatible,
+            Message = reason,
+            IsRetryable = false,
+        };
+    }
+
     /// <summary>Собирает ограниченный набор structured details отказа.</summary>
     /// <param name="exception">Исходное исключение границы.</param>
     /// <param name="includeLibrary">Добавлять ли имя native библиотеки.</param>

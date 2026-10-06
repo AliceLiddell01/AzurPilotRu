@@ -67,6 +67,22 @@ public sealed class NativeBoundaryFailureMapperTests
             .Map(new InvalidOperationException("Непредвиденное состояние платформенной границы.")).Code);
     }
 
+    [Fact(DisplayName = "Несовместимость границы, подтверждённая значением, проецируется тем же маппером")]
+    public void IncompatibilityValueMapsToNativeIncompatible()
+    {
+        // Второй вход проекции: проверка контракта сообщает несовместимость данными, а не исключением.
+        const string reason = "Native библиотека не подтвердила capability: imgcodecs.";
+
+        ApplicationFailure failure = NativeBoundaryFailureMapper.MapIncompatibility(reason);
+
+        Assert.Equal(ApplicationFailure.NativeIncompatible, failure.Code);
+        Assert.False(failure.IsRetryable);
+        Assert.Equal(reason, failure.Message);
+
+        // Причина несовместимости не заменяется догадкой: пустая причина — ошибка вызывающей стороны.
+        _ = Assert.Throws<ArgumentException>(() => NativeBoundaryFailureMapper.MapIncompatibility("  "));
+    }
+
     [Fact(DisplayName = "Код возврата native стороны попадает в details как отдельное значение")]
     public void NativeStatusCodeIsPreservedInDetails()
     {
