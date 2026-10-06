@@ -41,3 +41,5 @@
 | .NET SDK version и roll-forward policy | `global.json` |
 | Версии C# code-style правил | `.editorconfig` |
 | Git/GitHub lifecycle текущей задачи: branch, staging, commit, push, проверка remote SHA, PR body, Draft/Ready, merge, конфликты и cleanup | `.agents/skills/azurpilot-git-workflow/SKILL.md` |
+| Явно запрошенный CodeRabbit review cycle: CLI discovery, invocation, completion, triage findings, итерации, clean marker commit, rate limit и CodeRabbit-specific данные PR | `.agents/skills/azurpilot-coderabbit-review/SKILL.md` |
+| Repository configuration CodeRabbit: language/profile, path instructions, tools, auto-review, knowledge base и provider settings | `.coderabbit.yaml` |

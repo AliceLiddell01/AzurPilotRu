@@ -1,0 +1,250 @@
+# yaml-language-server: $schema=https://www.coderabbit.ai/integrations/schema.v2.json
+language: ru-RU
+
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary_instructions: >-
+    Суммируй изменения по фактическим архитектурным областям AzurPilotRu: managed
+    .NET/C# boundaries, Windows adapters и interop, native C++/OpenCV boundary,
+    CMake/MSBuild и manifests зависимостей, тесты, CI и agent infrastructure.
+    Объясняй, что изменено, зачем и какой наблюдаемый эффект это имеет. Если
+    задача или scope заданы в PR, issue либо репозиторном контексте, сверяй diff
+    именно с ними. Не придумывай отсутствующие требования и не выдавай
+    предположение за факт. Отдельно отмечай нарушение архитектурных boundaries,
+    C ABI, единственного владельца version/config values, machine-specific paths,
+    случайное расширение foundation/product scope и дублирование build logic.
+  high_level_summary_in_walkthrough: true
+  review_details: true
+  fail_commit_status: false
+  suggested_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  enable_prompt_for_ai_agents: true
+
+  path_instructions:
+    - path: "**/*"
+      instructions: >-
+        Сначала сверяй AGENTS.md и применимые документы из .codex/context с
+        фактическим diff. Репозиторные owners и контракты имеют приоритет над
+        общими рекомендациями. Ищи конкретные дефекты корректности, архитектуры,
+        безопасности, целостности состояния, обработки ошибок, сопровождаемости,
+        регрессий и тестового покрытия. Не предлагай несвязанные улучшения или
+        архитектурную переделку ради вкуса. Перед замечанием проверяй соседний
+        код, callers/callees, tests, manifests и существующего владельца
+        поведения. Не называй hardcode любой literal: покажи, почему значение
+        должно иметь другого владельца. При недостатке evidence явно указывай
+        неопределённость вместо выдуманного дефекта.
+
+    - path: "src/AzurPilot.Core/**/*.cs"
+      instructions: >-
+        AzurPilot.Core владеет доменными и application-контрактами, независимыми
+        от Windows. Флагай прямые зависимости на Win32, P/Invoke, OpenCV,
+        AzurPilot.Windows, AzurPilot.App, filesystem/process infrastructure и
+        другие platform-specific детали. Не предлагай новую abstraction без
+        реальной границы ответственности.
+
+    - path: "src/AzurPilot.Windows/**/*.cs"
+      instructions: >-
+        AzurPilot.Windows содержит Windows-specific adapters и managed сторону
+        native interop. Проверяй направление зависимостей Windows -> Core,
+        отсутствие зависимости на App, корректность source-generated
+        LibraryImport, marshaling и lifetime на C ABI, явные failure modes и
+        отсутствие второго source of truth для ABI/runtime staging. Форма C ABI
+        принадлежит native/include/azurpilot_native_abi.h и не должна
+        переопределяться независимо в managed коде.
+
+    - path: "src/AzurPilot.App/**/*.cs"
+      instructions: >-
+        AzurPilot.App является composition root и будущей host/presentation
+        boundary. Проверяй направление App -> Windows -> Core и не допускай
+        переноса repository tooling, build/repair/update logic или
+        platform/native реализации в App без продуктовой причины.
+
+    - path: "native/**/*.cpp"
+      instructions: >-
+        Native boundary является отдельной CMake DLL на C++ с OpenCV и узким C
+        ABI. Проверяй отсутствие C++ exceptions, STL типов, cv::Mat и владеющих
+        указателей на ABI boundary, корректность буферов, размеров, кодов возврата
+        и повторных вызовов. Native код не должен зависеть от managed проектов или
+        тестовой инфраструктуры. Не вводи фундаментальный размер кадра 1280x720.
+
+    - path: "native/**/*.h"
+      instructions: >-
+        Заголовки native boundary должны сохранять ownership и ABI contracts.
+        Для native/include/azurpilot_native_abi.h особенно проверяй бинарную
+        совместимость структуры, exports, version/capability bits, required_size
+        semantics и запрет C++ типов на C ABI. Изменение формы ABI требует
+        осознанной версии контракта и согласованного managed consumer.
+
+    - path: "native/CMakeLists.txt"
+      instructions: >-
+        CMake владеет native build graph, минимальной версией CMake и
+        compiler/toolset floor. Не переносить build orchestration в PowerShell
+        или вторую параллельную систему. Проверяй W4/WX, x64/Windows contract,
+        CTest и отсутствие machine-specific absolute paths.
+
+    - path: "native/CMakePresets.json"
+      instructions: >-
+        Presets являются каноническим workflow native configure/build/test.
+        Проверяй согласованность Release/Debug, отсутствие абсолютных путей
+        конкретной машины и отсутствие дублирующей build logic вне CMake.
+
+    - path: "native/cmake/**"
+      instructions: >-
+        Проверяй acquisition OpenCV, SHA256/layout validation, cache behavior и
+        staging runtime. Полученные third-party binaries должны оставаться вне
+        source tree, а ошибки dependency/runtime staging должны быть fail-closed.
+
+    - path: "native/opencv.json"
+      instructions: >-
+        Это единственный owner версии, URL, SHA256 и layout OpenCV. Флагай
+        рассинхронизацию version/URL/checksum/layout, ручное дублирование этих
+        значений и изменение без согласования с acquisition logic и Renovate.
+
+    - path: "Directory.Build.*"
+      instructions: >-
+        Проверяй единые managed compiler/analyzer/build contracts и staging native
+        runtime. MSBuild не должен становиться второй реализацией native build.
+        Fail-closed проверка обязательных native DLL должна сохраняться.
+
+    - path: "Directory.Packages.props"
+      instructions: >-
+        Это owner версий NuGet packages. Флагай дублирование package versions в
+        csproj, необъяснимое изменение версий и рассинхронизацию с lock files.
+
+    - path: "**/packages.lock.json"
+      instructions: >-
+        Lock files должны меняться только как воспроизводимое следствие осознанного
+        изменения package graph. Флагай необъяснимый churn и рассинхронизацию с
+        Directory.Packages.props или проектами.
+
+    - path: "tests/**/*.cs"
+      instructions: >-
+        Тесты должны доказывать продуктовые и repository contracts, а не временный
+        snapshot разработки. Для interop положительные сценарии обязаны
+        использовать реальную AzurPilot.Native.dll; негативные сценарии должны
+        действительно изолировать отсутствие DLL, повреждение и ABI mismatch.
+        Не ослабляй assertions ради нового кода и не закрепляй номера PR, SHA,
+        этапов или пути конкретной машины.
+
+    - path: ".github/workflows/**"
+      instructions: >-
+        CI должен напрямую вызывать канонические CMake/.NET команды владельцев, а
+        не содержать вторую реализацию build logic. Проверяй locked restore,
+        warnings-as-errors, native CTest, managed tests, корректность cache и
+        отсутствие секретов либо machine-specific paths.
+
+    - path: ".codex/context/**"
+      instructions: >-
+        Контекст хранит долговременные owners и контракты. Не закрепляй в нём
+        текущий PR, SHA, временный план, результат одной проверки или review.
+        Правило должно иметь одного владельца; остальные документы ссылаются на
+        него вместо копирования.
+
+    - path: "AGENTS.md"
+      instructions: >-
+        AGENTS.md является коротким глобальным контрактом и router. Не превращай
+        его в энциклопедию и не дублируй procedures skills или подробные
+        .codex/context contracts. Маршруты обязаны указывать фактических owners.
+
+    - path: ".agents/skills/**"
+      instructions: >-
+        Skill должен иметь узкую реальную ответственность, не дублировать owners
+        из AGENTS.md и .codex/context и не создавать инфраструктуру на будущее.
+        Git/GitHub lifecycle принадлежит azurpilot-git-workflow, а процедура
+        CodeRabbit review — azurpilot-coderabbit-review. Изменение review skill
+        само по себе не является разрешением запускать провайдера.
+
+    - path: ".coderabbit.yaml"
+      instructions: >-
+        Конфигурация CodeRabbit должна соответствовать актуальной schema v2 и
+        фактической архитектуре AzurPilotRu. Не возвращай Anki/CrowdAnki/Rust
+        инструкции, не включай auto-review без отдельного решения и не добавляй
+        несуществующие анализаторы. Provider configuration не должна дублировать
+        полный repository contract.
+
+  tools:
+    clang:
+      enabled: true
+    cppcheck:
+      enabled: true
+    actionlint:
+      enabled: true
+    zizmor:
+      enabled: true
+    yamllint:
+      enabled: true
+    gitleaks:
+      enabled: true
+
+  auto_review:
+    enabled: false
+    auto_incremental_review: false
+    auto_pause_after_reviewed_commits: 0
+
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: "off"
+    issue_assessment:
+      mode: "off"
+
+chat:
+  art: false
+  auto_reply: false
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - files: AGENTS.md
+        applyTo: "**/*"
+      - files: .codex/context/architecture.md
+        applyTo: "src/**/*,native/**/*,tests/**/*,.github/workflows/**/*,Directory.Build.*,Directory.Packages.props,global.json"
+      - files: .codex/context/build-contracts.md
+        applyTo: "native/**/*,.github/workflows/**/*,Directory.Packages.props,global.json,renovate.json"
+      - files: .codex/context/verification.md
+        applyTo: "src/**/*,native/**/*,tests/**/*,.github/workflows/**/*"
+      - files: .codex/context/language.md
+        applyTo: "**/*"
+      - files: native/include/azurpilot_native_abi.h
+        applyTo: "native/**/*,src/AzurPilot.Windows/**/*,tests/**/*"
+      - files: .agents/skills/azurpilot-git-workflow/SKILL.md
+        applyTo: ".agents/skills/**/*"
+      - files: .agents/skills/azurpilot-coderabbit-review/SKILL.md
+        applyTo: ".agents/skills/**/*,.coderabbit.yaml"
+  learnings:
+    scope: local
+    approval_delay: 30
+  issues:
+    scope: local
+  jira:
+    usage: disabled
+  linear:
+    usage: disabled
+  pull_requests:
+    scope: local
+  mcp:
+    usage: disabled
+
+issue_enrichment:
+  planning:
+    enabled: false
+    auto_planning:
+      enabled: false

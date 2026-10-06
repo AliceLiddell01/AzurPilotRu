@@ -37,6 +37,9 @@ vision-пайплайн, конфигурация приложения, product 
   branch разработка не ведётся. Git/GitHub lifecycle принадлежит
   [`.agents/skills/azurpilot-git-workflow/`](.agents/skills/azurpilot-git-workflow/): локальный
   commit не завершает публикацию, а merge выполняется только по отдельной текущей явной команде.
+- CodeRabbit review запускается только по явному положительному запросу пользователя; его процедура
+  принадлежит [`.agents/skills/azurpilot-coderabbit-review/`](.agents/skills/azurpilot-coderabbit-review/).
+  Изменение skill или `.coderabbit.yaml` само по себе не разрешает запуск провайдера.
 
 ## Маршрутизация
 
@@ -48,6 +51,7 @@ vision-пайплайн, конфигурация приложения, product 
 | Что именно доказывают проверки и как падает verification | [.codex/context/verification.md](.codex/context/verification.md) |
 | Язык комментариев, диагностики и документации | [.codex/context/language.md](.codex/context/language.md) |
 | Git/GitHub lifecycle: ветка, staging, commit, push, remote postcondition, PR, Draft/Ready, merge и cleanup | [`.agents/skills/azurpilot-git-workflow/`](.agents/skills/azurpilot-git-workflow/) |
+| Явно запрошенный цикл CodeRabbit review: запуск CLI, triage findings, исправления, итерации и rate limit | [`.agents/skills/azurpilot-coderabbit-review/`](.agents/skills/azurpilot-coderabbit-review/) |
 | Форма C ABI v1: структура, экспорты, коды возврата, семантика буферов | [native/include/azurpilot_native_abi.h](native/include/azurpilot_native_abi.h) |
 | Канонические команды и рабочий путь разработки | [README.md](README.md), правила и источники — [.codex/context/architecture.md](.codex/context/architecture.md) |
 | Установка prerequisites, сборка, тесты, типовые проблемы | [docs/getting-started.md](docs/getting-started.md) |
