@@ -9,6 +9,7 @@
   ],
   "ignoreUnstable": true,
   "respectLatest": true,
+  "separateMajorMinor": true,
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": [
@@ -17,21 +18,10 @@
   },
   "packageRules": [
     {
-      "description": "Предлагать stable major, minor и patch обновления; предрелизы отсекаются глобальными ignoreUnstable и respectLatest.",
-      "matchUpdateTypes": [
-        "major",
-        "minor",
-        "patch"
-      ],
-      "ignoreUnstable": true,
-      "respectLatest": true
-    },
-    {
-      "description": "Stable major-обновления рассматриваются наравне с minor и patch и идут отдельной ветвью.",
+      "description": "Помечать stable major-обновления отдельной меткой; major и minor разделяются глобальным separateMajorMinor.",
       "matchUpdateTypes": [
         "major"
       ],
-      "separateMajorMinor": true,
       "labels": [
         "dependencies",
         "major-update"
@@ -70,12 +60,12 @@
         "/^native/opencv\\.json$/"
       ],
       "matchStrings": [
-        "\"version\"\\s*:\\s*\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"\\s*,\\s*\"url\"\\s*:\\s*\"(?<urlPrefix>https://github\\.com/opencv/opencv/releases/download/)[^\"]*\"\\s*,\\s*\"sha256\"\\s*:\\s*\"(?<sha256>[0-9A-Fa-f]+)\""
+        "\\\"version\\\"\\s*:\\s*\\\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\\\"\\s*,\\s*\\\"url\\\"\\s*:\\s*\\\"(?<urlPrefix>https://github\\.com/opencv/opencv/releases/download/)[^\\\"]*\\\"\\s*,\\s*\\\"sha256\\\"\\s*:\\s*\\\"(?<sha256>[0-9A-Fa-f]+)\\\""
       ],
       "depNameTemplate": "opencv/opencv",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver-coerced",
-      "autoReplaceStringTemplate": "\"version\": \"{{{newValue}}}\",\n  \"url\": \"{{{urlPrefix}}}{{{newValue}}}/opencv-{{{newValue}}}-windows.exe\",\n  \"sha256\": \"{{{sha256}}}\""
+      "autoReplaceStringTemplate": "\\\"version\\\": \\\"{{{newValue}}}\\\",\\n  \\\"url\\\": \\\"{{{urlPrefix}}}{{{newValue}}}/opencv-{{{newValue}}}-windows.exe\\\",\\n  \\\"sha256\\\": \\\"{{{sha256}}}\\\""
     }
   ]
 }
