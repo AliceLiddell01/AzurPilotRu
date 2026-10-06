@@ -23,7 +23,7 @@ namespace AzurPilot.App;
 /// и не останавливает экземпляр.
 /// </para>
 /// <para>
-/// Текстовые значения секции приводятся к bounded односторонней форме владельцем ограничения
+/// Текстовые значения секции приводятся к bounded однострочной форме владельцем ограничения
 /// <see cref="MuMuBoundedText"/>: отображаемое имя и evidence приходят извне, поэтому переносы строк и
 /// произвольная длина до секции не доходят.
 /// </para>
@@ -72,6 +72,11 @@ public sealed record AzurPilotMuMuDiagnostics(
     /// проецируется в application-отказ той же production-проекцией, что и остальные ошибки
     /// платформенной границы, поэтому нарушение контракта не превращается в отказ startup.
     /// </para>
+    /// <para>
+    /// Статус control surface описывает последний доказанный шаг и не противоречит отказу: когда отказ
+    /// наблюдения сам сообщает о нераспознанной форме ответа, статус выводится из кода этого отказа, а не
+    /// остаётся «поддержана».
+    /// </para>
     /// </remarks>
     /// <param name="host">Host-side поверхность MuMu из DI.</param>
     /// <param name="lifecycle">Orchestration MuMu из DI: владелец семантики выбора экземпляра.</param>
@@ -118,10 +123,16 @@ public sealed record AzurPilotMuMuDiagnostics(
             ApplicationResult<MuMuInstanceState> observation =
                 host.ObserveInstanceState(installation, instance.Id);
 
+            // Статус не противоречит отказу наблюдения: код, которым host сообщает о нераспознанной форме
+            // ответа control surface, не может стоять в одном snapshot рядом со статусом «поддержана».
+            string controlSurfaceStatus = observation.IsSuccess
+                ? AzurPilotMuMuControlSurfaceStatus.Supported
+                : AzurPilotMuMuControlSurfaceStatus.ForObservationFailure(observation.FailureInfo!.Code);
+
             return new AzurPilotMuMuDiagnostics(
                 IsInstallationDiscovered: true,
                 Version: MuMuBoundedText.Bounded(installation.Version),
-                ControlSurfaceStatus: AzurPilotMuMuControlSurfaceStatus.Supported,
+                ControlSurfaceStatus: controlSurfaceStatus,
                 ConfiguredInstance: configuredInstance,
                 SelectedInstanceId: instance.Id.ToString(),
                 SelectedInstanceDisplayName: MuMuBoundedText.Bounded(instance.DisplayName),
@@ -270,6 +281,30 @@ internal static class AzurPilotMuMuControlSurfaceStatus
     {
         ApplicationFailure.MuMuInstanceNotFound => Supported,
         ApplicationFailure.MuMuInstanceAmbiguous => Supported,
+        ApplicationFailure.MuMuControlSurfaceUnsupported => Unsupported,
+        _ => Unknown,
+    };
+
+    /// <summary>Определяет статус по отказу наблюдения состояния выбранного экземпляра.</summary>
+    /// <remarks>
+    /// <para>
+    /// Отказ наблюдения не оставляет статус <see cref="Supported"/> без доказательства: он выводится из
+    /// кода отказа, поэтому один snapshot не может одновременно утверждать «форма control surface
+    /// поддержана» и «форма control surface не распознана». Код
+    /// <see cref="ApplicationFailure.MuMuControlSurfaceUnsupported"/> покрывает и нераспознанный ответ
+    /// на сведения об экземпляре, поэтому он даёт <see cref="Unsupported"/>.
+    /// </para>
+    /// <para>
+    /// Отказ, доказывающий, что surface ответила (запрошенного экземпляра нет), сохраняет
+    /// <see cref="Supported"/>: не разрешён выбранный экземпляр, а не поддержка формы. Любой иной код
+    /// даёт <see cref="Unknown"/>: поддержку формы он не доказывает и не опровергает.
+    /// </para>
+    /// </remarks>
+    /// <param name="failureCode">Стабильный код отказа наблюдения состояния.</param>
+    /// <returns>Bounded статус control surface.</returns>
+    internal static string ForObservationFailure(string failureCode) => failureCode switch
+    {
+        ApplicationFailure.MuMuInstanceNotFound => Supported,
         ApplicationFailure.MuMuControlSurfaceUnsupported => Unsupported,
         _ => Unknown,
     };

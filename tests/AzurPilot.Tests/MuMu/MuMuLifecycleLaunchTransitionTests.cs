@@ -2,6 +2,7 @@ using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using Microsoft.Extensions.Logging;
 using Xunit;
+using static AzurPilot.Tests.MuMu.MuMuLifecycleTestContext;
 
 namespace AzurPilot.Tests.MuMu;
 
@@ -23,12 +24,6 @@ namespace AzurPilot.Tests.MuMu;
 /// </remarks>
 public sealed class MuMuLifecycleLaunchTransitionTests
 {
-    /// <summary>EventId события «launch без эффекта» в <c>MuMuLog</c>.</summary>
-    private const int LaunchEffectMissingEventId = 2008;
-
-    /// <summary>EventId события «повторный launch» в <c>MuMuLog</c>.</summary>
-    private const int LaunchRetriedEventId = 2009;
-
     [Theory(DisplayName = "Единый переход: один сценарий гонки одинаково работает для всех трёх путей")]
     [InlineData(MuMuLifecycleOperation.Start, MuMuLifecycleState.Stopped)]
     [InlineData(MuMuLifecycleOperation.Restart, MuMuLifecycleState.Stopped)]
@@ -332,12 +327,6 @@ public sealed class MuMuLifecycleLaunchTransitionTests
         => initialState == MuMuLifecycleState.Running
             ? "mutations=stop(exit=0),start(exit=0),start(exit=0)"
             : "mutations=start(exit=0),start(exit=0)";
-
-    /// <summary>Сколько наблюдений вмещает окно эффекта при интервале опроса владельца чисел времени.</summary>
-    /// <param name="context">Собранный orchestration с числами времени.</param>
-    /// <returns>Число наблюдений окна эффекта.</returns>
-    private static int EffectWindowObservations(MuMuLifecycleTestContext context)
-        => (int)(context.Timings.LaunchEffectWindow / context.Timings.PollInterval) + 1;
 
     /// <summary>
     /// Скриптованный host провайдерской гонки: launch с заданным номером действительно поднимает экземпляр,

@@ -177,9 +177,18 @@ internal sealed class MuMuAcceptanceRunner
         MuMuCapabilityReport capabilityReport = capability.Value!;
         if (!capabilityReport.IsControlSurfaceSupported)
         {
-            ApplicationFailure unsupported = capabilityReport.UnsupportedReason
-                ?? LocalFailure("acceptance_control_surface_unsupported", "Форма control surface не подтверждена.");
-            return Fail(StepControlSurface, "Support/control surface", unsupported);
+            // Отказ production-кода сохраняется как есть; когда причина не сообщена, отказ остаётся
+            // локальным кодом приёмки и не выдаётся за application-отказ приложения.
+            if (capabilityReport.UnsupportedReason is ApplicationFailure reason)
+            {
+                return Fail(StepControlSurface, "Support/control surface", reason);
+            }
+
+            return Fail(
+                StepControlSurface,
+                "Support/control surface",
+                "acceptance_control_surface_unsupported",
+                "Форма control surface не подтверждена.");
         }
 
         if (!_fileSystemProbe.FileExists(installation.ControlExecutablePath))
@@ -1477,13 +1486,6 @@ internal sealed class MuMuAcceptanceRunner
         _report.Record(number, name, false, "отказ " + description);
         return AcceptanceResult.NotProven(code, description);
     }
-
-    /// <summary>Создаёт локальный отказ приёмки для сообщения, полученного от production-кода.</summary>
-    /// <param name="code">Локальный код отказа приёмки.</param>
-    /// <param name="message">Описание отказа.</param>
-    /// <returns>Отказ приёмки.</returns>
-    private static ApplicationFailure LocalFailure(string code, string message)
-        => new() { Code = code, Message = message };
 
     /// <summary>Возвращает русское имя host-side состояния для отчёта.</summary>
     /// <param name="state">Host-side состояние экземпляра.</param>

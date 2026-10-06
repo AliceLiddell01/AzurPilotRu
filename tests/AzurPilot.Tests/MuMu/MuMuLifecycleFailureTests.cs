@@ -1,5 +1,6 @@
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
+using AzurPilot.Windows.MuMu;
 using Xunit;
 
 namespace AzurPilot.Tests.MuMu;
@@ -246,6 +247,35 @@ public sealed class MuMuLifecycleFailureTests
                 ApplicationFailure.MuMuInstanceNotFound,
             ],
             observedCodes);
+    }
+
+    [Fact(DisplayName = "Отмена, замеченная границей во время mutation, сообщается фазой mutation")]
+    public async Task CancellationObservedByHostDuringMutationKeepsMutationPhase()
+    {
+        MuMuLifecycleTestContext context = new();
+        context.Host.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Stopped);
+        // Отмена пришла из границы запуска процесса: host возвращает её как ожидаемый отказ, а не как
+        // исключение, поэтому orchestration обязана привести её к тому же контракту отмены, что и отмена,
+        // проверенная до mutation.
+        context.Host.MutationHandler = _ => ApplicationResult<MuMuLifecycleCommandOutcome>.Failure(
+            MuMuPlatformFailureMapper.ForCancellation());
+
+        ApplicationResult<MuMuLifecycleOutcome> result = await context.Service.StartAsync(
+            MuMuLifecycleTestContext.Installation,
+            MuMuLifecycleTestContext.Instance("1"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        ApplicationFailure failure = result.FailureInfo!;
+        Assert.Equal(ApplicationFailure.OperationCancelled, failure.Code);
+        Assert.Equal("mutation", failure.Details!["phase"]);
+        Assert.Equal("start", failure.Details!["operation"]);
+        Assert.Equal("mumu:1", failure.Details!["instance_id"]);
+        Assert.Equal("stopped", failure.Details!["state"]);
+
+        // Отмена не превращается в повтор mutation и не оставляет аренду координации.
+        Assert.Equal(1, context.Host.MutationCount);
+        Assert.Equal(0, context.Gate.TrackedInstanceCount);
     }
 
     [Fact(DisplayName = "Отсутствующие аргументы lifecycle-операции — ошибка программирования")]

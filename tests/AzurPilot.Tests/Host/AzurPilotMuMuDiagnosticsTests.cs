@@ -297,6 +297,27 @@ public sealed class AzurPilotMuMuDiagnosticsTests
         Assert.Equal(0, host.MutationCount);
     }
 
+    [Fact(DisplayName = "Отказ наблюдения о нераспознанной форме не оставляет статус «поддержана»")]
+    public void UnrecognizedSurfaceObservationFailureIsNotReportedAsSupported()
+    {
+        TestMuMuHost host = new()
+        {
+            InstallationResult = ApplicationResult<MuMuInstallation>.Success(Installation()),
+            InstancesResult = ApplicationResult<IReadOnlyList<MuMuInstance>>.Success([Instance("1", "Экземпляр")]),
+            ObservationResult = ApplicationResult<MuMuInstanceState>.Failure(
+                Failure(ApplicationFailure.MuMuControlSurfaceUnsupported)),
+        };
+
+        AzurPilotMuMuDiagnostics muMu = Capture(CurrentSchemaConfiguration("auto"), host).MuMu;
+
+        // Один snapshot не утверждает одновременно «форма control surface поддержана» и «форма control
+        // surface не распознана»: статус выводится из кода отказа наблюдения.
+        Assert.Equal(UnsupportedStatus, muMu.ControlSurfaceStatus);
+        Assert.Equal(ApplicationFailure.MuMuControlSurfaceUnsupported, muMu.Failure!.Code);
+        Assert.Null(muMu.LifecycleState);
+        Assert.Equal(0, host.MutationCount);
+    }
+
     [Fact(DisplayName = "Непредвиденное нарушение контракта host-ом не выходит наружу и не отклоняет запуск")]
     public void UnexpectedHostFailureStaysInsideDiagnostics()
     {

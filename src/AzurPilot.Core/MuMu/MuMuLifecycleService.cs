@@ -37,12 +37,13 @@ namespace AzurPilot.Core.MuMu;
 /// доказанного postcondition, а разные экземпляры не блокируют друг друга.
 /// </para>
 /// <para>
-/// Отказы: любой ожидаемый отказ, возвращённый host-ом, пробрасывается без изменений;
+/// Отказы: любой ожидаемый MuMu-отказ, возвращённый host-ом, пробрасывается без изменений;
 /// <see cref="ApplicationFailure.MuMuLifecycleTimeout"/> синтезируется только при достигнутом deadline
 /// без нужного состояния, <see cref="ApplicationFailure.MuMuLifecyclePostconditionNotMet"/> — только
 /// когда выполненная mutation сообщила отказ своим кодом выхода, а следующее авторитетное наблюдение не
 /// показало нужное состояние. Отмена возвращает существующий
-/// <see cref="ApplicationFailure.OperationCancelled"/>, а <see cref="ApplicationFailure.InternalError"/>
+/// <see cref="ApplicationFailure.OperationCancelled"/> с фазой в details независимо от того, заметила её
+/// orchestration сама или граница при выполнении mutation, а <see cref="ApplicationFailure.InternalError"/>
 /// не используется ни для одного ожидаемого MuMu-отказа.
 /// </para>
 /// </remarks>
@@ -398,7 +399,13 @@ public sealed class MuMuLifecycleService
         }
 
         ApplicationResult<MuMuLifecycleCommandOutcome> mutation = RequestMutation(
-            installation, instanceId, MuMuLifecycleMutation.Stop, cancellationToken);
+            installation,
+            instanceId,
+            MuMuLifecycleMutation.Stop,
+            operation,
+            initial.State,
+            started,
+            cancellationToken);
         if (mutation.IsFailure)
         {
             return PropagateHostFailure(
@@ -456,7 +463,13 @@ public sealed class MuMuLifecycleService
         }
 
         ApplicationResult<MuMuLifecycleCommandOutcome> stop = RequestMutation(
-            installation, instanceId, MuMuLifecycleMutation.Stop, cancellationToken);
+            installation,
+            instanceId,
+            MuMuLifecycleMutation.Stop,
+            operation,
+            initial.State,
+            started,
+            cancellationToken);
         if (stop.IsFailure)
         {
             return PropagateHostFailure(
@@ -554,7 +567,13 @@ public sealed class MuMuLifecycleService
         }
 
         ApplicationResult<MuMuLifecycleCommandOutcome> launch = RequestMutation(
-            installation, instanceId, MuMuLifecycleMutation.Start, cancellationToken);
+            installation,
+            instanceId,
+            MuMuLifecycleMutation.Start,
+            operation,
+            observedState,
+            started,
+            cancellationToken);
         if (launch.IsFailure)
         {
             return PropagateHostFailure(
@@ -603,7 +622,13 @@ public sealed class MuMuLifecycleService
                 // Окно исчерпано без признака начала запуска, и состояние подтверждено заново: разрешён
                 // ровно один повтор launch в той же аренде mutation gate. Второго повтора нет.
                 ApplicationResult<MuMuLifecycleCommandOutcome> retry = RequestMutation(
-                    installation, instanceId, MuMuLifecycleMutation.Start, cancellationToken);
+                    installation,
+                    instanceId,
+                    MuMuLifecycleMutation.Start,
+                    operation,
+                    knownState,
+                    started,
+                    cancellationToken);
                 if (retry.IsFailure)
                 {
                     return PropagateHostFailure(
@@ -971,14 +996,49 @@ public sealed class MuMuLifecycleService
             (long)_timeProvider.GetElapsedTime(started).TotalMilliseconds);
     }
 
+    /// <summary>Выполняет одну mutation через host-side границу.</summary>
+    /// <remarks>
+    /// Adapter выполняет ровно одну mutation на запрос: единственный повтор launch правила перехода —
+    /// решение orchestration, а не повторная попытка границы. Отмена, замеченная границей во время
+    /// mutation, приводится к контракту отмены Core: код отмены остаётся существующим
+    /// <see cref="ApplicationFailure.OperationCancelled"/>, а фаза mutation, операция, identity экземпляра,
+    /// наблюдённое состояние и затраченное время добавляются в details так же, как при отмене,
+    /// проверенной до mutation. Остальные ожидаемые отказы host-а пробрасываются без изменений.
+    /// </remarks>
+    /// <param name="installation">Обнаруженная установка.</param>
+    /// <param name="instanceId">Identity запрошенного экземпляра.</param>
+    /// <param name="mutation">Запрошенный host-примитив mutation.</param>
+    /// <param name="operation">Операция, которой соответствует mutation.</param>
+    /// <param name="state">Наблюдённое состояние на момент запроса mutation.</param>
+    /// <param name="started">Timestamp начала операции: от него измеряется elapsed.</param>
+    /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <returns>Результат mutation либо ожидаемый отказ границы.</returns>
     private ApplicationResult<MuMuLifecycleCommandOutcome> RequestMutation(
         MuMuInstallation installation,
         MuMuInstanceId instanceId,
         MuMuLifecycleMutation mutation,
+        MuMuLifecycleOperation operation,
+        MuMuLifecycleState state,
+        long started,
         CancellationToken cancellationToken)
     {
         ApplicationResult<MuMuLifecycleCommandOutcome> result = _host.RequestMutation(
             installation, instanceId, mutation, cancellationToken);
+
+        if (result.IsFailure && result.FailureInfo!.Code == ApplicationFailure.OperationCancelled)
+        {
+            // Отмена — контракт Core, а не MuMu-код: отмена, замеченная границей, получает ту же форму, что
+            // и отмена, проверенная перед mutation, поэтому вызывающая сторона различает фазу одинаково.
+            // Запись об отказе делает вызывающая сторона через PropagateHostFailure: дубля здесь нет.
+            return ApplicationResult<MuMuLifecycleCommandOutcome>.Failure(
+                MuMuFailures.Cancelled(
+                    operation,
+                    instanceId,
+                    state,
+                    _timeProvider.GetElapsedTime(started),
+                    MuMuFailures.MutationPhase));
+        }
+
         if (result.IsSuccess)
         {
             if (_logger.IsEnabled(LogLevel.Debug))

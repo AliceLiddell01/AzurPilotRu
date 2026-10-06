@@ -3,6 +3,7 @@ using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using Microsoft.Extensions.Logging;
 using Xunit;
+using static AzurPilot.Tests.MuMu.MuMuLifecycleTestContext;
 
 namespace AzurPilot.Tests.MuMu;
 
@@ -20,12 +21,6 @@ namespace AzurPilot.Tests.MuMu;
 /// </remarks>
 public sealed class MuMuLifecycleRestartRetryTests
 {
-    /// <summary>EventId события «launch без эффекта» в <c>MuMuLog</c>.</summary>
-    private const int LaunchEffectMissingEventId = 2008;
-
-    /// <summary>EventId события «повторный launch» в <c>MuMuLog</c>.</summary>
-    private const int LaunchRetriedEventId = 2009;
-
     [Fact(DisplayName = "Признак начала запуска в окне эффекта отменяет повтор launch")]
     public async Task ProvenLaunchEffectDoesNotRetry()
     {
@@ -364,10 +359,4 @@ public sealed class MuMuLifecycleRestartRetryTests
         Assert.Equal(1, context.Host.MutationCount);
         Assert.Equal(0, context.Logger.Records.Count(record => record.Level == LogLevel.Warning));
     }
-
-    /// <summary>Сколько наблюдений вмещает окно эффекта при интервале опроса владельца чисел времени.</summary>
-    /// <param name="context">Собранный orchestration с числами времени.</param>
-    /// <returns>Число наблюдений окна эффекта.</returns>
-    private static int EffectWindowObservations(MuMuLifecycleTestContext context)
-        => (int)(context.Timings.LaunchEffectWindow / context.Timings.PollInterval) + 1;
 }

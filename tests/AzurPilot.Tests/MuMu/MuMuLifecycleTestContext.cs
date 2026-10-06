@@ -12,6 +12,17 @@ namespace AzurPilot.Tests.MuMu;
 /// </remarks>
 internal sealed class MuMuLifecycleTestContext
 {
+    /// <summary>EventId события «launch без эффекта» в <c>MuMuLog</c>.</summary>
+    /// <remarks>
+    /// <c>MuMuLog</c> внутренний для <c>AzurPilot.Core</c> и проверкам не виден, поэтому число события
+    /// живёт здесь одним экземпляром: иначе каждый тест-класс заводил бы свою копию одного и того же
+    /// значения, и они разъехались бы при изменении события.
+    /// </remarks>
+    internal const int LaunchEffectMissingEventId = 2008;
+
+    /// <summary>EventId события «повторный launch» в <c>MuMuLog</c>.</summary>
+    internal const int LaunchRetriedEventId = 2009;
+
     internal MuMuLifecycleTestContext()
     {
         Host = new TestMuMuHost();
@@ -60,4 +71,17 @@ internal sealed class MuMuLifecycleTestContext
         string output = "test-control-output")
         => ApplicationResult<MuMuLifecycleCommandOutcome>.Success(
             new MuMuLifecycleCommandOutcome(exitCode, output));
+
+    /// <summary>Сколько наблюдений вмещает окно эффекта при интервале опроса владельца чисел времени.</summary>
+    /// <remarks>
+    /// Ожидание выводится из чисел времени, а не из литерала: число наблюдений окна одинаково для всех
+    /// проверок единого перехода, поэтому владелец вывода один.
+    /// </remarks>
+    /// <param name="context">Собранный orchestration с числами времени.</param>
+    /// <returns>Число наблюдений окна эффекта.</returns>
+    internal static int EffectWindowObservations(MuMuLifecycleTestContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return (int)(context.Timings.LaunchEffectWindow / context.Timings.PollInterval) + 1;
+    }
 }

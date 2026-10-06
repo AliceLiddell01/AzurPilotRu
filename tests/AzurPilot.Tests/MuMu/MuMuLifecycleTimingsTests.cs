@@ -27,8 +27,10 @@ public sealed class MuMuLifecycleTimingsTests
         Assert.Equal(timings.StopDeadline, timings.DeadlineFor(MuMuLifecycleOperation.Stop));
         Assert.Equal(timings.RestartDeadline, timings.DeadlineFor(MuMuLifecycleOperation.Restart));
 
-        // Deadline restart покрывает обе фазы композиции stop → start.
+        // Deadline restart покрывает обе фазы композиции stop → start, поэтому он не меньше deadline
+        // каждой из этих фаз.
         Assert.True(timings.RestartDeadline >= timings.StopDeadline);
+        Assert.True(timings.RestartDeadline >= timings.StartDeadline);
     }
 
     [Fact(DisplayName = "Окно эффекта заметно меньше deadline и вмещает несколько наблюдений")]

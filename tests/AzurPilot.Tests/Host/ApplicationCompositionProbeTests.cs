@@ -92,6 +92,9 @@ public sealed class ApplicationCompositionProbeTests
     /// <summary>Длина correlation identifier операции.</summary>
     private const int CorrelationIdLength = 32;
 
+    /// <summary>Категория логирования application host: владелец явного correlation property.</summary>
+    private static readonly string ApplicationHostCategory = typeof(AzurPilotHost).Namespace!;
+
     [Fact(DisplayName = "Проба без native runtime сообщает application-level native_unavailable")]
     public void ProbeWithoutNativeRuntimeReportsNativeUnavailable()
     {
@@ -162,11 +165,18 @@ public sealed class ApplicationCompositionProbeTests
                 $"Чужая категория логирования в stderr: {log.Category}."));
 
         // Один correlation identifier связывает все события запуска: MuMu-владельцы несут его scope
-        // записи, application host — ещё и явным structured property.
+        // записи, application host — ещё и явным structured property. Явное свойство обязательно именно
+        // у событий application host, поэтому проверяется и его наличие, а не только совпадение.
         string identifier = Assert.Single(
             run.Logs.Select(log => log.TraceId).OfType<string>().Distinct(StringComparer.Ordinal));
         Assert.Equal(CorrelationIdLength, identifier.Length);
         Assert.All(run.Logs, log => Assert.Equal(identifier, log.TraceId));
+        Assert.Contains(
+            run.Logs,
+            log => string.Equals(log.Category, ApplicationHostCategory, StringComparison.Ordinal));
+        Assert.All(
+            run.Logs.Where(log => string.Equals(log.Category, ApplicationHostCategory, StringComparison.Ordinal)),
+            log => Assert.Equal(identifier, log.CorrelationId));
         Assert.All(
             run.Logs.Where(log => log.CorrelationId is not null),
             log => Assert.Equal(identifier, log.CorrelationId));
