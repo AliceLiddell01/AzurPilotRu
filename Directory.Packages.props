@@ -8,6 +8,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Строгая конфигурация приложения типизирует минимальный уровень логирования стандартным
+         Microsoft.Extensions.Logging.LogLevel, а не собственной копией списка значений. -->
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <!-- Application host приложения: стандартный generic host (Host.CreateEmptyApplicationBuilder),
+         на котором стоит composition root AzurPilot.App. -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Тестовый стек: xunit.v3 (Microsoft.Testing.Platform) + адаптер и SDK тестовой платформы. -->
     <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />

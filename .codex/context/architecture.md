@@ -2,8 +2,11 @@
 
 Владелец: этот файл. Правила ниже имеют единственного владельца — здесь. Владельцы version pins и
 acquisition зависимостей описаны в [build-contracts.md](build-contracts.md) и
-[INDEX.md](INDEX.md), содержание проверок — [verification.md](verification.md), форма C ABI —
-`native/include/azurpilot_native_abi.h`.
+[INDEX.md](INDEX.md), пользовательская конфигурация — в
+[application-configuration.md](application-configuration.md), runtime-логирование и диагностика — в
+[runtime-diagnostics.md](runtime-diagnostics.md), application-level отказы — в
+[application-failures.md](application-failures.md), содержание проверок — [verification.md](verification.md),
+форма C ABI — `native/include/azurpilot_native_abi.h`.
 
 ## Область и платформа
 
@@ -32,7 +35,7 @@ C++ с OpenCV.
 | --- | --- | --- |
 | `AzurPilot.Core` | `src/AzurPilot.Core` | Доменные и application-контракты, логика, независимая от Windows |
 | `AzurPilot.Windows` | `src/AzurPilot.Windows` | Windows-specific adapters/infrastructure, включая managed сторону native interop |
-| `AzurPilot.App` | `src/AzurPilot.App` | Composition root и будущая host/presentation boundary |
+| `AzurPilot.App` | `src/AzurPilot.App` | Composition root и application host: сборка host-а, startup, structured logging, correlation и runtime-диагностика. Командной строки у приложения нет; presentation boundary (REPL, CLI) не реализована |
 | native | `native/` | Отдельная CMake boundary: C++ + OpenCV shared library `AzurPilot.Native.dll` с узким C ABI |
 
 Managed boundaries приложения — ровно три: `AzurPilot.Core`, `AzurPilot.Windows`, `AzurPilot.App`.
@@ -45,15 +48,38 @@ Managed solution — `AzurPilot.slnx` в корне репозитория.
 
 Проекты в `tests/` существуют только для проверок и не поставляются:
 
-- `tests/AzurPilot.Tests` — интеграционные тесты, доказывающие interop boundary.
-- `tests/AzurPilot.NativeAbsenceProbe` — исполняемая проба для негативной проверки: запускается
-  тестом из каталога, где native библиотеки заведомо нет, и доказывает, что production-код interop
-  сообщает об этом исключением. Отдельный процесс нужен потому, что загруженный модуль остаётся
-  доступным до завершения процесса, и отсутствие файла в том же процессе невоспроизводимо.
+- `tests/AzurPilot.Tests` — основной проект проверок: interop boundary, строгая конфигурация,
+  application-level отказы и поведение application host. Часть проверок выполняется на реальном
+  процессе приложения, часть — в процессе самого теста; что именно доказывается, принадлежит
+  [verification.md](verification.md).
+- `tests/AzurPilot.NativeAbsenceProbe` — исполняемая проба, которая запускается тестом отдельным
+  процессом и используется в двух режимах: негативная проверка загрузки native boundary (библиотеки
+  нет или подложена fixture с несовместимым ABI) и application startup через composition root с явно
+  переданным путём конфигурации. Во втором режиме проба сообщает полученный код выхода приложения и
+  стабильный application failure code; её собственный код выхода описывает только корректность
+  прогона, а не результат запуска.
+
+Отдельный процесс нужен обоим режимам по одной причине: загруженный native модуль остаётся доступным
+до завершения процесса, поэтому отсутствие библиотеки в процессе теста невоспроизводимо. Второй режим
+— режим самой пробы, а не пользовательская опция приложения: продукт аргументов запуска не разбирает,
+поэтому startup с заданной конфигурацией и полностью управляемым каталогом прогона вызывается кодом
+composition, а не командной строкой. Пользовательский `%LOCALAPPDATA%\AzurPilot\config.json` при этом
+не читается.
 
 Оба проекта — инструменты проверки. Они не являются boundary приложения, не входят в число трёх
 managed boundaries, не поставляются как продукт и не должны описываться как boundary в `README.md`,
 `AGENTS.md` и `docs/**`.
+
+## Runtime-контракты приложения
+
+Приложение уже имеет реальные runtime-контракты: строгую пользовательскую конфигурацию схемы v1,
+application-level модель отказов, structured logging с correlation identity и runtime-диагностический
+snapshot. Их правила имеют собственных владельцев — [application-configuration.md](application-configuration.md),
+[application-failures.md](application-failures.md) и [runtime-diagnostics.md](runtime-diagnostics.md);
+здесь они не повторяются. Пользовательских опций запуска и командной строки у приложения нет:
+startup вычисляет runtime-путь конфигурации сам. Границы остаются прежними: `AzurPilot.Core` владеет
+контрактами конфигурации и отказов, не зависящими от Windows, `AzurPilot.Windows` — проекцией ошибок
+платформенной/native boundary, `AzurPilot.App` — composition и диагностикой.
 
 ## Правило зависимостей
 
@@ -127,13 +153,13 @@ MSBuild работает по принципу fail-closed и перед managed
 относительно манифестов репозитория и стандартных механизмов обнаружения toolchain; абсолютные пути
 локальной машины не фиксируются в исходниках и конфигурации.
 
-## Продуктовые ограничения фундамента
+## Продуктовые ограничения текущего этапа
 
-- `1280x720` не является фундаментальным разрешением архитектуры: в foundation и native API нет и
+- `1280x720` не является фундаментальным разрешением архитектуры: в фундаменте и native API нет и
   не должно быть такой константы или предполагаемого размера кадра. Будущий screenshot сохраняется
   в нативном разрешении, а размеры кадра приходят как данные, а не как константа проекта.
 - MuMu-first, ADB, lifecycle эмулятора и игры, ввод (tap/swipe), vision-пайплайн, OCR/ONNX/GPU
-  inference, конфигурация приложения, product CLI, REPL и agent CLI — будущие capability. В текущем
-  фундаменте они не реализуются, не объявляются абстракциями «на будущее» и не имеют
-  placeholder-документов. Общие команды `build`, `repair` и `update` относятся к инструментам
-  репозитория, а не к будущим product CLI, REPL и agent CLI.
+  inference, product CLI, REPL и agent CLI — будущие capability. Они не реализуются, не объявляются
+  абстракциями «на будущее» и не имеют placeholder-документов; секции конфигурации, коды отказов и
+  диагностические секции для них не создаются заранее. Общие команды `build`, `repair` и `update`
+  относятся к инструментам репозитория, а не к будущим product CLI, REPL и agent CLI.

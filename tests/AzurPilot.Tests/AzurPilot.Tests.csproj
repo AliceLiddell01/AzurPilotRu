@@ -20,6 +20,10 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\AzurPilot.Core\AzurPilot.Core.csproj" />
     <ProjectReference Include="..\..\src\AzurPilot.Windows\AzurPilot.Windows.csproj" />
+    <!-- Composition root приложения: проверки состава host-а и его runtime services выполняются
+         в процессе теста, а поведение stdout/stderr и startup failures — запуском реального
+         AzurPilot.App.exe отдельным процессом. -->
+    <ProjectReference Include="..\..\src\AzurPilot.App\AzurPilot.App.csproj" />
     <!-- ReferenceOutputAssembly=false задаёт порядок сборки пробы, но не подключает её к тестам. -->
     <ProjectReference Include="..\AzurPilot.NativeAbsenceProbe\AzurPilot.NativeAbsenceProbe.csproj"
                       ReferenceOutputAssembly="false" />
@@ -29,6 +33,7 @@
        готового output в тестовый каталог выполняет Directory.Build.targets. -->
   <PropertyGroup>
     <AzurPilotNativeAbsenceProbeProject>$(MSBuildThisFileDirectory)..\AzurPilot.NativeAbsenceProbe\AzurPilot.NativeAbsenceProbe.csproj</AzurPilotNativeAbsenceProbeProject>
+    <AzurPilotApplicationHostProject>$(MSBuildThisFileDirectory)..\..\src\AzurPilot.App\AzurPilot.App.csproj</AzurPilotApplicationHostProject>
   </PropertyGroup>
 
 </Project>

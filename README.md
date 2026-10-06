@@ -3,10 +3,12 @@
 Персональная реализация проекта AzurPilot: Windows-only автоматизация на .NET/C# с отдельной native
 частью на C++ и OpenCV, связанными узким versioned C ABI.
 
-В репозитории собран фундамент: managed solution из трёх boundaries, native CMake boundary с OpenCV,
+В репозитории собраны managed solution из трёх boundaries, native CMake boundary с OpenCV и
 замороженный C ABI между ними, стандартный путь сборки и тестирования средствами CMake и .NET,
-Windows CI и автоматизация обновления зависимостей. MuMu, ADB, работа с игрой, vision-пайплайн,
-OCR/ONNX, продуктовые CLI/REPL и agent CLI — будущие возможности: в текущий фундамент они не входят.
+Windows CI и автоматизация обновления зависимостей. Приложение уже является application host:
+строгая пользовательская конфигурация схемы v1, application-level отказы, structured logging в
+`stderr` с correlation identity и runtime-диагностика. MuMu, ADB, работа с игрой, vision-пайплайн,
+OCR/ONNX, продуктовые CLI/REPL и agent CLI — будущие возможности: в текущее приложение они не входят.
 
 ## Платформа
 
@@ -46,6 +48,24 @@ CI использует эти стандартные команды напря�
 `native-x64-debug`; подробности команд и проверок — [architecture.md](.codex/context/architecture.md)
 и [verification.md](.codex/context/verification.md).
 
+## Приложение при запуске
+
+`AzurPilot.App` запускается как application host: собирает зависимости, загружает конфигурацию,
+выполняет runtime-диагностику и печатает короткий человекочитаемый итог.
+
+- Пользовательских опций запуска и командной строки нет: путь файла конфигурации startup вычисляет
+  сам через его владельца, а каталог конфигурации приложение не создаёт.
+- Отсутствие файла конфигурации — валидный сценарий запуска на встроенных defaults; существующий
+  невалидный файл не подменяется defaults и завершает запуск явным отказом с ненулевым кодом выхода.
+- В `stdout` уходит человекочитаемый итог, в `stderr` — structured runtime logs в JSON-формате с
+  correlation identifier операции.
+
+Путь конфигурации, схема v1 и коды отказа принадлежат
+[application-configuration.md](.codex/context/application-configuration.md) и
+[application-failures.md](.codex/context/application-failures.md), состав логирования и диагностики —
+[runtime-diagnostics.md](.codex/context/runtime-diagnostics.md), проверяемые свойства —
+[verification.md](.codex/context/verification.md) и тесты `tests/AzurPilot.Tests/`.
+
 ## Структура репозитория
 
 - `AzurPilot.slnx` — managed solution: `src/AzurPilot.Core`, `src/AzurPilot.Windows`, `src/AzurPilot.App`.
@@ -63,6 +83,9 @@ CI использует эти стандартные команды напря�
 - [.codex/context/INDEX.md](.codex/context/INDEX.md) — таблица владельцев: какой документ владеет каким правилом.
 - [docs/getting-started.md](docs/getting-started.md) — требования, сборка, тесты, диагностика.
 - [.codex/context/build-contracts.md](.codex/context/build-contracts.md) — контракт версий и внешних зависимостей.
+- [.codex/context/application-configuration.md](.codex/context/application-configuration.md) — схема конфигурации, путь файла и правила загрузки.
+- [.codex/context/application-failures.md](.codex/context/application-failures.md) — стабильные коды отказа и коды выхода процесса.
+- [.codex/context/runtime-diagnostics.md](.codex/context/runtime-diagnostics.md) — composition, логирование, correlation и диагностика.
 - [.codex/context/verification.md](.codex/context/verification.md) — что именно доказывает verification.
 
 ## Лицензия

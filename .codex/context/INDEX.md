@@ -18,8 +18,11 @@
 | --- | --- |
 | Форма C ABI v1: структура `AzurPilotNativeInfo`, экспорты, коды возврата, семантика `required_size`, биты `build_flags`/`capabilities`, нормативное значение версии ABI, имя native артефакта, запрет C++-типов и исключений на границе | [native/include/azurpilot_native_abi.h](../../native/include/azurpilot_native_abi.h) |
 | Карта репозитория, состав boundaries (ровно три managed + одна native), статус проектов `tests/` как тестовых инструментов, а не boundaries, правило зависимостей, канонические команды сборки и тестирования и рабочий путь разработки, конвенция staging native runtime, запрет machine-specific путей, Windows-only/x64, отсутствие `1280x720` как фундаментального разрешения, статус MuMu/ADB/game automation как будущих capability | [architecture.md](architecture.md) |
+| Схема пользовательской конфигурации v1, runtime-путь файла конфигурации, правила загрузки и строгой валидации, владелец встроенных значений по умолчанию и отсутствие hot reload | [application-configuration.md](application-configuration.md) |
+| Application-level модель отказов: стабильные коды, признак повторяемости, состав structured details, проекция отказов платформенной/native boundary и соответствие «код отказа → код выхода процесса» | [application-failures.md](application-failures.md) |
+| Composition root и состав application host, structured logging и граница `stdout`/`stderr`, correlation/operation identity, состав runtime-диагностического snapshot | [runtime-diagnostics.md](runtime-diagnostics.md) |
 | Политика version pins, чтение владельцев manifests, acquisition и SHA256-верификация OpenCV, запрет committed third-party бинарников, диагностика toolchain и требования к Renovate | [build-contracts.md](build-contracts.md) |
-| Что именно доказывают стандартные CI build/test commands, требования к native CTest и managed interop тестам, негативные проверки и границы проверки | [verification.md](verification.md) |
+| Что именно доказывают стандартные CI build/test commands, требования к native CTest и managed interop тестам, негативные проверки, проверки конфигурации, отказов и диагностики, границы проверки | [verification.md](verification.md) |
 | Языковая политика project-owned комментариев, диагностики и документации | [language.md](language.md) |
 
 ## Владельцы вне `.codex/context`
@@ -27,8 +30,8 @@
 | Правило или факт | Владелец |
 | --- | --- |
 | Глобальный контракт репозитория и router: минимальные инварианты и ссылка на эту таблицу | `AGENTS.md` |
-| Назначение проекта, поддерживаемая платформа и краткая входная точка | `README.md` |
-| Пошаговые инструкции по установке, сборке, тестам и диагностике | `docs/getting-started.md` |
+| Назначение проекта, поддерживаемая платформа, краткая входная точка и наблюдаемое поведение запуска | `README.md` |
+| Пошаговые инструкции по установке, сборке, тестам, запуску приложения и диагностике | `docs/getting-started.md` |
 | Версии GitHub Actions, состав CI-шагов и кэширование | `.github/workflows/**` |
 | Расписание и правила dependency-update automation | `renovate.json` |
 | Общие managed compiler/analyzer/build свойства и `TargetFramework`/RID | `Directory.Build.props` |
