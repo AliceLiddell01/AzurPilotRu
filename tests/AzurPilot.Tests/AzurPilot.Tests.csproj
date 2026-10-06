@@ -22,11 +22,13 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\AzurPilot.Core\AzurPilot.Core.csproj" />
     <ProjectReference Include="..\..\src\AzurPilot.Windows\AzurPilot.Windows.csproj" />
+    <!-- ReferenceOutputAssembly=false задаёт порядок сборки пробы, но не подключает её к тестам. -->
+    <ProjectReference Include="..\AzurPilot.NativeAbsenceProbe\AzurPilot.NativeAbsenceProbe.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
-  <!-- Проба негативной проверки нужна тесту как отдельная сборка в выходном каталоге, а не как
-       ссылка на код: тест запускает её процессом из каталога, где native библиотеки заведомо нет.
-       Копирование выполняет Directory.Build.targets. -->
+  <!-- Тест запускает пробу отдельным процессом из каталога без native библиотек; копирование
+       готового output в тестовый каталог выполняет Directory.Build.targets. -->
   <PropertyGroup>
     <AzurPilotNativeAbsenceProbeProject>$(MSBuildThisFileDirectory)..\AzurPilot.NativeAbsenceProbe\AzurPilot.NativeAbsenceProbe.csproj</AzurPilotNativeAbsenceProbeProject>
   </PropertyGroup>
