@@ -1,0 +1,81 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "UTC",
+  "labels": [
+    "dependencies"
+  ],
+  "ignoreUnstable": true,
+  "respectLatest": true,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on monday"
+    ]
+  },
+  "packageRules": [
+    {
+      "description": "Предлагать stable major, minor и patch обновления; предрелизы отсекаются глобальными ignoreUnstable и respectLatest.",
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "ignoreUnstable": true,
+      "respectLatest": true
+    },
+    {
+      "description": "Stable major-обновления рассматриваются наравне с minor и patch и идут отдельной ветвью.",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "separateMajorMinor": true,
+      "labels": [
+        "dependencies",
+        "major-update"
+      ]
+    },
+    {
+      "description": "NuGet: точные версии в Directory.Packages.props поднимаются до стабильного релиза без преобразования в диапазон; packages.lock.json обновляются NuGet manager и lockFileMaintenance.",
+      "matchManagers": [
+        "nuget"
+      ],
+      "rangeStrategy": "bump"
+    },
+    {
+      "description": "GitHub Actions сохраняют полный тег версии; digest pin отключён, обновления объединяются в PR.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": false,
+      "rangeStrategy": "pin",
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "OpenCV сохраняет точный version pin; версия и URL обновляются вместе, а SHA256 требует отдельной ручной проверки и обновления в том же PR.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "rangeStrategy": "pin",
+      "groupName": "OpenCV"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Владелец точного пина артефакта OpenCV — native/opencv.json. URL обновляется с той же версией; SHA256 сохраняется для отдельной ручной проверки и обновления в PR.",
+      "managerFilePatterns": [
+        "/^native/opencv\\.json$/"
+      ],
+      "matchStrings": [
+        "\"version\"\\s*:\\s*\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"\\s*,\\s*\"url\"\\s*:\\s*\"(?<urlPrefix>https://github\\.com/opencv/opencv/releases/download/)[^\"]*\"\\s*,\\s*\"sha256\"\\s*:\\s*\"(?<sha256>[0-9A-Fa-f]+)\""
+      ],
+      "depNameTemplate": "opencv/opencv",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver-coerced",
+      "autoReplaceStringTemplate": "\"version\": \"{{{newValue}}}\",\n  \"url\": \"{{{urlPrefix}}}{{{newValue}}}/opencv-{{{newValue}}}-windows.exe\",\n  \"sha256\": \"{{{sha256}}}\""
+    }
+  ]
+}

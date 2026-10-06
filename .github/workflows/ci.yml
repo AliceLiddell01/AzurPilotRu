@@ -1,0 +1,72 @@
+# CI вызывает стандартные build systems напрямую; политики сборки принадлежат CMake/MSBuild manifests.
+# Runner Windows x64 предоставляет Visual Studio 2026 и CMake из PATH.
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Native CMake и managed .NET verification (Windows x64)
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: .NET SDK из global.json
+        uses: actions/setup-dotnet@v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Кэш архива OpenCV
+        uses: actions/cache@v6.1.0
+        with:
+          path: artifacts/downloads
+          key: opencv-${{ hashFiles('native/opencv.json') }}
+
+      - name: Кэш NuGet
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Native configure, build и CTest
+        working-directory: native
+        run: cmake --workflow --preset native-x64-release
+
+      - name: Locked NuGet restore
+        run: dotnet restore AzurPilot.slnx --locked-mode
+
+      - name: Managed build
+        run: dotnet build AzurPilot.slnx --configuration Release --no-restore -warnaserror
+
+      - name: Managed interop и repository tests
+        run: dotnet test tests/AzurPilot.Tests/AzurPilot.Tests.csproj --configuration Release --no-restore --no-build
+
+      - name: Публикация native build и CTest diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: native-Release
+          path: |
+            artifacts/native/bin/Release/AzurPilot.Native.*
+            artifacts/native/runtime/Release/AzurPilot.Native.dll
+            artifacts/native/cmake/Testing/Temporary/
+          if-no-files-found: warn
+          retention-days: 7

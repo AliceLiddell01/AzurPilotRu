@@ -33,3 +33,21 @@ $RECYCLE.BIN/
 
 # Локальное рабочее состояние Codex; не является контрактом репозитория
 /.codex/local/
+
+# Единственная ignored boundary для generated/build outputs и полученных native
+# dependencies (включая native build directories и распакованный OpenCV).
+/artifacts/
+
+# Локальные пользовательские настройки CMake не являются частью контракта репозитория:
+# per-machine overrides живут в CMakeUserPresets.json и не коммитятся.
+CMakeUserPresets.json
+
+# Managed build outputs: bin/ и obj/ проектов — generated, в Git не коммитятся.
+# Lock-файлы (packages.lock.json) остаются отслеживаемыми: они часть контракта
+# воспроизводимого restore (RestorePackagesWithLockFile в Directory.Build.props).
+bin/
+obj/
+
+# Локальные артефакты прогонов тестов и сборки: результат прогона, а не контракт репозитория.
+TestResults/
+*.binlog

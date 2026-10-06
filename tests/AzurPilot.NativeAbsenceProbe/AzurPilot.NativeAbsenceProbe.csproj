@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Исполняемая проба для негативной проверки interop boundary: запускается тестом из каталога,
+       где native библиотеки заведомо нет, и доказывает, что production-код interop сообщает об этом
+       исключением. Это не тестовый проект: тестовой платформы и xunit здесь нет. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>AzurPilot.NativeAbsenceProbe</RootNamespace>
+    <AssemblyName>AzurPilot.NativeAbsenceProbe</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AzurPilot.Windows\AzurPilot.Windows.csproj" />
+  </ItemGroup>
+
+</Project>

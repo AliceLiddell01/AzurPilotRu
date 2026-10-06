@@ -1,0 +1,84 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "native-x64",
+      "displayName": "Native x64 (Visual Studio 18 2026, multi-config)",
+      "description": "Windows x64; outputs в artifacts/. Configure получает и проверяет закреплённый OpenCV из native/opencv.json.",
+      "generator": "Visual Studio 18 2026",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "binaryDir": "${sourceDir}/../artifacts/native/cmake",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "native-x64-release",
+      "displayName": "Native x64 Release",
+      "configurePreset": "native-x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "native-x64-debug",
+      "displayName": "Native x64 Debug",
+      "configurePreset": "native-x64",
+      "configuration": "Debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "native-x64-release",
+      "displayName": "Native x64 CTest Release",
+      "configurePreset": "native-x64",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "native-x64-debug",
+      "displayName": "Native x64 CTest Debug",
+      "configurePreset": "native-x64",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "native-x64-release",
+      "displayName": "Native x64 Release: configure, build, CTest",
+      "steps": [
+        { "type": "configure", "name": "native-x64" },
+        { "type": "build", "name": "native-x64-release" },
+        { "type": "test", "name": "native-x64-release" }
+      ]
+    },
+    {
+      "name": "native-x64-debug",
+      "displayName": "Native x64 Debug: configure, build, CTest",
+      "steps": [
+        { "type": "configure", "name": "native-x64" },
+        { "type": "build", "name": "native-x64-debug" },
+        { "type": "test", "name": "native-x64-debug" }
+      ]
+    }
+  ]
+}

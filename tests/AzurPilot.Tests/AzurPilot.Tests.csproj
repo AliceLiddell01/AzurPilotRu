@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Интеграционное доказательство interop boundary: тест реально загружает собранную native
+       библиотеку через тот же LibraryImport-код, что и приложение. xunit.v3 работает на
+       Microsoft.Testing.Platform (выбор runner — global.json). -->
+  <PropertyGroup>
+    <RootNamespace>AzurPilot.Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Код тестов принадлежит проекту; общие TreatWarningsAsErrors остаются включёнными. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AzurPilot.Core\AzurPilot.Core.csproj" />
+    <ProjectReference Include="..\..\src\AzurPilot.Windows\AzurPilot.Windows.csproj" />
+    <!-- ReferenceOutputAssembly=false задаёт порядок сборки пробы, но не подключает её к тестам. -->
+    <ProjectReference Include="..\AzurPilot.NativeAbsenceProbe\AzurPilot.NativeAbsenceProbe.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- Тест запускает пробу отдельным процессом из каталога без native библиотек; копирование
+       готового output в тестовый каталог выполняет Directory.Build.targets. -->
+  <PropertyGroup>
+    <AzurPilotNativeAbsenceProbeProject>$(MSBuildThisFileDirectory)..\AzurPilot.NativeAbsenceProbe\AzurPilot.NativeAbsenceProbe.csproj</AzurPilotNativeAbsenceProbeProject>
+  </PropertyGroup>
+
+</Project>

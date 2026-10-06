@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Windows-specific boundary: managed сторона native interop. Загружает native библиотеку через
+       source-generated LibraryImport и превращает её коды возврата в понятные managed исключения.
+       Направление зависимостей: AzurPilot.Windows → AzurPilot.Core. -->
+  <PropertyGroup>
+    <RootNamespace>AzurPilot.Windows</RootNamespace>
+    <!-- Windows 10 2004+ — минимальная поддерживаемая версия; версия задаётся здесь, а не в
+         общем Directory.Build.props, чтобы остальные проекты оставались на базовом Windows TFM. -->
+    <TargetPlatformVersion>10.0.19041.0</TargetPlatformVersion>
+    <!-- Осознанное решение: runtime marshalling выключен, весь marshalling выполняет
+         source-generated код LibraryImport. Это исключает неявные IL-стабы и делает границу явной. -->
+    <DisableRuntimeMarshalling>true</DisableRuntimeMarshalling>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AzurPilot.Core\AzurPilot.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Автоматический staging native runtime и проверка его наличия принадлежат
+       Directory.Build.targets; native build graph подготавливает файлы через CMake. -->
+
+</Project>
