@@ -78,12 +78,14 @@ public static class NativeBoundaryFailureMapper
                 Details = BuildDetails(exception, includeLibrary: true, includeStatusCode: false),
             },
 
-            // Отмена — ожидаемый исход операции, а не ошибка: повтор допустим по решению вызывающей стороны.
+            // Отмена — ожидаемый исход операции, а не ошибка. Признак повторяемости не выставляется:
+            // повтор той же операции сам по себе исхода не меняет, а решение о повторе принимает
+            // вызывающая сторона (владелец кода отказа).
             OperationCanceledException => new ApplicationFailure
             {
                 Code = ApplicationFailure.OperationCancelled,
                 Message = exception.Message,
-                IsRetryable = true,
+                IsRetryable = false,
             },
 
             // Прочие ошибки границы (например, код возврата native стороны): внутренняя ошибка.

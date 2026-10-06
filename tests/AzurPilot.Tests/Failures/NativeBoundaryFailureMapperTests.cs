@@ -25,8 +25,8 @@ public sealed class NativeBoundaryFailureMapperTests
     [Theory(DisplayName = "Исключение границы проецируется в стабильный application-level код отказа")]
     [InlineData(ExceptionKind.NativeBoundaryUnavailable, ApplicationFailure.NativeUnavailable, true, nameof(NativeBoundaryUnavailableException))]
     [InlineData(ExceptionKind.NativeAbiMismatch, ApplicationFailure.NativeIncompatible, false, nameof(NativeAbiMismatchException))]
-    [InlineData(ExceptionKind.OperationCanceled, ApplicationFailure.OperationCancelled, true, nameof(OperationCanceledException))]
-    [InlineData(ExceptionKind.TaskCanceled, ApplicationFailure.OperationCancelled, true, nameof(TaskCanceledException))]
+    [InlineData(ExceptionKind.OperationCanceled, ApplicationFailure.OperationCancelled, false, nameof(OperationCanceledException))]
+    [InlineData(ExceptionKind.TaskCanceled, ApplicationFailure.OperationCancelled, false, nameof(TaskCanceledException))]
     [InlineData(ExceptionKind.BoundaryStatusInternal, ApplicationFailure.InternalError, false, nameof(AzurPilotNativeBoundaryException))]
     [InlineData(ExceptionKind.BoundaryStructLayout, ApplicationFailure.InternalError, false, nameof(AzurPilotNativeBoundaryException))]
     [InlineData(ExceptionKind.UnexpectedInvalidOperation, ApplicationFailure.InternalError, false, nameof(InvalidOperationException))]
@@ -126,7 +126,7 @@ public sealed class NativeBoundaryFailureMapperTests
             failure.Details[NativeBoundaryFailureMapper.NativeLibraryKey]);
     }
 
-    [Fact(DisplayName = "Отмена не помечается как ошибка и не содержит details")]
+    [Fact(DisplayName = "Отмена не помечается ни ошибкой, ни поводом для повтора и не содержит details")]
     public void CancellationCarriesNoDetails()
     {
         using CancellationTokenSource source = new();
@@ -136,7 +136,11 @@ public sealed class NativeBoundaryFailureMapperTests
             new OperationCanceledException("Операция отменена.", source.Token));
 
         Assert.Equal(ApplicationFailure.OperationCancelled, failure.Code);
-        Assert.True(failure.IsRetryable);
+
+        // Отмена — решение вызывающей стороны: признак повторяемости по умолчанию не выставляется.
+        Assert.False(
+            failure.IsRetryable,
+            "Отмена не является поводом для повтора: решение принимает вызывающая сторона.");
         Assert.Null(failure.Details);
     }
 
