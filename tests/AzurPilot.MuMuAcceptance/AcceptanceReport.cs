@@ -13,7 +13,11 @@ namespace AzurPilot.MuMuAcceptance;
 /// <param name="Name">Название шага.</param>
 /// <param name="IsProven">Признак того, что шаг доказан.</param>
 /// <param name="Detail">Bounded детализация шага без machine-specific значений.</param>
-internal sealed record AcceptanceStep(int Number, string Name, bool IsProven, string Detail);
+/// <param name="RawDetail">
+/// Та же bounded детализация до замены machine-specific значений: по ней проверяется, что отчёт не
+/// содержал защищённых значений и до замены, а не только после неё.
+/// </param>
+internal sealed record AcceptanceStep(int Number, string Name, bool IsProven, string Detail, string RawDetail);
 
 /// <summary>
 /// Исход прогона приёмки: доказан или нет, и если нет — почему.
@@ -87,6 +91,11 @@ internal sealed record AcceptanceReportText(string Text, bool IsSanitized);
 /// Отчёт связан с exact build revision: печатаются identity инструмента и обеих проверяемых сборок
 /// (Core и Windows) с их informational version.
 /// </para>
+/// <para>
+/// Текст собирается дважды: печатаемый — с заменёнными machine-specific значениями, и проверочный — с
+/// исходными. Проверка идёт по исходному тексту, поэтому защита не сводится к самой замене: если в отчёт
+/// попало защищённое значение, приёмка не доказана, даже когда все шаги матрицы прошли.
+/// </para>
 /// </remarks>
 internal sealed class AcceptanceReport
 {
@@ -109,14 +118,15 @@ internal sealed class AcceptanceReport
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(detail);
 
-        _steps.Add(new AcceptanceStep(
-            number,
-            name,
-            isProven,
-            Sanitizer.Sanitize(MuMuBoundedText.Bounded(detail))));
+        string bounded = MuMuBoundedText.Bounded(detail);
+        _steps.Add(new AcceptanceStep(number, name, isProven, Sanitizer.Sanitize(bounded), bounded));
     }
 
     /// <summary>Собирает текст отчёта и проверяет его на machine-specific значения.</summary>
+    /// <remarks>
+    /// Проверка выполняется по тексту до замены: санитайзер — вторая линия защиты, поэтому отчёт не должен
+    /// содержать защищённые значения и без неё. Замену видит только печатаемый текст.
+    /// </remarks>
     /// <param name="options">Проверенные аргументы прогона.</param>
     /// <param name="result">Исход прогона.</param>
     /// <returns>Готовый к печати текст и результат проверки санитайзера.</returns>
@@ -125,26 +135,10 @@ internal sealed class AcceptanceReport
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(result);
 
-        StringBuilder builder = new();
-        _ = builder.AppendLine("AzurPilot MuMu acceptance — реальная приёмка MuMu на Windows");
-        _ = builder.AppendLine("  Инструмент: " + Describe(typeof(AcceptanceReport)));
-        _ = builder.AppendLine("  Core: " + Describe(typeof(MuMuLifecycleService)));
-        _ = builder.AppendLine("  Windows: " + Describe(typeof(MuMuWindowsHost)));
-        _ = builder.AppendLine(
-            "  Запрошенный exact instance: " + options.InstanceValue
-            + " (explicit; автоматический выбор не используется)");
-        _ = builder.AppendLine("  Режим: " + options.DescribeMode());
-
-        foreach (AcceptanceStep step in _steps)
-        {
-            _ = builder.AppendLine(
-                "  Шаг " + step.Number.ToString(CultureInfo.InvariantCulture) + ". " + step.Name + ": "
-                + (step.IsProven ? ProvenWord : NotProvenWord) + " — " + step.Detail);
-        }
-
-        string body = builder.ToString();
+        string body = Compose(options, static step => step.Detail);
+        string rawBody = Compose(options, static step => step.RawDetail);
         string sanitized = Sanitizer.Sanitize(body);
-        bool isSanitized = string.Equals(body, sanitized, StringComparison.Ordinal);
+        bool isSanitized = !Sanitizer.ContainsProtectedValue(rawBody);
 
         StringBuilder verdict = new(sanitized);
         if (!isSanitized)
@@ -171,6 +165,32 @@ internal sealed class AcceptanceReport
         }
 
         return new AcceptanceReportText(verdict.ToString(), isSanitized);
+    }
+
+    /// <summary>Собирает текст отчёта из записанных шагов и постоянных строк.</summary>
+    /// <param name="options">Проверенные аргументы прогона.</param>
+    /// <param name="detailSelector">Как читать детализацию шага: заменённую или исходную.</param>
+    /// <returns>Полный текст отчёта без итога.</returns>
+    private string Compose(AcceptanceOptions options, Func<AcceptanceStep, string> detailSelector)
+    {
+        StringBuilder builder = new();
+        _ = builder.AppendLine("AzurPilot MuMu acceptance — реальная приёмка MuMu на Windows");
+        _ = builder.AppendLine("  Инструмент: " + Describe(typeof(AcceptanceReport)));
+        _ = builder.AppendLine("  Core: " + Describe(typeof(MuMuLifecycleService)));
+        _ = builder.AppendLine("  Windows: " + Describe(typeof(MuMuWindowsHost)));
+        _ = builder.AppendLine(
+            "  Запрошенный exact instance: " + options.InstanceValue
+            + " (explicit; автоматический выбор не используется)");
+        _ = builder.AppendLine("  Режим: " + options.DescribeMode());
+
+        foreach (AcceptanceStep step in _steps)
+        {
+            _ = builder.AppendLine(
+                "  Шаг " + step.Number.ToString(CultureInfo.InvariantCulture) + ". " + step.Name + ": "
+                + (step.IsProven ? ProvenWord : NotProvenWord) + " — " + detailSelector(step));
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>Описывает identity сборки типа-якоря.</summary>

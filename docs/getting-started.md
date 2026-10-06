@@ -119,9 +119,11 @@ Acquisition выполняется автоматически при CMake confi
   application host, correlation identity, содержимое диагностики и границу `stdout`/`stderr`.
 - **MuMu-проверки** прогоняют production-код capability через управляемые внешние границы и доказывают
   orchestration lifecycle без установленной MuMu; поведение реальной установки доказывает отдельная
-  локальная приёмка `tests/AzurPilot.MuMuAcceptance --instance mumu:<index>`, которая требует
-  установленной MuMuPlayer и в hosted CI не запускается. Что именно доказывает каждая проверка —
-  [verification.md](../.codex/context/verification.md).
+  локальная приёмка, которая требует установленной MuMuPlayer и в hosted CI не запускается:
+  `dotnet run --project tests/AzurPilot.MuMuAcceptance -c Release -- --instance mumu:<index>`.
+  Приёмка собирается вместе с `AzurPilot.Windows`, поэтому до её запуска нужен native runtime этой
+  конфигурации: из каталога `native` выполните CMake workflow preset `native-x64-release`. Что именно
+  доказывает каждая проверка — [verification.md](../.codex/context/verification.md).
 - **Repository contract tests** проверяют отсутствие machine-specific абсолютных путей,
   фундаментального hardcode `1280x720`, Git-visible binaries и build outputs.
 

@@ -25,6 +25,10 @@ namespace AzurPilot.Core.MuMu;
 /// Методы синхронные: они сообщают результат одного host-side действия, а bounded polling, deadline и
 /// process-local сериализацию выполняет orchestration.
 /// </para>
+/// <para>
+/// Токен отмены несёт только mutation: команды чтения ограничены собственным дедлайном границы, а отмена
+/// проверяется orchestration между шагами операции.
+/// </para>
 /// </remarks>
 public interface IMuMuHost
 {
