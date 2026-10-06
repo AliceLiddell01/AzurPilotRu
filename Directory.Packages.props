@@ -1,0 +1,17 @@
+<Project>
+
+  <!-- Централизованный владелец версий NuGet-пакетов. Версии задаются только здесь; проекты
+       ссылаются на пакеты без Version. Перечислены исключительно реальные потребители. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Тестовый стек: xunit.v3 (Microsoft.Testing.Platform) + адаптер и SDK тестовой платформы. -->
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+  </ItemGroup>
+
+</Project>

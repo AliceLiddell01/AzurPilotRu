@@ -1,0 +1,59 @@
+<Project>
+
+  <!-- Directory.Build.props задаёт TreatWarningsAsErrors=true безусловно, а этот файл исполняется
+       после NuGet-generated кода и выключает строгость там, где проект объявил
+       AzurPilotStrictProject=false. Такой проект собирается без падения на предупреждениях
+       сторонних NuGet/analyzer/targets, при этом все остальные свойства наследуются как есть. -->
+  <PropertyGroup Condition="'$(AzurPilotStrictProject)' == 'false'">
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- Staging native runtime. Item-группа Content с wildcard вычисляется на этапе вычисления
+       проекта, а инкрементальная сборка копирует файлы только при изменении входов. Когда
+       eng/build.ps1 впервые выставляет AzurPilotNativeRuntimeDir, входы проекта не меняются, и без
+       этой цели копирование могло бы не выполниться. Штамп с значением свойства делает смену
+       источника staging явным входом сборки. -->
+  <Target Name="AzurPilotRecordNativeRuntimeSource"
+          BeforeTargets="BeforeBuild"
+          Condition="'$(AzurPilotNativeRuntimeDir)' != ''">
+    <PropertyGroup>
+      <_AzurPilotNativeRuntimeStamp>$(BaseIntermediateOutputPath)azurpilot-native-runtime-dir.txt</_AzurPilotNativeRuntimeStamp>
+      <_AzurPilotNativeRuntimeStampPath>$([System.IO.Path]::GetFullPath($(_AzurPilotNativeRuntimeStamp)))</_AzurPilotNativeRuntimeStampPath>
+      <_AzurPilotNativeRuntimeValue>$(AzurPilotNativeRuntimeDir)</_AzurPilotNativeRuntimeValue>
+      <_AzurPilotNativeRuntimeRecorded Condition="Exists('$(_AzurPilotNativeRuntimeStampPath)')">$([System.IO.File]::ReadAllText('$(_AzurPilotNativeRuntimeStampPath)'))</_AzurPilotNativeRuntimeRecorded>
+    </PropertyGroup>
+
+    <ItemGroup Condition="'$(_AzurPilotNativeRuntimeValue)' != '$(_AzurPilotNativeRuntimeRecorded)'">
+      <FileWrites Include="$(_AzurPilotNativeRuntimeStampPath)" />
+    </ItemGroup>
+
+    <WriteLinesToFile File="$(_AzurPilotNativeRuntimeStampPath)"
+                      Lines="$(_AzurPilotNativeRuntimeValue)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+  </Target>
+
+  <!-- Копирование пробы негативной проверки interop boundary в выход тестового проекта: тест
+       запускает пробу процессом из каталога, где native библиотеки заведомо нет, поэтому проба
+       должна быть отдельной сборкой рядом с тестом, а не ссылкой на код. -->
+  <Target Name="AzurPilotStageNativeAbsenceProbe"
+          AfterTargets="Build"
+          Condition="'$(AzurPilotNativeAbsenceProbeProject)' != ''">
+    <MSBuild Projects="$(AzurPilotNativeAbsenceProbeProject)"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_AzurPilotProbeAssembly" />
+    </MSBuild>
+
+    <ItemGroup>
+      <_AzurPilotProbeFile Include="@(_AzurPilotProbeAssembly)" />
+      <_AzurPilotProbeFile Include="@(_AzurPilotProbeAssembly->'%(RootDir)%(Directory)%(Filename).deps.json')" />
+      <_AzurPilotProbeFile Include="@(_AzurPilotProbeAssembly->'%(RootDir)%(Directory)%(Filename).runtimeconfig.json')" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_AzurPilotProbeFile)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

@@ -1,0 +1,142 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "UTC",
+  "labels": [
+    "dependencies"
+  ],
+  "ignoreUnstable": true,
+  "respectLatest": true,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on monday"
+    ]
+  },
+  "packageRules": [
+    {
+      "description": "Политика версий фундамента: предлагаются только stable major/minor/patch. Предрелизы не предлагаются (ignoreUnstable/respectLatest), но major НЕ игнорируется — см. отдельное правило про major-update.",
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "ignoreUnstable": true,
+      "respectLatest": true
+    },
+    {
+      "description": "Major-обновления stable приходят отдельной ветвью и помечаются, а не игнорируются: политика проекта требует рассматривать их наравне с minor и patch.",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "separateMajorMinor": true,
+      "labels": [
+        "dependencies",
+        "major-update"
+      ]
+    },
+    {
+      "description": "NuGet: точная версия в Directory.Packages.props для NuGet — open-ended minimum, поэтому rangeStrategy=bump (значение менеджера по умолчанию, зафиксировано явно) поднимает минимум до нового стабильного релиза и НЕ превращает пин в диапазон или плавающий тег. Lock-файлы (packages.lock.json) обновляются тем же механизмом и lockFileMaintenance.",
+      "matchManagers": [
+        "nuget"
+      ],
+      "rangeStrategy": "bump"
+    },
+    {
+      "description": "GitHub Actions фиксируются полным тегом версии (vX.Y.Z), а не плавающей веткой и не SHA-дайджестом: pinDigests выключен, rangeStrategy=pin сохраняет точную форму пина. Обновления группируются в один PR, чтобы не плодить ветки.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": false,
+      "rangeStrategy": "pin",
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Закреплённые версии фундамента из eng/versions.json (OpenCV, latest stable CMake) обновляются одной ветвью: один PR меняет только пины, а потребители читают значения из eng/versions.json. Пин остаётся точным — rangeStrategy=pin.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "rangeStrategy": "pin",
+      "groupName": "Закреплённые версии фундамента (eng/versions.json)"
+    },
+    {
+      "description": "nativeAbi.version НЕ обновляется автоматикой. Это не dependency pin, а зеркало нормативного значения из native/include/azurpilot_native_abi.h: смена версии ABI означает изменение формы границы и должна быть согласованным ручным действием обеих сторон (managed и native меняются вместе), а авто-бамп молча развёл бы managed-сторону с native. Зависимость только детектируется менеджером azurpilot-native-abi-version — чтобы исключение было явным и проверяемым правилом, а не отсутствием настройки — и выключается здесь: datasource для неё не опрашивается.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "azurpilot/native-abi"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Нижние границы toolchain (cmakeMinimumVersion, ninjaMinimumVersion, msvcMinimumVersion, msvcReferenceVersion) автоматикой не поднимаются: граница — решение о поддерживаемой базе, а не dependency update. Автобамп CMake-минимума вышел бы за пределы standalone CMake раннера и сломал бы canonical build; MSVC поставляется с Visual Studio и dependency-datasource не имеет. Поля детектируются отдельным менеджером, чтобы исключение было явным правилом, и выключаются здесь.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "cmakeMinimumVersion",
+        "ninjaMinimumVersion",
+        "msvcMinimumVersion",
+        "msvcReferenceVersion"
+      ],
+      "enabled": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "OpenCV pin из eng/versions.json: версия и URL обновляются вместе — URL обязан содержать ту же версию, иначе пин станет внутренне противоречивым. SHA256 сохраняется шаблоном как есть и обновляется вручную в том же PR: хэш скачиваемого артефакта Renovate вычислить не может. PR с новой версией не может быть смержен молча — расхождение валит сборку (проверка SHA256 в eng/Get-NativeDependencies.ps1).",
+      "managerFilePatterns": [
+        "/^eng/versions\\.json$/"
+      ],
+      "matchStrings": [
+        "\"opencv\"\\s*:\\s*\\{\\s*\"version\"\\s*:\\s*\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"\\s*,\\s*\"url\"\\s*:\\s*\"(?<urlPrefix>https://github\\.com/opencv/opencv/releases/download/)[^\"]*\"\\s*,\\s*\"sha256\"\\s*:\\s*\"(?<sha256>[0-9A-Fa-f]+)\""
+      ],
+      "depNameTemplate": "opencv/opencv",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver-coerced",
+      "autoReplaceStringTemplate": "\"opencv\": {\n    \"version\": \"{{{newValue}}}\",\n    \"url\": \"{{{urlPrefix}}}{{{newValue}}}/opencv-{{{newValue}}}-windows.exe\",\n    \"sha256\": \"{{{sha256}}}\""
+    },
+    {
+      "customType": "regex",
+      "description": "Latest stable CMake (toolchain.cmakeLatestStable) — версия для документации и Renovate. Canonical build проверяет минимум, а не это значение, поэтому обновление пина не меняет требования к локальной среде.",
+      "managerFilePatterns": [
+        "/^eng/versions\\.json$/"
+      ],
+      "matchStrings": [
+        "\"cmakeLatestStable\"\\s*:\\s*\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""
+      ],
+      "depNameTemplate": "Kitware/CMake",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "description": "Детектор nativeAbi.version: нужен только для того, чтобы исключение из автообновления было явным правилом (см. packageRules с matchPackageNames azurpilot/native-abi), а не отсутствием настройки. Само значение не обновляется.",
+      "managerFilePatterns": [
+        "/^eng/versions\\.json$/"
+      ],
+      "matchStrings": [
+        "\"nativeAbi\"\\s*:\\s*\\{\\s*\"version\"\\s*:\\s*(?<currentValue>[0-9]+)"
+      ],
+      "depNameTemplate": "azurpilot/native-abi",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "description": "Детектор нижних границ toolchain: имя зависимости — имя поля в eng/versions.json. Нужен, чтобы исключение из автообновления было явным правилом (см. packageRules с этими matchPackageNames). Сами границы не обновляются.",
+      "managerFilePatterns": [
+        "/^eng/versions\\.json$/"
+      ],
+      "matchStrings": [
+        "\"(?<depName>(?:cmakeMinimumVersion|ninjaMinimumVersion|msvcMinimumVersion|msvcReferenceVersion))\"\\s*:\\s*\"(?<currentValue>[0-9][0-9.]*)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver-coerced"
+    }
+  ]
+}

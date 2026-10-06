@@ -1,0 +1,116 @@
+# =============================================================================
+# CI AzurPilotRu: canonical repository workflow на чистом hosted Windows runner.
+#
+# Второй реализации build-логики здесь нет и быть не должно: workflow только
+# вызывает repository-owned eng/build.ps1 и eng/verify.ps1. Любая собственная
+# последовательность dotnet/cmake команд в этом файле — дефект.
+#
+# Runner windows-2025-vs2026 (GA-образ, он же windows-latest): Windows Server 2025
+# с Visual Studio Enterprise 2026 и standalone CMake в PATH. Номера версий здесь не
+# дублируются — единственный владелец значений eng/versions.json, а манифест образа
+# проверяется перед первым прогоном. Факты о разрешённом toolchain (включая путь и версию
+# standalone CMake) печатает сам eng/build.ps1 на шаге проверки toolchain, поэтому
+# отдельного шага-зонда в workflow нет: он был бы второй точкой принятия решений.
+#
+# CI не требует real-device зависимостей (эмулятор, установленная игра, отладочный мост)
+# и не содержит fake game acceptance: фундамент доказывается native CTest и managed
+# interop тестами.
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+# Устаревшие прогоны отменяются: в ветке важен только последний commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Минимальные права: workflow только читает репозиторий.
+permissions:
+  contents: read
+
+env:
+  # Конфигурация передаётся в repository-owned скрипты: собственных build-решений
+  # workflow не принимает.
+  AZURPILOT_CONFIGURATION: Release
+
+jobs:
+  verify:
+    name: Canonical build и verification (Windows x64)
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Закреплённые версии из eng/versions.json (единственный владелец номеров)
+        id: pins
+        shell: pwsh
+        run: |
+          # Номера версий не дублируются в workflow: они читаются из repository-owned пина.
+          $versions = Get-Content -LiteralPath ./eng/versions.json -Raw | ConvertFrom-Json
+          "dotnet-sdk=$($versions.dotnetSdk.version)" >> $env:GITHUB_OUTPUT
+          "opencv-version=$($versions.opencv.version)" >> $env:GITHUB_OUTPUT
+          "opencv-sha256=$($versions.opencv.sha256)" >> $env:GITHUB_OUTPUT
+
+      - name: Кэш скачанного пакета OpenCV (ключ привязан к версии и SHA256 из пина)
+        uses: actions/cache@v6.1.0
+        with:
+          path: artifacts/downloads
+          key: opencv-${{ steps.pins.outputs.opencv-version }}-${{ steps.pins.outputs.opencv-sha256 }}
+        # Кэш — оптимизация транспорта и НЕ заменяет проверку: eng/Get-NativeDependencies.ps1
+        # заново считает SHA256 кэшированного файла и падает при расхождении.
+        # Распакованное дерево (artifacts/opencv) намеренно не кэшируется: распаковка дешевле
+        # транспорта большого дерева.
+
+      - name: Кэш NuGet (ключ привязан к lock-файлам)
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: .NET SDK закреплённой версии из пина
+        uses: actions/setup-dotnet@v6.0.0
+        with:
+          dotnet-version: ${{ steps.pins.outputs.dotnet-sdk }}
+
+      - name: Канонический build (repository-owned eng/build.ps1)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./eng/build.ps1 -Configuration $env:AZURPILOT_CONFIGURATION
+
+      - name: Единая verification (repository-owned eng/verify.ps1)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./eng/verify.ps1 -Configuration $env:AZURPILOT_CONFIGURATION
+        # verify.ps1 сам запускает build.ps1 (шаг 1) — это контракт единого entrypoint, а не
+        # дублирование логики: повторный прогон инкрементальный. Analyzers, project-owned warnings
+        # и форматирование проверяются здесь же (build-time enforcement: .editorconfig +
+        # EnforceCodeStyleInBuild + TreatWarningsAsErrors). Ключ -CheckDotNetFormat сознательно НЕ
+        # включается как гейт: он применял бы правила, которые проект не сделал обязательными, и
+        # даёт design-time ошибки на тестовом проекте.
+
+      - name: Публикация артефактов (разбор падений и скачиваемый native артефакт)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: native-${{ env.AZURPILOT_CONFIGURATION }}
+          path: |
+            artifacts/native/bin/${{ env.AZURPILOT_CONFIGURATION }}/AzurPilot.Native.*
+            artifacts/native/cmake/Testing/Temporary/
+          if-no-files-found: warn
+          retention-days: 7
+        # Публикуется только то, что произвёл фундамент (native DLL, PDB, native smoke test) и
+        # журналы CTest. Runtime DLL OpenCV из выхода намеренно не публикуется: это закреплённая
+        # third-party зависимость из проверяемого по SHA256 пакета, а не артефакт сборки.
+        # Жёсткое доказательство native сборки — проверки staging в eng/verify.ps1 (наличие
+        # AzurPilot.Native.dll и runtime OpenCV, плюс native DLL в выходе managed теста).
+        # Этот шаг нужен, чтобы упавший прогон можно было разобрать, а успешный — подтвердить
+        # скачиваемым артефактом.

@@ -1,0 +1,58 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 4,
+    "minor": 4,
+    "patch": 2
+  },
+  "configurePresets": [
+    {
+      "name": "native-x64",
+      "displayName": "Native x64 (Visual Studio 18 2026, multi-config)",
+      "description": "Канонический generator из eng/versions.json; x64; outputs в ignored boundary artifacts/. OpenCV_DIR вычисляется из eng/versions.json (artifacts/opencv/<version>/<cmakeDir>) и может быть переопределён cache variable -DOpenCV_DIR=...",
+      "generator": "Visual Studio 18 2026",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "binaryDir": "${sourceDir}/../artifacts/native/cmake",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "native-x64-release",
+      "displayName": "Native x64 Release",
+      "configurePreset": "native-x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "native-x64-debug",
+      "displayName": "Native x64 Debug",
+      "configurePreset": "native-x64",
+      "configuration": "Debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "native-x64-release",
+      "displayName": "Native x64 CTest Release",
+      "configurePreset": "native-x64",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "native-x64-debug",
+      "displayName": "Native x64 CTest Debug",
+      "configurePreset": "native-x64",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

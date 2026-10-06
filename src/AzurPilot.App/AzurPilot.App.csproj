@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Composition root: единственная точка входа managed приложения. Собирает адаптер native
+       boundary и печатает полученные сведения. Пакетов командной строки здесь нет: интерактивный
+       REPL и CLI — будущая capability, а не часть фундамента. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>AzurPilot.App</RootNamespace>
+    <AssemblyName>AzurPilot.App</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AzurPilot.Windows\AzurPilot.Windows.csproj" />
+  </ItemGroup>
+
+</Project>

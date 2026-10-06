@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Интеграционное доказательство interop boundary: тест реально загружает собранную native
+       библиотеку через тот же LibraryImport-код, что и приложение. xunit.v3 работает на
+       Microsoft.Testing.Platform (выбор runner — global.json). -->
+  <PropertyGroup>
+    <RootNamespace>AzurPilot.Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Тестовый код project-owned, поэтому строгость сохраняется; отключается только там, где
+         предупреждение приходит из сторонних тестовых пакетов, а не из нашего кода. -->
+    <AzurPilotStrictProject>false</AzurPilotStrictProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AzurPilot.Core\AzurPilot.Core.csproj" />
+    <ProjectReference Include="..\..\src\AzurPilot.Windows\AzurPilot.Windows.csproj" />
+  </ItemGroup>
+
+  <!-- Проба негативной проверки нужна тесту как отдельная сборка в выходном каталоге, а не как
+       ссылка на код: тест запускает её процессом из каталога, где native библиотеки заведомо нет.
+       Копирование выполняет Directory.Build.targets. -->
+  <PropertyGroup>
+    <AzurPilotNativeAbsenceProbeProject>$(MSBuildThisFileDirectory)..\AzurPilot.NativeAbsenceProbe\AzurPilot.NativeAbsenceProbe.csproj</AzurPilotNativeAbsenceProbeProject>
+  </PropertyGroup>
+
+</Project>

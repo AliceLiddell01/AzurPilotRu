@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="src/AzurPilot.Core/AzurPilot.Core.csproj" />
+  <Project Path="src/AzurPilot.Windows/AzurPilot.Windows.csproj" />
+  <Project Path="src/AzurPilot.App/AzurPilot.App.csproj" />
+  <Project Path="tests/AzurPilot.Tests/AzurPilot.Tests.csproj" />
+  <!-- Проба для негативной проверки interop boundary: запускается тестом из каталога, где native
+       библиотеки заведомо нет. Не является boundary приложения и не поставляется. -->
+  <Project Path="tests/AzurPilot.NativeAbsenceProbe/AzurPilot.NativeAbsenceProbe.csproj" />
+</Solution>

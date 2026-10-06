@@ -1,0 +1,48 @@
+# AGENTS.md — контракт репозитория и router
+
+Короткий root-контракт для агентов и разработчиков. Это не энциклопедия: правила живут у своих
+владельцев, а таблица владельцев — [.codex/context/INDEX.md](.codex/context/INDEX.md). Перед любой
+работой откройте её и прочитайте документ, который владеет нужным правилом.
+
+## Что это за репозиторий
+
+AzurPilotRu — персональная реализация AzurPilot: Windows-only x64, managed часть на .NET/C#, тяжёлая
+image/vision часть — отдельная native DLL на C++ с OpenCV, связь между ними — узкий versioned C ABI.
+MuMu, ADB, lifecycle игры, ввод, vision-пайплайн, конфигурация приложения и CLI — будущие capability:
+в текущем фундаменте их нет.
+
+## Минимальные инварианты (до чтения контекста)
+
+- Windows-only, x64. Другие платформы не поддерживаются.
+- Managed boundaries приложения — ровно три: `AzurPilot.Core`, `AzurPilot.Windows`, `AzurPilot.App`,
+  плюс одна отдельная native boundary. Проекты в `tests/` — тестовые инструменты, не boundaries.
+- Канонические entrypoints: `pwsh ./eng/build.ps1 -Configuration Release` и `pwsh ./eng/verify.ps1`.
+  Второй реализации build-логики (в CI, скриптах, документации) быть не должно.
+- Закреплённые версии живут только в [eng/versions.json](eng/versions.json): один номер — один
+  владелец. Не дублируйте номера в коде, конфигурации и документации.
+- Machine-specific абсолютные пути (домашний каталог, буква диска, путь к конкретной установке
+  Visual Studio/OpenCV/Python) в репозитории запрещены.
+- Project-owned комментарии, диагностика и документация — на русском; идентификаторы, ключи
+  конфигурации и общепринятые технические термины — латиницей.
+
+## Маршрутизация
+
+| Вопрос | Владелец правила |
+| --- | --- |
+| Какой документ владеет каким правилом | [.codex/context/INDEX.md](.codex/context/INDEX.md) |
+| Карта проекта, boundaries, правило зависимостей, entrypoints, staging, ограничения | [.codex/context/architecture.md](.codex/context/architecture.md) |
+| Версии, acquisition зависимостей, checksum, Renovate, диагностика toolchain | [.codex/context/build-contracts.md](.codex/context/build-contracts.md) |
+| Что именно доказывают проверки и как падает verification | [.codex/context/verification.md](.codex/context/verification.md) |
+| Язык комментариев, диагностики и документации | [.codex/context/language.md](.codex/context/language.md) |
+| Форма C ABI v1: структура, экспорты, коды возврата, семантика буферов | [native/include/azurpilot_native_abi.h](native/include/azurpilot_native_abi.h) |
+| Точные закреплённые версии | [eng/versions.json](eng/versions.json) |
+| Установка prerequisites, сборка, тесты, типовые проблемы | [docs/getting-started.md](docs/getting-started.md) |
+| Назначение проекта и канонические команды как входная точка | [README.md](README.md) |
+
+## Изменение правил
+
+- Правило меняется в документе-владельце; копия правила в другом файле запрещена.
+- Если правило или номер получает нового владельца, он добавляется в
+  [.codex/context/INDEX.md](.codex/context/INDEX.md).
+- Файлы-заглушки под будущие подсистемы не создаются: документ появляется вместе с реальной
+  capability.

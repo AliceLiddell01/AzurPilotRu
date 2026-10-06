@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Доменный/application-контракт, независимый от Windows: знает о форме native boundary, но не
+       о Windows API и не о способе загрузки native библиотеки. Общие свойства — Directory.Build.props. -->
+  <PropertyGroup>
+    <RootNamespace>AzurPilot.Core</RootNamespace>
+  </PropertyGroup>
+
+</Project>
