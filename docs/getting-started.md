@@ -166,14 +166,16 @@ transport.
 
 ## 9. Куда смотреть дальше
 
-- [README.md](../README.md) — назначение проекта, build/test-путь и поведение при запуске.
-- [AGENTS.md](../AGENTS.md) — корневой контракт и router для агентов.
-- [.codex/context/INDEX.md](../.codex/context/INDEX.md) — владельцы правил и manifests.
-- [architecture.md](../.codex/context/architecture.md) — boundaries, source of truth, references, build/runtime boundaries.
-- [build-contracts.md](../.codex/context/build-contracts.md) — version ownership, OpenCV acquisition и Renovate.
-- [application-configuration.md](../.codex/context/application-configuration.md) — схема конфигурации, путь файла и правила загрузки.
-- [application-failures.md](../.codex/context/application-failures.md) — коды отказа и коды выхода процесса.
-- [runtime-diagnostics.md](../.codex/context/runtime-diagnostics.md) — composition, логирование, correlation и диагностика.
-- [mumu-lifecycle.md](../.codex/context/mumu-lifecycle.md) — MuMu-capability: установка, экземпляр и lifecycle.
-- [android-game-lifecycle.md](../.codex/context/android-game-lifecycle.md) — ADB endpoint, готовность Android и lifecycle игры Global/EN.
-- [verification.md](../.codex/context/verification.md) — что доказывают проверки.
+- [README.md](../README.md) — назначение проекта и краткая входная точка.
+- [README документации](README.md) — карта подробных материалов.
+- [architecture/overview.md](architecture/overview.md) — boundaries и текущая архитектура.
+- [architecture/mumu-lifecycle.md](architecture/mumu-lifecycle.md) — MuMu integration/lifecycle.
+- [architecture/android-game-lifecycle.md](architecture/android-game-lifecycle.md) — Android/ADB readiness и lifecycle игры.
+- [reference/application-configuration.md](reference/application-configuration.md) — конфигурация.
+- [reference/application-failures.md](reference/application-failures.md) — application failures.
+- [operations/runtime-diagnostics.md](operations/runtime-diagnostics.md) — logging и диагностика.
+- [testing/verification.md](testing/verification.md) — verification strategy.
+- [testing/android-acceptance.md](testing/android-acceptance.md) — Android real acceptance.
+
+Agent-only routing находится в [AGENTS.md](../AGENTS.md) и
+[.codex/context/INDEX.md](../.codex/context/INDEX.md); обычному читателю не нужно начинать с него.

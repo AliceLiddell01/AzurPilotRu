@@ -93,16 +93,11 @@ CI использует эти стандартные команды напря�
 
 ## Документация
 
-- [AGENTS.md](AGENTS.md) — контракт репозитория и router: с чего начинать чтение.
-- [.codex/context/INDEX.md](.codex/context/INDEX.md) — таблица владельцев: какой документ владеет каким правилом.
-- [docs/getting-started.md](docs/getting-started.md) — требования, сборка, тесты, диагностика.
-- [.codex/context/build-contracts.md](.codex/context/build-contracts.md) — контракт версий и внешних зависимостей.
-- [.codex/context/application-configuration.md](.codex/context/application-configuration.md) — схема конфигурации, путь файла и правила загрузки.
-- [.codex/context/application-failures.md](.codex/context/application-failures.md) — стабильные коды отказа и коды выхода процесса.
-- [.codex/context/runtime-diagnostics.md](.codex/context/runtime-diagnostics.md) — composition, логирование, correlation и диагностика.
-- [.codex/context/mumu-lifecycle.md](.codex/context/mumu-lifecycle.md) — MuMu-capability: установка, экземпляр и lifecycle.
-- [.codex/context/android-game-lifecycle.md](.codex/context/android-game-lifecycle.md) — ADB endpoint, готовность Android и lifecycle игры Global/EN.
-- [.codex/context/verification.md](.codex/context/verification.md) — что именно доказывает verification.
+- [docs/README.md](docs/README.md) — карта развёрнутой документации проекта.
+- [docs/getting-started.md](docs/getting-started.md) — prerequisites, сборка, запуск и диагностика.
+- [docs/architecture/android-game-lifecycle.md](docs/architecture/android-game-lifecycle.md) — подробная архитектура Android/ADB и lifecycle игры.
+- [AGENTS.md](AGENTS.md) — минимальный глобальный контракт для coding-agent.
+- [.codex/context/INDEX.md](.codex/context/INDEX.md) — маршрутизация короткого agent-critical контекста.
 
 ## Лицензия
 
