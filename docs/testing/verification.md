@@ -1,7 +1,7 @@
 # Verification проекта — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [verification.md](../../testing/verification.md).
+Короткий agent-critical contract находится в [verification.md](verification.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Команды CI
@@ -54,9 +54,9 @@ MSBuild берёт native runtime из `artifacts/native/runtime/<Configuration>
 ## Что доказывают проверки application-контрактов
 
 Правила конфигурации, отказов и диагностики принадлежат
-[application-configuration.md](../../reference/application-configuration.md),
-[application-failures.md](../../reference/application-failures.md) и
-[runtime-diagnostics.md](../../operations/runtime-diagnostics.md); здесь описано только то, что доказывается.
+[application-configuration.md](../reference/application-configuration.md),
+[application-failures.md](../reference/application-failures.md) и
+[runtime-diagnostics.md](../operations/runtime-diagnostics.md); здесь описано только то, что доказывается.
 
 Строгая конфигурация:
 
@@ -107,7 +107,7 @@ Composition и отказы:
   запуска: записей без identifier нет, identifier присутствует в каждой записи операции через scope, а
   явные свойства identifier равны ему; тот же identifier виден в человекочитаемом итоге `stdout`. Какая
   поверхность несёт identifier свойством, а какая — только scope, принадлежит
-  [runtime-diagnostics.md](../../operations/runtime-diagnostics.md) и здесь не дублируется;
+  [runtime-diagnostics.md](../operations/runtime-diagnostics.md) и здесь не дублируется;
 - MuMu-секция диагностики собирается без mutation: startup не запускает и не останавливает экземпляр, а
   внешние текстовые значения секции bounded и однострочны, поэтому отображаемое имя или ответ control
   surface не добавляют строку в вывод;
@@ -119,7 +119,7 @@ Composition и отказы:
 ## Что доказывают проверки MuMu-capability
 
 Правила семейства MuMu, identity экземпляра и lifecycle принадлежат
-[mumu-lifecycle.md](../../architecture/mumu-lifecycle.md); здесь описано только то, что доказывается.
+[mumu-lifecycle.md](../architecture/mumu-lifecycle.md); здесь описано только то, что доказывается.
 
 Обычные managed тесты прогоняют production-код capability через управляемые внешние границы: подменяются
 источник реестра установок, install metadata, файловая проба, запуск процесса и источник времени.
@@ -147,7 +147,7 @@ orchestration lifecycle, проекция отказов и сборка диа�
 ## Что доказывают проверки Android/ADB readiness и lifecycle игры
 
 Правила Android-слоя, ADB endpoint, готовности Android и lifecycle игры принадлежат
-[android-game-lifecycle.md](../../architecture/android-game-lifecycle.md); здесь описано только то, что доказывается.
+[android-game-lifecycle.md](../architecture/android-game-lifecycle.md); здесь описано только то, что доказывается.
 
 Обычные managed тесты прогоняют production-код Android-слоя через управляемые внешние границы.
 Подменяются ровно две границы: host-side поверхность Android (единственный double на примитивы

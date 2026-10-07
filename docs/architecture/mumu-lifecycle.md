@@ -1,7 +1,7 @@
 # MuMu lifecycle: control surface, identity и host-side состояние — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [mumu-lifecycle.md](../../architecture/mumu-lifecycle.md).
+Короткий agent-critical contract находится в [mumu-lifecycle.md](mumu-lifecycle.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Область владения
@@ -27,8 +27,8 @@
 - настройками экземпляра и продукта (`setting`, `simulation`, `driver`, `sort`, `log`, `sh`);
 - операциями над составом установки: `create`, `clone`/`copy`, `delete`, `rename`, `import`, `export`,
   `upgrade`, `main`, `uninstall`;
-- схемой пользовательской конфигурации (владелец — [application-configuration.md](../../reference/application-configuration.md));
-- составом диагностического snapshot и логированием (владелец — [runtime-diagnostics.md](../../operations/runtime-diagnostics.md)).
+- схемой пользовательской конфигурации (владелец — [application-configuration.md](../reference/application-configuration.md));
+- составом диагностического snapshot и логированием (владелец — [runtime-diagnostics.md](../operations/runtime-diagnostics.md)).
 
 ## Поддерживаемое семейство и форма control surface
 
@@ -126,7 +126,7 @@ Identity экземпляра — провайдерский номер (`vminde
 - позиция записи в ответе и порядок перечисления идентификатором не являются.
 
 Каноническая текстовая форма identity (`mumu:<digits>`) и её грамматика принадлежат схеме конфигурации
-([application-configuration.md](../../reference/application-configuration.md)); adapter передаёт control surface сам
+([application-configuration.md](../reference/application-configuration.md)); adapter передаёт control surface сам
 номер без префикса, а грамматику номера читает у владельца синтаксиса значения, не дублируя её.
 
 ## Выбор экземпляра
@@ -300,7 +300,7 @@ Terminal host-side состояние подтверждается только 
 может быть принята за успех: production не объявляет успех, реагирует на отсутствие эффекта ровно одним
 повтором `launch` (см. «Переход Stopped → Running») и, если признак начала запуска так и не появился,
 сообщает bounded `MuMuLifecycleTimeout` с `IsRetryable = true` (признак повторяемости принадлежит
-владельцу каталога кодов — [application-failures.md](../../reference/application-failures.md)), оставляя состояние
+владельцу каталога кодов — [application-failures.md](../reference/application-failures.md)), оставляя состояние
 невыдуманным. Это соответствует контракту capability, а не является её дефектом: capability и не обещает,
 что код выхода команды доказывает переход.
 
@@ -359,7 +359,7 @@ capability, а не часть MuMu lifecycle: она появляется вм�
 - Захваченный вывод каждой команды ограничен по длине; усечение сообщается явно и делает ответ
   неразбираемым: усечённый вывод не подаётся parser-у как полноценный.
 - Что из захваченного вывода попадает в structured details и в логи, принадлежит владельцам этих правил
-  ([application-failures.md](../../reference/application-failures.md), [runtime-diagnostics.md](../../operations/runtime-diagnostics.md)):
+  ([application-failures.md](../reference/application-failures.md), [runtime-diagnostics.md](../operations/runtime-diagnostics.md)):
   состав details и состав логирования в этом документе не пересказывается.
 - Массовое завершение процессов, поиск процессов по имени и завершение дерева процессов не выполняются:
   lifecycle не управляет чужими процессами.
@@ -381,7 +381,7 @@ capability, а не часть MuMu lifecycle: она появляется вм�
 ## Отказы
 
 Каталог кодов отказа, признак повторяемости, состав structured details и соответствие «код отказа → код
-выхода процесса» принадлежат [application-failures.md](../../reference/application-failures.md); значения кодов —
+выхода процесса» принадлежат [application-failures.md](../reference/application-failures.md); значения кодов —
 константам `ApplicationFailure` в `src/AzurPilot.Core/Failures/`, числовая проекция — типу
 `AzurPilotExitCode`. Второй перечень кодов и второй перечень признака повторяемости здесь не заводится:
 таблица ниже — не каталог, а MuMu-специфичное соответствие «условие перехода → код» для отказов

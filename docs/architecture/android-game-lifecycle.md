@@ -1,7 +1,7 @@
 # Android и lifecycle игры Azur Lane Global/EN — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [android-game-lifecycle.md](../../architecture/android-game-lifecycle.md).
+Короткий agent-critical contract находится в [android-game-lifecycle.md](android-game-lifecycle.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Область владения
@@ -24,14 +24,14 @@
 Не владеет и явно вне области:
 
 - MuMu: обнаружение установки, identity и выбор экземпляра, host-side состояние, host-примитив
-  mutation и MuMu lifecycle ([mumu-lifecycle.md](../../architecture/mumu-lifecycle.md));
+  mutation и MuMu lifecycle ([mumu-lifecycle.md](mumu-lifecycle.md));
 - схема пользовательской конфигурации и значения её секций
-  ([application-configuration.md](../../reference/application-configuration.md)): product identity, endpoint и числа
+  ([application-configuration.md](../reference/application-configuration.md)): product identity, endpoint и числа
   времени настройкой не являются;
 - каталог кодов отказа, признак повторяемости, состав details и коды выхода процесса
-  ([application-failures.md](../../reference/application-failures.md));
+  ([application-failures.md](../reference/application-failures.md));
 - состав диагностического snapshot, логирование и граница `stdout`/`stderr`
-  ([runtime-diagnostics.md](../../operations/runtime-diagnostics.md));
+  ([runtime-diagnostics.md](../operations/runtime-diagnostics.md));
 - установка и удаление APK, выдача и сброс runtime-разрешений Android, настройки экземпляра;
 - готовность UI игры (splash, assets, login, главное меню, всплывающие окна), screenshot, vision,
   OCR/ONNX/GPU и ввод (tap/swipe/keymap);
@@ -63,7 +63,7 @@ Endpoint — identity target-а: и наблюдение, и mutation адрес
 | Факт | Evidence |
 | --- | --- |
 | Host и порт приходят сведениями установки об экземпляре | Сведения экземпляра сообщают host `127.0.0.1` и числовой порт; endpoint собирается из них |
-| Endpoint сохраняется между остановкой и запуском экземпляра | Наблюдался тот же адрес после остановки и запуска; identity экземпляра при этом остаётся провайдерским номером ([mumu-lifecycle.md](../../architecture/mumu-lifecycle.md)) |
+| Endpoint сохраняется между остановкой и запуском экземпляра | Наблюдался тот же адрес после остановки и запуска; identity экземпляра при этом остаётся провайдерским номером ([mumu-lifecycle.md](mumu-lifecycle.md)) |
 | Порт не является identity и не участвует в выборе | Значение диагностическое: выбор адресует экземпляр по номеру, а не по адресу |
 
 Machine-specific значения адреса — runtime data конкретной машины: в исходниках, тестах и документации
@@ -188,7 +188,7 @@ Product identity — единственный владелец значений:
 
 - Значения не являются user-configurable: регионы, каналы, списки известных пакетов и автоопределение
   JP/CN/TW не поддерживаются. Другой регион — другая capability со своим контрактом, а не значение
-  настройки ([application-configuration.md](../../reference/application-configuration.md)).
+  настройки ([application-configuration.md](../reference/application-configuration.md)).
 - Product identity не выводится из окружения и из наблюдаемого ответа устройства: подстановка
   «похожего» пакета запрещена.
 - Наблюдение относится ровно к этому пакету: ответ про другой пакет фактом об игре не является, а
@@ -298,7 +298,7 @@ Product identity — единственный владелец значений:
   сторона границы синтезирует свою форму для общего кода. Код в обоих случаях один и тот же и берётся из
   констант `ApplicationFailure`, поэтому перечень кодов остаётся единственным. Это тот же прецедент,
   который уже принят для MuMu: фабрики MuMu-отказов Core и фабрики MuMu-отказов платформенной стороны
-  существуют раздельно ([mumu-lifecycle.md](../../architecture/mumu-lifecycle.md)).
+  существуют раздельно ([mumu-lifecycle.md](mumu-lifecycle.md)).
 - Core синтезирует отказ в фазе разрешения launcher-а до mutation: компонент разрешается заранее, поэтому
   неразрешимый или неоднозначный компонент не приводит к частично выполненной операции.
 - Платформенная сторона синтезирует тот же код в фазе mutation: запуск разрешает компонент заново
@@ -331,7 +331,7 @@ ADB — evidence, а не доказательство перехода. Усп�
   уже существует, а запуск разрешённого компонента поднимает её на передний план, поэтому отдельного пути
   для фона нет. Выполняется ровно одна package-scoped mutation запуска разрешённого launcher-компонента;
   повторов запуска здесь нет — правило повтора принадлежит MuMu host lifecycle
-  ([mumu-lifecycle.md](../../architecture/mumu-lifecycle.md)) и сюда не переносится. Успешная команда, её нулевой код выхода
+  ([mumu-lifecycle.md](mumu-lifecycle.md)) и сюда не переносится. Успешная команда, её нулевой код выхода
   и появление процесса сами по себе postcondition не заменяют.
 - Остановка: выполняется ровно одна mutation принудительной остановки exact package. Data, cache,
   permissions, account и files игры не чистятся: lifecycle меняет только состояние процесса.
@@ -440,7 +440,7 @@ ADB — evidence, а не доказательство перехода. Усп�
 ## Отказы
 
 Каталог кодов отказа, признак повторяемости, состав structured details и соответствие «код отказа → код
-выхода процесса» принадлежат [application-failures.md](../../reference/application-failures.md); значения кодов —
+выхода процесса» принадлежат [application-failures.md](../reference/application-failures.md); значения кодов —
 константам `ApplicationFailure` в `src/AzurPilot.Core/Failures/`, числовая проекция — типу
 `AzurPilotExitCode`. Второй перечень кодов и второй перечень признака повторяемости здесь не заводится:
 таблица ниже — не каталог, а Android-специфичное соответствие «условие → код» для отказов платформенной
@@ -490,7 +490,7 @@ target-ами, а также любые операции, вынесенные �
 
 - Второй device framework и второй process framework не вводятся: контракты Android живут в Core,
   Windows-адаптер — в платформенной boundary, а запуск процесса идёт через одну общую границу с
-  проекцией отказов своего владельца ([architecture.md](../../architecture/overview.md)).
+  проекцией отказов своего владельца ([architecture.md](overview.md)).
 - Не вводятся: готовность UI, screenshot, ввод (tap/swipe/keymap), vision, OCR/ONNX/GPU, продуктовая
   командная строка, REPL, agent CLI, установка/удаление APK, выдача и сброс разрешений, настройки
   экземпляра, работа с другими target-ами и пакетами, `adb kill-server`, массовое завершение процессов,

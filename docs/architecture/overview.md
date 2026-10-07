@@ -1,7 +1,7 @@
 # Архитектура проекта: карта и границы — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [architecture.md](../../architecture/overview.md).
+Короткий agent-critical contract находится в [architecture.md](overview.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Область и платформа
@@ -47,7 +47,7 @@ Managed solution — `AzurPilot.slnx` в корне репозитория.
 - `tests/AzurPilot.Tests` — основной проект проверок: interop boundary, строгая конфигурация,
   application-level отказы, MuMu-capability, Android/ADB readiness вместе с lifecycle игры и поведение
   application host. Часть проверок выполняется на реальном процессе приложения, часть — в процессе
-  самого теста; что именно доказывается, принадлежит [verification.md](../../testing/verification.md).
+  самого теста; что именно доказывается, принадлежит [verification.md](../testing/verification.md).
 - `tests/AzurPilot.NativeAbsenceProbe` — исполняемая проба, которая запускается тестом отдельным
   процессом и используется в двух режимах: негативная проверка загрузки native boundary (библиотеки
   нет или подложена fixture с несовместимым ABI) и application startup через composition root с явно
@@ -86,9 +86,9 @@ runtime-диагностический snapshot и реальные Windows-во
 выбор Android-экземпляра и host-side lifecycle с доказуемым postcondition) и Android-слой (bundled ADB,
 точный ADB endpoint выбранного экземпляра, готовность Android и lifecycle игры Azur Lane Global/EN с
 доказуемым postcondition). Их правила имеют собственных владельцев —
-[application-configuration.md](../../reference/application-configuration.md),
-[application-failures.md](../../reference/application-failures.md), [runtime-diagnostics.md](../../operations/runtime-diagnostics.md),
-[mumu-lifecycle.md](../../architecture/mumu-lifecycle.md) и [android-game-lifecycle.md](../../architecture/android-game-lifecycle.md); здесь они
+[application-configuration.md](../reference/application-configuration.md),
+[application-failures.md](../reference/application-failures.md), [runtime-diagnostics.md](../operations/runtime-diagnostics.md),
+[mumu-lifecycle.md](mumu-lifecycle.md) и [android-game-lifecycle.md](android-game-lifecycle.md); здесь они
 не повторяются. Пользовательских опций запуска и командной строки у приложения нет: startup вычисляет
 runtime-путь конфигурации сам. Границы остаются прежними: `AzurPilot.Core` владеет контрактами
 конфигурации, отказов, MuMu и Android, не зависящими от Windows, `AzurPilot.Windows` — проекцией ошибок
@@ -186,12 +186,12 @@ MSBuild работает по принципу fail-closed и перед managed
 - MuMu-capability реализована как реальная Windows-возможность: обнаружение установки MuMuPlayer,
   стабильная identity и выбор Android-экземпляра, host-side состояние экземпляра и безопасные
   start/stop/restart с доказуемым postcondition. Правила принадлежат
-  [mumu-lifecycle.md](../../architecture/mumu-lifecycle.md); секция `mumu` конфигурации, MuMu-коды отказа, MuMu-секция
+  [mumu-lifecycle.md](mumu-lifecycle.md); секция `mumu` конфигурации, MuMu-коды отказа, MuMu-секция
   диагностики и проверки существуют вместе с этой capability.
 - Android-слой реализован как следующая реальная Windows-возможность: bundled ADB обнаруженной установки,
   точный ADB endpoint выбранного экземпляра, готовность Android и lifecycle игры Azur Lane Global/EN с
   доказуемым postcondition. Правила принадлежат
-  [android-game-lifecycle.md](../../architecture/android-game-lifecycle.md); Android-коды отказа, секции Android и состояния
+  [android-game-lifecycle.md](android-game-lifecycle.md); Android-коды отказа, секции Android и состояния
   игры в диагностике и проверки существуют вместе с этой capability, а продуктовые настройки для неё не
   вводятся: product identity и endpoint — runtime-данные, а не значения схемы.
 - Отсутствуют и не объявляются абстракциями «на будущее»: ввод (tap/swipe/keymap), screenshot/vision-

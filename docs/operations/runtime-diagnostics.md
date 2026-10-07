@@ -1,7 +1,7 @@
 # Runtime: composition, логирование, correlation и диагностика — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [runtime-diagnostics.md](../../operations/runtime-diagnostics.md).
+Короткий agent-critical contract находится в [runtime-diagnostics.md](runtime-diagnostics.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Composition root и состав host-а
@@ -10,7 +10,7 @@ Application host собирается в `AzurPilotHost` (`src/AzurPilot.App/`):
 строится host и выполняется startup. Точка входа только вызывает startup и печатает человекочитаемый
 итог, поэтому runtime-логика в `Program.cs` не живёт. Командной строки у приложения нет: startup
 вычисляет runtime-путь конфигурации сам через его владельца
-([application-configuration.md](../../reference/application-configuration.md)).
+([application-configuration.md](../reference/application-configuration.md)).
 
 Host строится на `Host.CreateEmptyApplicationBuilder(...)` с отключёнными defaults: зависимости,
 configuration providers и logging providers добавляются осознанно, а не появляются скрытым
@@ -25,10 +25,10 @@ configuration providers и logging providers добавляются осозна
 
 Пользовательская конфигурация — один строгий JSON snapshot, поэтому ни один configuration provider
 не регистрируется: загруженный snapshot передаётся в DI как готовый объект
-([application-configuration.md](../../reference/application-configuration.md)). В DI попадают только реально
+([application-configuration.md](../reference/application-configuration.md)). В DI попадают только реально
 используемые runtime services этого этапа: snapshot конфигурации, диагностическая операция и проекция
 ошибок платформенной/native boundary в application-отказ
-([application-failures.md](../../reference/application-failures.md)). Service или interface не вводится «на будущее».
+([application-failures.md](../reference/application-failures.md)). Service или interface не вводится «на будущее».
 
 Реальная MuMu-capability подключена к тому же composition root: production host-side поверхность
 `IMuMuHost` приходит из платформенной boundary `AzurPilot.Windows`, а orchestration lifecycle, координация
@@ -36,11 +36,11 @@ mutation, часы и числа времени — из Core. Все они —
 координации mutation нарушил бы process-local гарантию «одновременных mutation одного экземпляра нет», а
 второй источник времени — контракт deadline. MuMu-операции резолвятся из DI и не создаются вручную, а
 optional-зависимостей с молчаливыми значениями у orchestration нет. Правила семейства MuMu, identity
-экземпляра и lifecycle принадлежат [mumu-lifecycle.md](../../architecture/mumu-lifecycle.md).
+экземпляра и lifecycle принадлежат [mumu-lifecycle.md](../architecture/mumu-lifecycle.md).
 
 Android-слой подключён к тому же composition root: production host-side поверхность `IAndroidHost` —
 Android-adapter платформенной boundary, а readiness, наблюдение состояния игры и lifecycle игры —
-orchestration Core. Правила слоя принадлежат [android-game-lifecycle.md](../../architecture/android-game-lifecycle.md).
+orchestration Core. Правила слоя принадлежат [android-game-lifecycle.md](../architecture/android-game-lifecycle.md).
 Регистрация подчиняется тем же требованиям: все Android-сервисы — singleton-ы одного host-а, потому что
 координация mutation игры обязана быть единственной на процесс, а числа времени приходят от своего
 владельца, а не из литералов. Граница запуска процесса у Android — та же реализация, что у MuMu, но со
@@ -142,13 +142,13 @@ Snapshot — `AzurPilotDiagnosticReport` с шестью bounded секциям�
 
 Недоступная или несовместимая native boundary — результат диагностики, а не исключение: ошибка
 границы проецируется в application-отказ production-маппером, полученным из DI, и попадает в
-native-секцию как данные ([application-failures.md](../../reference/application-failures.md)).
+native-секцию как данные ([application-failures.md](../reference/application-failures.md)).
 
 MuMu-секция собирается чтением host-side поверхности: обнаружение установки, разрешение выбранного
 экземпляра и наблюдение его состояния. Разрешение выбора не повторяет семантику выбора у себя — она
 принадлежит orchestration Core. Диагностика MuMu не запрашивает mutation ни на одном пути, поэтому
 startup не может незаметно запустить или остановить эмулятор; отказ любого шага остаётся данными секции
-([mumu-lifecycle.md](../../architecture/mumu-lifecycle.md)).
+([mumu-lifecycle.md](../architecture/mumu-lifecycle.md)).
 
 Секции Android и состояния игры собираются одной read-only пробой, которая выполняется один раз и
 переиспользуется обеими секциями: цель Android — установка, выбранный экземпляр, bundled ADB и точный
@@ -158,14 +158,14 @@ endpoint — разрешается одним путём, а не повтор�
 transport: у неготового transport факты не наблюдались, и это «не наблюдалось», а не «игра не
 установлена». Шаги идут по порядку и останавливаются на первом отказе, поэтому bounded имя шага
 сообщает, на каком шаге диагностика остановилась, а значения после него остаются недоказанными. Отказ
-шага — данные секции, а не причина отказа запуска ([android-game-lifecycle.md](../../architecture/android-game-lifecycle.md)).
+шага — данные секции, а не причина отказа запуска ([android-game-lifecycle.md](../architecture/android-game-lifecycle.md)).
 
 ## Startup и отказы
 
 - Ожидаемый отказ (невалидная конфигурация, недоступная или несовместимая native boundary) завершает
   запуск явным предсказуемым ненулевым кодом выхода и не маскируется как здоровый запуск.
   Соответствие «код отказа → код выхода процесса» принадлежит
-  [application-failures.md](../../reference/application-failures.md).
+  [application-failures.md](../reference/application-failures.md).
 - MuMu-отказ не является отказом запуска: отсутствие MuMu, неподдерживаемая control surface,
   остановленный экземпляр и неразрешённый выбор экземпляра — нормальные диагностические результаты,
   которые отображаются в snapshot и в человекочитаемом итоге, но не отклоняют запуск и не «исправляются»
