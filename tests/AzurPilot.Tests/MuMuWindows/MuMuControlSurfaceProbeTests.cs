@@ -14,7 +14,7 @@ public sealed class MuMuControlSurfaceProbeTests
     [Fact(DisplayName = "Распознанные version и перечисление подтверждают поддержку control surface")]
     public async Task RecognizedSurfacesConfirmSupport()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueOutcome(0, MuMuObservedPayloads.VersionResponse);
         runner.EnqueueOutcome(0, MuMuObservedPayloads.SingleStoppedEnumerationResponse);
 
@@ -37,7 +37,7 @@ public sealed class MuMuControlSurfaceProbeTests
     [Fact(DisplayName = "Проверка поддержки не выполняет mutation ни над одним экземпляром")]
     public async Task ProbePerformsReadOnlyRequestsOnly()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueOutcome(0, MuMuObservedPayloads.VersionResponse);
         runner.EnqueueOutcome(0, MuMuObservedPayloads.SingleStoppedEnumerationResponse);
 
@@ -57,7 +57,7 @@ public sealed class MuMuControlSurfaceProbeTests
     [Fact(DisplayName = "Нераспознанный ответ на version делает форму неподдерживаемой")]
     public async Task UnrecognizedVersionMakesSurfaceUnsupported()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueOutcome(0, "{ \"player_version\": \"6.8.0.0\" }");
 
         MuMuControlSurfaceProbe probe = new(new MuMuManagerClient(runner, CreateSurface()));
@@ -82,7 +82,7 @@ public sealed class MuMuControlSurfaceProbeTests
     [Fact(DisplayName = "Нераспознанный ответ на перечисление делает форму неподдерживаемой")]
     public async Task UnrecognizedEnumerationMakesSurfaceUnsupported()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueOutcome(0, MuMuObservedPayloads.VersionResponse);
         runner.EnqueueOutcome(0, "{ \"instances\": [] }");
 
@@ -107,7 +107,7 @@ public sealed class MuMuControlSurfaceProbeTests
     [Fact(DisplayName = "Отмена проверки не превращается в «не поддерживается»")]
     public async Task CancelledProbeIsFailureNotUnsupported()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueFailure(MuMuPlatformFailureMapper.ForCancellation());
 
         MuMuControlSurfaceProbe probe = new(new MuMuManagerClient(runner, CreateSurface()));

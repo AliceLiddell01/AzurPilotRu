@@ -10,10 +10,12 @@ AzurPilotRu — персональная реализация AzurPilot: Windows
 image/vision часть — отдельная native DLL на C++ с OpenCV, связь между ними — узкий versioned C ABI.
 Репозиторные инструменты разработчика отделены от product runtime. Приложение уже имеет application
 host, строгую пользовательскую конфигурацию, application-level отказы, structured logging с
-correlation, runtime-диагностику и первую реальную Windows-возможность — MuMu-capability: обнаружение
+correlation, runtime-диагностику и две реальные Windows-возможности: MuMu-capability (обнаружение
 установки MuMuPlayer, выбор Android-экземпляра и host-side start/stop/restart с доказуемым
-postcondition. ADB и device readiness, lifecycle игры, ввод, vision-пайплайн, OCR/ONNX, product
-CLI/REPL и agent CLI — будущие capability: в текущем приложении их нет.
+postcondition) и Android-слой (bundled ADB, точный ADB endpoint выбранного экземпляра, готовность
+Android и lifecycle игры Azur Lane Global/EN с доказуемым postcondition). Ввод, vision-пайплайн,
+OCR/ONNX, готовность UI игры, product CLI/REPL и agent CLI — будущие capability: в текущем приложении
+их нет.
 
 ## Минимальные инварианты (до чтения контекста)
 
@@ -55,6 +57,7 @@ CLI/REPL и agent CLI — будущие capability: в текущем прил�
 | Стабильные application-коды отказа, признак повторяемости, structured details, проекция отказов boundary и коды выхода процесса | [.codex/context/application-failures.md](.codex/context/application-failures.md) |
 | Composition root и состав host-а, structured logging и граница `stdout`/`stderr`, correlation identity, состав диагностического snapshot | [.codex/context/runtime-diagnostics.md](.codex/context/runtime-diagnostics.md) |
 | MuMu-capability: control surface, обнаружение установки, identity и выбор экземпляра, host-side состояние, start/stop/restart и postcondition | [.codex/context/mumu-lifecycle.md](.codex/context/mumu-lifecycle.md) |
+| Android/ADB и lifecycle игры Azur Lane Global/EN: точный ADB endpoint, граница ADB executable, готовность Android, product identity, наблюдение пакета/процесса/переднего плана, start/stop/restart игры и postcondition | [.codex/context/android-game-lifecycle.md](.codex/context/android-game-lifecycle.md) |
 | Что именно доказывают проверки, различие hosted CI и real Windows acceptance и как падает verification | [.codex/context/verification.md](.codex/context/verification.md) |
 | Язык комментариев, диагностики и документации | [.codex/context/language.md](.codex/context/language.md) |
 | Git/GitHub lifecycle: ветка, staging, commit, push, remote postcondition, PR, Draft/Ready, merge и cleanup | [`.agents/skills/azurpilot-git-workflow/`](.agents/skills/azurpilot-git-workflow/) |

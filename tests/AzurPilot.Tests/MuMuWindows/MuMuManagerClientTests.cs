@@ -23,7 +23,7 @@ public sealed class MuMuManagerClientTests
     [Fact(DisplayName = "Версия запрашивается ровно у сконфигурированного control utility")]
     public async Task VersionRequestUsesExactExecutableAndArguments()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueOutcome(0, MuMuObservedPayloads.VersionResponse);
 
         MuMuControlSurface surface = CreateSurface();
@@ -47,7 +47,7 @@ public sealed class MuMuManagerClientTests
     [Fact(DisplayName = "Наблюдение состояния запрашивается по конкретному номеру экземпляра")]
     public async Task InstanceQueryUsesExactIndex()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueOutcome(0, MuMuObservedPayloads.StoppedInstanceResponse);
 
         MuMuManagerClient client = new(runner, CreateSurface());
@@ -64,7 +64,7 @@ public sealed class MuMuManagerClientTests
     [Fact(DisplayName = "Операция изменения состояния выполняется ровно один раз и без повторных попыток")]
     public async Task ControlIsExecutedOnce()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueOutcome(0, MuMuObservedPayloads.AcceptedControlResponse);
 
         MuMuManagerClient client = new(runner, CreateSurface());
@@ -83,7 +83,7 @@ public sealed class MuMuManagerClientTests
     [Fact(DisplayName = "Усечённый вывод не разбирается: операция завершается отказом")]
     public async Task TruncatedOutputFailsClosed()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueOutcome(0, MuMuObservedPayloads.VersionResponse, standardOutputTruncated: true);
 
         MuMuManagerClient client = new(runner, CreateSurface());
@@ -106,7 +106,7 @@ public sealed class MuMuManagerClientTests
     [Fact(DisplayName = "Дедлайн процесса control utility пробрасывается как отказ lifecycle-таймаута")]
     public async Task ProcessDeadlineFailureIsPropagated()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueFailure(MuMuPlatformFailureMapper.ForProcessTimeout(
             CreateSurface().ExecutablePath,
             TimeSpan.FromSeconds(1),
@@ -129,7 +129,7 @@ public sealed class MuMuManagerClientTests
     [Fact(DisplayName = "Отмена операции не превращается в отказ control surface")]
     public async Task CancellationIsPropagatedUnchanged()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueFailure(MuMuPlatformFailureMapper.ForCancellation());
 
         MuMuManagerClient client = new(runner, CreateSurface());
@@ -152,7 +152,7 @@ public sealed class MuMuManagerClientTests
     [Fact(DisplayName = "Отказ провайдера на несуществующий номер не считается успехом операции")]
     public async Task ProviderRejectionIsNotSuccess()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         runner.EnqueueOutcome(
             MuMuObservedPayloads.IndexNotFoundExitCode,
             MuMuObservedPayloads.IndexNotFoundResponse);
@@ -175,7 +175,7 @@ public sealed class MuMuManagerClientTests
     [InlineData(-1)]
     public void NonPositiveTimeoutIsProgrammingError(int seconds)
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
 
         _ = Assert.Throws<ArgumentOutOfRangeException>(
             () => new MuMuManagerClient(runner, CreateSurface(), TimeSpan.FromSeconds(seconds)));
@@ -184,7 +184,7 @@ public sealed class MuMuManagerClientTests
     [Fact(DisplayName = "Пустой путь к control surface — ошибка программирования")]
     public void EmptyExecutablePathIsProgrammingError()
     {
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
 
         _ = Assert.Throws<ArgumentException>(
             () => new MuMuManagerClient(runner, new MuMuControlSurface { ExecutablePath = " " }));

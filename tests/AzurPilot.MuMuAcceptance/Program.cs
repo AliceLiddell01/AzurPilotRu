@@ -2,6 +2,7 @@ using System.Text;
 using AzurPilot.Core.MuMu;
 using AzurPilot.MuMuAcceptance;
 using AzurPilot.Windows.MuMu;
+using AzurPilot.Windows.Processes;
 using Microsoft.Extensions.Logging;
 
 // Инструмент реальной приёмки MuMu на Windows.
@@ -51,7 +52,8 @@ report.Sanitizer.Protect(Environment.CurrentDirectory, AcceptanceSanitizer.Worki
 using StderrLoggerFactory loggerFactory = new();
 
 MuMuCommandAudit audit = new();
-IMuMuProcessRunner processRunner = new AuditingProcessRunner(new MuMuProcessRunner(), audit);
+IWindowsProcessRunner processRunner =
+    new AuditingProcessRunner(new WindowsProcessRunner(new MuMuProcessFailureProjection()), audit);
 WindowsMuMuFileSystemProbe fileSystemProbe = new();
 
 MuMuWindowsHost host = new(

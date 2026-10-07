@@ -47,7 +47,8 @@ dotnet test tests/AzurPilot.Tests/AzurPilot.Tests.csproj --configuration Release
    `artifacts/native/runtime/<Configuration>`.
 4. `dotnet restore --locked-mode` восстанавливает закреплённый lock-файлами граф NuGet.
 5. `dotnet build` собирает solution и передаёт warnings как ошибки.
-6. `dotnet test` запускает interop и repository contract tests без повторной сборки.
+6. `dotnet test` запускает interop, application и capability tests (MuMu, Android/ADB readiness и
+   lifecycle игры) вместе с repository contract tests без повторной сборки.
 
 MSBuild берёт runtime из `artifacts/native/runtime/<Configuration>` и добавляет DLL в managed outputs.
 Если там нет `AzurPilot.Native.dll` или runtime DLL OpenCV, MSBuild останавливает managed build с
@@ -101,10 +102,17 @@ Acquisition выполняется автоматически при CMake confi
 
 - `stdout` — человекочитаемый итог: identity сборки, runtime и процесса, источник и версия схемы
   конфигурации, фактические сведения native boundary (версия ABI, версия OpenCV, capability),
-  строка MuMu-секции (обнаружение установки, выбранный экземпляр и его наблюдённое состояние) и итог
-  запуска. Startup MuMu не запускает и не останавливает;
+  строка MuMu-секции (обнаружение установки, выбранный экземпляр и его наблюдённое состояние), строка
+  Android-секции (доступность bundled ADB, точный endpoint, состояние ADB transport, доступность shell,
+  завершение загрузки Android и версия Android), строка секции состояния игры (product identity
+  Global/EN, установлен ли пакет, запущен ли процесс, находится ли игра на переднем плане, выведенное
+  состояние) и итог запуска. Startup ничего не подключает и не запускает: ни ADB, ни игру, ни эмулятор;
 - `stderr` — structured runtime logs в JSON-формате; каждая запись несёт correlation identifier
   операции. Логи в `stdout` не попадают, поэтому вывод остаётся presentation surface.
+
+Недоказанное значение в строках Android и состояния игры печатается как «не наблюдалось» или «не
+доказано», а не как доказанное отсутствие: диагностика только читает и не «исправляет» неготовый
+transport.
 
 Проверить это поведение целиком, включая границу `stdout`/`stderr`, можно командой из раздела 2:
 `dotnet test` запускает реальный процесс приложения вместе с его диагностикой.
@@ -124,6 +132,16 @@ Acquisition выполняется автоматически при CMake confi
   Приёмка собирается вместе с `AzurPilot.Windows`, поэтому до её запуска нужен native runtime этой
   конфигурации: из каталога `native` выполните CMake workflow preset `native-x64-release`. Что именно
   доказывает каждая проверка — [verification.md](../.codex/context/verification.md).
+- **Android-проверки** прогоняют production-код Android-слоя через управляемые внешние границы (host-side
+  поверхность Android и общая граница запуска процесса) и доказывают разрешение точного ADB endpoint,
+  target-explicit адресацию команд, готовность Android, независимость фактов об игре и lifecycle игры без
+  установленной MuMu, без ADB и без установленной игры. Поведение реальной установки, реального ADB и
+  реальной игры доказывает отдельная локальная приёмка, которая требует установленной MuMuPlayer и
+  установленной игры Global/EN и в hosted CI не запускается:
+  `dotnet run --project tests/AzurPilot.AndroidAcceptance -c Release -- --instance mumu:<index>`.
+  Приёмка мутирует состояние игры внутри выбранного экземпляра, поэтому явно выбранный exact instance
+  обязателен, а начальное состояние игры восстанавливается в конце прогона. Как и MuMu-приёмка, она
+  собирается вместе с `AzurPilot.Windows`, поэтому до её запуска нужен native runtime этой конфигурации.
 - **Repository contract tests** проверяют отсутствие machine-specific абсолютных путей,
   фундаментального hardcode `1280x720`, Git-visible binaries и build outputs.
 
@@ -143,6 +161,8 @@ Acquisition выполняется автоматически при CMake confi
 | Приложение завершилось ненулевым кодом выхода | Прочитайте код отказа в итоге на `stdout` и в structured logs на `stderr`; значения кодов принадлежат [application-failures.md](../.codex/context/application-failures.md), правила схемы — [application-configuration.md](../.codex/context/application-configuration.md) |
 | `dotnet test` завершился с кодом 5 из-за неизвестной опции | Проект использует `Microsoft.Testing.Platform`; не передавайте неподдерживаемые runner options, например `--nologo` |
 | MuMu-секция сообщает, что установка не обнаружена или экземпляр не выбран | Это диагностический результат, а не отказ запуска: startup MuMu не запускает и не останавливает, а правила принадлежат [mumu-lifecycle.md](../.codex/context/mumu-lifecycle.md) |
+| Android-секция сообщает недоступный ADB, неразрешённый endpoint или неготовый transport | Это диагностический результат, а не отказ запуска: startup не подключает ADB, не запускает игру и не исправляет неготовый transport, а правила принадлежат [android-game-lifecycle.md](../.codex/context/android-game-lifecycle.md) |
+| Секция состояния игры сообщает состояние «не доказано» или ненаблюдённые факты | Это честный результат наблюдения: недоказанный факт не выдаётся за доказанное отсутствие, а наблюдение игры выполняется только при готовом transport |
 
 ## 9. Куда смотреть дальше
 
@@ -155,4 +175,5 @@ Acquisition выполняется автоматически при CMake confi
 - [application-failures.md](../.codex/context/application-failures.md) — коды отказа и коды выхода процесса.
 - [runtime-diagnostics.md](../.codex/context/runtime-diagnostics.md) — composition, логирование, correlation и диагностика.
 - [mumu-lifecycle.md](../.codex/context/mumu-lifecycle.md) — MuMu-capability: установка, экземпляр и lifecycle.
+- [android-game-lifecycle.md](../.codex/context/android-game-lifecycle.md) — ADB endpoint, готовность Android и lifecycle игры Global/EN.
 - [verification.md](../.codex/context/verification.md) — что доказывают проверки.

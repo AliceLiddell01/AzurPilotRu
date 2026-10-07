@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using AzurPilot.Core.Failures;
 
-namespace AzurPilot.Windows.MuMu;
+namespace AzurPilot.Windows.Processes;
 
 /// <summary>
 /// Production-реализация границы запуска процесса: точный исполняемый файл и список аргументов.
@@ -18,19 +18,39 @@ namespace AzurPilot.Windows.MuMu;
 /// <para>
 /// По истечении дедлайна завершается ровно тот процесс, который создала эта реализация. Массовое
 /// завершение процессов, поиск процессов по имени и завершение дерева процессов не выполняются:
-/// adapter не управляет чужими процессами.
+/// граница не управляет чужими процессами.
+/// </para>
+/// <para>
+/// Смысл ожидаемых отказов реализация не выбирает: она сообщает их через обязательную
+/// <see cref="IProcessFailureProjection"/> владельца возможности, поэтому один и тот же код запуска
+/// обслуживает разные возможности без второго набора кодов и без скрытого значения по умолчанию.
 /// </para>
 /// <para>
 /// Отмена операции и превышение дедлайна — ожидаемые отказы операции, а не исключения: они
 /// возвращаются значением <see cref="ApplicationResult{T}"/>.
 /// </para>
 /// </remarks>
-public sealed class MuMuProcessRunner : IMuMuProcessRunner
+public sealed class WindowsProcessRunner : IWindowsProcessRunner
 {
     /// <summary>Предельное число символов, захватываемых из каждого потока вывода процесса.</summary>
     public const int MaximumCapturedCharactersPerStream = 131072;
 
     private const int ReadBufferCharacters = 4096;
+
+    private readonly IProcessFailureProjection _failureProjection;
+
+    /// <summary>Создаёт границу запуска процесса с проекцией отказов её владельца.</summary>
+    /// <param name="failureProjection">
+    /// Проекция отказов запуска, дедлайна и отмены в application-level отказ.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="failureProjection"/> равен <see langword="null"/>.
+    /// </exception>
+    public WindowsProcessRunner(IProcessFailureProjection failureProjection)
+    {
+        ArgumentNullException.ThrowIfNull(failureProjection);
+        _failureProjection = failureProjection;
+    }
 
     /// <summary>Запускает процесс и дожидается его завершения в пределах дедлайна.</summary>
     /// <param name="request">Описание запуска.</param>
@@ -38,8 +58,8 @@ public sealed class MuMuProcessRunner : IMuMuProcessRunner
     /// <returns>Результат завершившегося процесса либо application-level отказ.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="request"/> равен <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Запрос не является корректным описанием запуска.</exception>
-    public async Task<ApplicationResult<MuMuProcessOutcome>> RunAsync(
-        MuMuProcessRequest request,
+    public async Task<ApplicationResult<WindowsProcessOutcome>> RunAsync(
+        WindowsProcessRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -71,19 +91,19 @@ public sealed class MuMuProcessRunner : IMuMuProcessRunner
         {
             if (!process.Start())
             {
-                return ApplicationResult<MuMuProcessOutcome>.Failure(
-                    MuMuPlatformFailureMapper.ForProcessStartFailure(request.ExecutablePath, null));
+                return ApplicationResult<WindowsProcessOutcome>.Failure(
+                    _failureProjection.StartFailed(request.ExecutablePath, null));
             }
         }
         catch (Win32Exception exception)
         {
-            return ApplicationResult<MuMuProcessOutcome>.Failure(
-                MuMuPlatformFailureMapper.ForProcessStartFailure(request.ExecutablePath, exception));
+            return ApplicationResult<WindowsProcessOutcome>.Failure(
+                _failureProjection.StartFailed(request.ExecutablePath, exception));
         }
         catch (InvalidOperationException exception)
         {
-            return ApplicationResult<MuMuProcessOutcome>.Failure(
-                MuMuPlatformFailureMapper.ForProcessStartFailure(request.ExecutablePath, exception));
+            return ApplicationResult<WindowsProcessOutcome>.Failure(
+                _failureProjection.StartFailed(request.ExecutablePath, exception));
         }
 
         Task<BoundedText> standardOutputTask = ReadBoundedAsync(process.StandardOutput);
@@ -111,8 +131,8 @@ public sealed class MuMuProcessRunner : IMuMuProcessRunner
 
         if (deadlineExpired)
         {
-            return ApplicationResult<MuMuProcessOutcome>.Failure(
-                MuMuPlatformFailureMapper.ForProcessTimeout(
+            return ApplicationResult<WindowsProcessOutcome>.Failure(
+                _failureProjection.TimedOut(
                     request.ExecutablePath,
                     stopwatch.Elapsed,
                     standardOutput.TotalCharacters,
@@ -121,11 +141,10 @@ public sealed class MuMuProcessRunner : IMuMuProcessRunner
 
         if (cancellationToken.IsCancellationRequested)
         {
-            return ApplicationResult<MuMuProcessOutcome>.Failure(
-                MuMuPlatformFailureMapper.ForCancellation());
+            return ApplicationResult<WindowsProcessOutcome>.Failure(_failureProjection.Cancelled());
         }
 
-        return ApplicationResult<MuMuProcessOutcome>.Success(new MuMuProcessOutcome
+        return ApplicationResult<WindowsProcessOutcome>.Success(new WindowsProcessOutcome
         {
             ExitCode = process.ExitCode,
             StandardOutput = standardOutput.Text,
@@ -136,7 +155,7 @@ public sealed class MuMuProcessRunner : IMuMuProcessRunner
         });
     }
 
-    private static void Validate(MuMuProcessRequest request)
+    private static void Validate(WindowsProcessRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.ExecutablePath))
         {

@@ -1,5 +1,6 @@
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
+using AzurPilot.Windows.Processes;
 
 namespace AzurPilot.Windows.MuMu;
 
@@ -33,14 +34,41 @@ public sealed class MuMuManagerClient
     /// </remarks>
     public static readonly TimeSpan DefaultCommandTimeout = TimeSpan.FromSeconds(120);
 
-    private readonly IMuMuProcessRunner _runner;
+    private readonly IWindowsProcessRunner _runner;
     private readonly MuMuControlSurface _controlSurface;
     private readonly TimeSpan _commandTimeout;
+
+    /// <summary>Создаёт клиент control surface обнаруженной установки.</summary>
+    /// <remarks>
+    /// Единственный владелец конструкции клиента по установке: и lifecycle, и другие Windows-возможности
+    /// получают клиент отсюда, поэтому точка входа control surface не собирается в нескольких местах.
+    /// </remarks>
+    /// <param name="runner">Граница запуска процесса.</param>
+    /// <param name="installation">Обнаруженная установка MuMuPlayer.</param>
+    /// <param name="commandTimeout">
+    /// Дедлайн одной команды control surface; <see langword="null"/> — значение по умолчанию
+    /// <see cref="DefaultCommandTimeout"/>.
+    /// </param>
+    /// <returns>Клиент, адресующий control utility этой установки.</returns>
+    /// <exception cref="ArgumentNullException">Аргумент равен <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Путь к control surface пуст или дедлайн не положителен.</exception>
+    public static MuMuManagerClient ForInstallation(
+        IWindowsProcessRunner runner,
+        MuMuInstallation installation,
+        TimeSpan? commandTimeout = null)
+    {
+        ArgumentNullException.ThrowIfNull(installation);
+
+        return new MuMuManagerClient(
+            runner,
+            new MuMuControlSurface { ExecutablePath = installation.ControlExecutablePath },
+            commandTimeout ?? DefaultCommandTimeout);
+    }
 
     /// <summary>Создаёт клиент с дедлайном команды по умолчанию.</summary>
     /// <param name="runner">Граница запуска процесса.</param>
     /// <param name="controlSurface">Точка входа control surface.</param>
-    public MuMuManagerClient(IMuMuProcessRunner runner, MuMuControlSurface controlSurface)
+    public MuMuManagerClient(IWindowsProcessRunner runner, MuMuControlSurface controlSurface)
         : this(runner, controlSurface, DefaultCommandTimeout)
     {
     }
@@ -52,7 +80,7 @@ public sealed class MuMuManagerClient
     /// <exception cref="ArgumentNullException">Один из аргументов равен <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Путь к control surface пуст или дедлайн не положителен.</exception>
     public MuMuManagerClient(
-        IMuMuProcessRunner runner,
+        IWindowsProcessRunner runner,
         MuMuControlSurface controlSurface,
         TimeSpan commandTimeout)
     {
@@ -79,7 +107,7 @@ public sealed class MuMuManagerClient
     /// <returns>Строка версии либо application-level отказ.</returns>
     public async Task<ApplicationResult<string>> GetVersionAsync(CancellationToken cancellationToken = default)
     {
-        ApplicationResult<MuMuProcessOutcome> outcome =
+        ApplicationResult<WindowsProcessOutcome> outcome =
             await RunAsync(MuMuManagerCommandBuilder.BuildVersionArguments(), cancellationToken)
                 .ConfigureAwait(false);
 
@@ -88,7 +116,7 @@ public sealed class MuMuManagerClient
             return ApplicationResult<string>.Failure(versionFailure);
         }
 
-        MuMuProcessOutcome processOutcome = outcome.Value!;
+        WindowsProcessOutcome processOutcome = outcome.Value!;
 
         return MuMuManagerResponseParser.ParseVersion(processOutcome.StandardOutput, processOutcome.ExitCode);
     }
@@ -101,7 +129,7 @@ public sealed class MuMuManagerClient
         MuMuInstanceId id,
         CancellationToken cancellationToken = default)
     {
-        ApplicationResult<MuMuProcessOutcome> outcome =
+        ApplicationResult<WindowsProcessOutcome> outcome =
             await RunAsync(MuMuManagerCommandBuilder.BuildInstanceInfoArguments(id), cancellationToken)
                 .ConfigureAwait(false);
 
@@ -110,7 +138,7 @@ public sealed class MuMuManagerClient
             return ApplicationResult<MuMuInstanceQueryResult>.Failure(queryFailure);
         }
 
-        MuMuProcessOutcome processOutcome = outcome.Value!;
+        WindowsProcessOutcome processOutcome = outcome.Value!;
 
         return MuMuManagerResponseParser.ParseInstanceQuery(
             id,
@@ -124,7 +152,7 @@ public sealed class MuMuManagerClient
     public async Task<ApplicationResult<MuMuInstanceEnumeration>> EnumerateInstancesAsync(
         CancellationToken cancellationToken = default)
     {
-        ApplicationResult<MuMuProcessOutcome> outcome =
+        ApplicationResult<WindowsProcessOutcome> outcome =
             await RunAsync(MuMuManagerCommandBuilder.BuildAllInstancesInfoArguments(), cancellationToken)
                 .ConfigureAwait(false);
 
@@ -133,7 +161,7 @@ public sealed class MuMuManagerClient
             return ApplicationResult<MuMuInstanceEnumeration>.Failure(enumerationFailure);
         }
 
-        MuMuProcessOutcome processOutcome = outcome.Value!;
+        WindowsProcessOutcome processOutcome = outcome.Value!;
 
         return MuMuManagerResponseParser.ParseInstanceEnumeration(
             processOutcome.StandardOutput,
@@ -150,7 +178,7 @@ public sealed class MuMuManagerClient
         MuMuControlCommand command,
         CancellationToken cancellationToken = default)
     {
-        ApplicationResult<MuMuProcessOutcome> outcome =
+        ApplicationResult<WindowsProcessOutcome> outcome =
             await RunAsync(MuMuManagerCommandBuilder.BuildControlArguments(id, command), cancellationToken)
                 .ConfigureAwait(false);
 
@@ -159,7 +187,7 @@ public sealed class MuMuManagerClient
             return ApplicationResult<MuMuControlOutcome>.Failure(controlFailure);
         }
 
-        MuMuProcessOutcome processOutcome = outcome.Value!;
+        WindowsProcessOutcome processOutcome = outcome.Value!;
 
         return MuMuManagerResponseParser.ParseControlResult(
             id,
@@ -168,30 +196,30 @@ public sealed class MuMuManagerClient
             processOutcome.ExitCode);
     }
 
-    private async Task<ApplicationResult<MuMuProcessOutcome>> RunAsync(
+    private async Task<ApplicationResult<WindowsProcessOutcome>> RunAsync(
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken)
     {
-        MuMuProcessRequest request = new()
+        WindowsProcessRequest request = new()
         {
             ExecutablePath = _controlSurface.ExecutablePath,
             Arguments = arguments,
             Timeout = _commandTimeout,
         };
 
-        ApplicationResult<MuMuProcessOutcome> result =
+        ApplicationResult<WindowsProcessOutcome> result =
             await _runner.RunAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (result.IsFailure && result.FailureInfo is ApplicationFailure runnerFailure)
         {
-            return ApplicationResult<MuMuProcessOutcome>.Failure(runnerFailure);
+            return ApplicationResult<WindowsProcessOutcome>.Failure(runnerFailure);
         }
 
-        MuMuProcessOutcome outcome = result.Value!;
+        WindowsProcessOutcome outcome = result.Value!;
 
         if (outcome.StandardOutputTruncated || outcome.StandardErrorTruncated)
         {
-            return ApplicationResult<MuMuProcessOutcome>.Failure(
+            return ApplicationResult<WindowsProcessOutcome>.Failure(
                 MuMuPlatformFailureMapper.ForOutputTruncation(
                     _controlSurface.ExecutablePath,
                     outcome.StandardOutput.Length,

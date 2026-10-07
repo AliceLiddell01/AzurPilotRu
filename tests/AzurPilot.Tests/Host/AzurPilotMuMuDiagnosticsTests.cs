@@ -6,7 +6,9 @@ using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Tests.Configuration;
 using AzurPilot.Tests.MuMu;
+using AzurPilot.Windows;
 using AzurPilot.Windows.MuMu;
+using AzurPilot.Windows.Processes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -187,7 +189,7 @@ public sealed class AzurPilotMuMuDiagnosticsTests
             new EmptyRegistrySource(),
             new EmptyMetadataSource(),
             new WindowsMuMuFileSystemProbe(),
-            new MuMuProcessRunner(),
+            new WindowsProcessRunner(new MuMuProcessFailureProjection()),
             NullLogger<MuMuWindowsHost>.Instance);
 
         AzurPilotMuMuDiagnostics muMu = Capture(CurrentSchemaConfiguration("auto"), host).MuMu;
@@ -365,9 +367,9 @@ public sealed class AzurPilotMuMuDiagnosticsTests
         Assert.DoesNotContain("\"schemaVersion\"", projection, StringComparison.Ordinal);
 
         // Внешние значения приведены к bounded однострочной форме владельцем ограничения.
-        Assert.Equal(MuMuBoundedText.MaxLength, muMu.Version!.Length);
-        Assert.Equal(MuMuBoundedText.MaxLength, muMu.SelectedInstanceDisplayName!.Length);
-        Assert.Equal(MuMuBoundedText.MaxLength, muMu.Evidence!.Length);
+        Assert.Equal(BoundedDiagnosticText.MaxLength, muMu.Version!.Length);
+        Assert.Equal(BoundedDiagnosticText.MaxLength, muMu.SelectedInstanceDisplayName!.Length);
+        Assert.Equal(BoundedDiagnosticText.MaxLength, muMu.Evidence!.Length);
         Assert.DoesNotContain('\n', muMu.SelectedInstanceDisplayName);
         Assert.DoesNotContain('\t', muMu.SelectedInstanceDisplayName);
     }

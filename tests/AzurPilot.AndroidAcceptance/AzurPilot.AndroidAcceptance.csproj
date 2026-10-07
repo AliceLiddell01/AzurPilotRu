@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Тестовый инструмент реальной приёмки Android-слоя (ADB readiness и lifecycle игры Azur Lane
+       Global/EN) на установленной Windows-машине. Это не тестовый проект (тестовой платформы и xunit
+       здесь нет) и не boundary приложения: он подключает production-контракты AzurPilot.Core и
+       платформенные реализации AzurPilot.Windows, но ничего не добавляет в AzurPilot.App и не зависит от
+       него. Продуктовый CLI, REPL и doctor-команда по-прежнему отсутствуют: аргументы разбирает только
+       этот инструмент. Направление зависимостей: AzurPilot.AndroidAcceptance → AzurPilot.Windows →
+       AzurPilot.Core. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>AzurPilot.AndroidAcceptance</RootNamespace>
+    <AssemblyName>AzurPilot.AndroidAcceptance</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Производственные контракты и платформенные реализации. Ссылок на AzurPilot.App нет: приёмка не
+         является частью приложения и не переиспользует его composition root. -->
+    <ProjectReference Include="..\..\src\AzurPilot.Core\AzurPilot.Core.csproj" />
+    <ProjectReference Include="..\..\src\AzurPilot.Windows\AzurPilot.Windows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Второй санитайзер не заводится: правила приватности отчёта приёмки (какое значение считается
+         machine-specific и каким плейсхолдером заменяется) уже имеют единственного владельца в
+         инструменте MuMu-приёмки. Файл подключается как общий исходник, поэтому реализация одна, а не две
+         похожие: разошедшиеся правила означали бы утечку machine-specific значения в отчёт. -->
+    <Compile Include="..\AzurPilot.MuMuAcceptance\AcceptanceSanitizer.cs"
+             Link="Acceptance\AcceptanceSanitizer.cs" />
+  </ItemGroup>
+
+</Project>

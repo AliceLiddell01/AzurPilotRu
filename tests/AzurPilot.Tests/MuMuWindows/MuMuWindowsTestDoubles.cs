@@ -1,5 +1,6 @@
 using AzurPilot.Core.Failures;
 using AzurPilot.Windows.MuMu;
+using AzurPilot.Windows.Processes;
 using Microsoft.Extensions.Logging;
 
 namespace AzurPilot.Tests.MuMuWindows;
@@ -67,15 +68,15 @@ internal static class MuMuWindowsTestPaths
 /// <param name="Request">Запрос, полученный подменой.</param>
 /// <param name="CancellationToken">Токен отмены, переданный подмене.</param>
 internal readonly record struct RecordedProcessRequest(
-    MuMuProcessRequest Request,
+    WindowsProcessRequest Request,
     CancellationToken CancellationToken);
 
 /// <summary>
 /// Подмена границы запуска процесса: возвращает заранее заданные исходы и запоминает запросы.
 /// </summary>
-internal sealed class FakeMuMuProcessRunner : IMuMuProcessRunner
+internal sealed class FakeWindowsProcessRunner : IWindowsProcessRunner
 {
-    private readonly Queue<ApplicationResult<MuMuProcessOutcome>> _scripted = new();
+    private readonly Queue<ApplicationResult<WindowsProcessOutcome>> _scripted = new();
     private readonly List<RecordedProcessRequest> _requests = [];
 
     /// <summary>Запросы, полученные подменой, в порядке вызова.</summary>
@@ -93,7 +94,7 @@ internal sealed class FakeMuMuProcessRunner : IMuMuProcessRunner
         string standardError = "",
         bool standardOutputTruncated = false,
         bool standardErrorTruncated = false)
-        => _scripted.Enqueue(ApplicationResult<MuMuProcessOutcome>.Success(new MuMuProcessOutcome
+        => _scripted.Enqueue(ApplicationResult<WindowsProcessOutcome>.Success(new WindowsProcessOutcome
         {
             ExitCode = exitCode,
             StandardOutput = standardOutput,
@@ -106,11 +107,11 @@ internal sealed class FakeMuMuProcessRunner : IMuMuProcessRunner
     /// <summary>Добавляет исход-отказ границы запуска.</summary>
     /// <param name="failure">Отказ, который должна вернуть подмена.</param>
     internal void EnqueueFailure(ApplicationFailure failure)
-        => _scripted.Enqueue(ApplicationResult<MuMuProcessOutcome>.Failure(failure));
+        => _scripted.Enqueue(ApplicationResult<WindowsProcessOutcome>.Failure(failure));
 
     /// <inheritdoc />
-    public Task<ApplicationResult<MuMuProcessOutcome>> RunAsync(
-        MuMuProcessRequest request,
+    public Task<ApplicationResult<WindowsProcessOutcome>> RunAsync(
+        WindowsProcessRequest request,
         CancellationToken cancellationToken)
     {
         _requests.Add(new RecordedProcessRequest(request, cancellationToken));

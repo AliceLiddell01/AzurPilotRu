@@ -7,10 +7,12 @@
 замороженный C ABI между ними, стандартный путь сборки и тестирования средствами CMake и .NET,
 Windows CI и автоматизация обновления зависимостей. Приложение уже является application host:
 строгая пользовательская конфигурация, application-level отказы, structured logging в `stderr` с
-correlation identity, runtime-диагностика и первая реальная Windows-возможность — MuMu: обнаружение
-установки MuMuPlayer, выбор Android-экземпляра и host-side запуск, остановка и перезапуск с
-доказуемым postcondition. ADB, работа с игрой, vision-пайплайн, OCR/ONNX, продуктовые CLI/REPL и
-agent CLI — будущие возможности: в текущее приложение они не входят.
+correlation identity, runtime-диагностика и две реальные Windows-возможности: MuMu (обнаружение
+установки MuMuPlayer, выбор Android-экземпляра и host-side запуск, остановка и перезапуск с доказуемым
+postcondition) и Android-слой (bundled ADB обнаруженной установки, точный ADB endpoint выбранного
+экземпляра, готовность Android и lifecycle игры Azur Lane Global/EN с доказуемым postcondition). Ввод,
+vision-пайплайн, OCR/ONNX, готовность UI игры, продуктовые CLI/REPL и agent CLI — будущие возможности: в
+текущее приложение они не входят.
 
 ## Платформа
 
@@ -63,12 +65,18 @@ CI использует эти стандартные команды напря�
   correlation identifier операции.
 - Диагностика включает bounded MuMu-секцию: обнаружение установки, выбранный экземпляр и его
   наблюдённое состояние. Запуск приложения экземпляр MuMu не запускает и не останавливает.
+- Диагностика включает bounded Android-секцию (доступность bundled ADB, точный endpoint выбранного
+  экземпляра, состояние ADB transport, доступность shell, завершение загрузки Android и версия Android) и
+  секцию состояния игры (product identity Global/EN, установлен ли пакет, запущен ли процесс, находится
+  ли игра на переднем плане и выведенное из этих фактов состояние). Диагностика только читает: запуск
+  приложения не подключает ADB, не запускает и не останавливает игру и эмулятор.
 
 Путь конфигурации, правила схемы и коды отказа принадлежат
 [application-configuration.md](.codex/context/application-configuration.md) и
 [application-failures.md](.codex/context/application-failures.md), состав логирования и диагностики —
 [runtime-diagnostics.md](.codex/context/runtime-diagnostics.md), правила MuMu-capability —
-[mumu-lifecycle.md](.codex/context/mumu-lifecycle.md), проверяемые свойства —
+[mumu-lifecycle.md](.codex/context/mumu-lifecycle.md), правила Android-слоя и lifecycle игры —
+[android-game-lifecycle.md](.codex/context/android-game-lifecycle.md), проверяемые свойства —
 [verification.md](.codex/context/verification.md) и тесты `tests/AzurPilot.Tests/`.
 
 ## Структура репозитория
@@ -76,7 +84,8 @@ CI использует эти стандартные команды напря�
 - `AzurPilot.slnx` — managed solution: `src/AzurPilot.Core`, `src/AzurPilot.Windows`, `src/AzurPilot.App`.
 - `native/` — CMake boundary: C++ с OpenCV и C ABI, workflow presets, manifest и configure/staging helpers.
 - `tests/` — тестовые проекты: interop и application-проверки, проба для негативной проверки native
-  boundary и инструмент реальной приёмки MuMu. Это инструменты проверки, а не boundaries приложения.
+  boundary и инструменты реальной приёмки MuMu и Android-слоя. Это инструменты проверки, а не boundaries
+  приложения.
 - `global.json`, `Directory.Packages.props` и `packages.lock.json` — манифесты зависимостей managed-проектов.
 - `artifacts/` — единственная исключённая из Git область для build outputs и полученных зависимостей.
 
@@ -92,6 +101,7 @@ CI использует эти стандартные команды напря�
 - [.codex/context/application-failures.md](.codex/context/application-failures.md) — стабильные коды отказа и коды выхода процесса.
 - [.codex/context/runtime-diagnostics.md](.codex/context/runtime-diagnostics.md) — composition, логирование, correlation и диагностика.
 - [.codex/context/mumu-lifecycle.md](.codex/context/mumu-lifecycle.md) — MuMu-capability: установка, экземпляр и lifecycle.
+- [.codex/context/android-game-lifecycle.md](.codex/context/android-game-lifecycle.md) — ADB endpoint, готовность Android и lifecycle игры Global/EN.
 - [.codex/context/verification.md](.codex/context/verification.md) — что именно доказывает verification.
 
 ## Лицензия

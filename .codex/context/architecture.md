@@ -6,7 +6,8 @@ acquisition зависимостей описаны в [build-contracts.md](buil
 [application-configuration.md](application-configuration.md), runtime-логирование и диагностика — в
 [runtime-diagnostics.md](runtime-diagnostics.md), application-level отказы — в
 [application-failures.md](application-failures.md), MuMu-capability — в
-[mumu-lifecycle.md](mumu-lifecycle.md), содержание проверок — [verification.md](verification.md),
+[mumu-lifecycle.md](mumu-lifecycle.md), Android/ADB readiness и lifecycle игры — в
+[android-game-lifecycle.md](android-game-lifecycle.md), содержание проверок — [verification.md](verification.md),
 форма C ABI — `native/include/azurpilot_native_abi.h`.
 
 ## Область и платформа
@@ -34,9 +35,9 @@ C++ с OpenCV.
 
 | Boundary | Путь | Ответственность |
 | --- | --- | --- |
-| `AzurPilot.Core` | `src/AzurPilot.Core` | Доменные и application-контракты, логика, независимая от Windows, включая MuMu-контракты и orchestration lifecycle |
-| `AzurPilot.Windows` | `src/AzurPilot.Windows` | Windows-specific adapters/infrastructure, включая managed сторону native interop и MuMu-adapter |
-| `AzurPilot.App` | `src/AzurPilot.App` | Composition root и application host: сборка host-а, startup, structured logging, correlation, runtime-диагностика и интеграция MuMu-capability. Командной строки у приложения нет; presentation boundary (REPL, CLI) не реализована |
+| `AzurPilot.Core` | `src/AzurPilot.Core` | Доменные и application-контракты, логика, независимая от Windows, включая MuMu-контракты и orchestration lifecycle, а также контракты Android и orchestration ADB readiness и lifecycle игры |
+| `AzurPilot.Windows` | `src/AzurPilot.Windows` | Windows-specific adapters/infrastructure, включая managed сторону native interop, MuMu-adapter и Android-adapter: bundled ADB, разрешение точного endpoint и запуск команд ADB |
+| `AzurPilot.App` | `src/AzurPilot.App` | Composition root и application host: сборка host-а, startup, structured logging, correlation, runtime-диагностика и интеграция MuMu- и Android-capability. Командной строки у приложения нет; presentation boundary (REPL, CLI) не реализована |
 | native | `native/` | Отдельная CMake boundary: C++ + OpenCV shared library `AzurPilot.Native.dll` с узким C ABI |
 
 Managed boundaries приложения — ровно три: `AzurPilot.Core`, `AzurPilot.Windows`, `AzurPilot.App`.
@@ -50,9 +51,9 @@ Managed solution — `AzurPilot.slnx` в корне репозитория.
 Проекты в `tests/` существуют только для проверок и не поставляются:
 
 - `tests/AzurPilot.Tests` — основной проект проверок: interop boundary, строгая конфигурация,
-  application-level отказы, MuMu-capability и поведение application host. Часть проверок выполняется на
-  реальном процессе приложения, часть — в процессе самого теста; что именно доказывается, принадлежит
-  [verification.md](verification.md).
+  application-level отказы, MuMu-capability, Android/ADB readiness вместе с lifecycle игры и поведение
+  application host. Часть проверок выполняется на реальном процессе приложения, часть — в процессе
+  самого теста; что именно доказывается, принадлежит [verification.md](verification.md).
 - `tests/AzurPilot.NativeAbsenceProbe` — исполняемая проба, которая запускается тестом отдельным
   процессом и используется в двух режимах: негативная проверка загрузки native boundary (библиотеки
   нет или подложена fixture с несовместимым ABI) и application startup через composition root с явно
@@ -64,6 +65,12 @@ Managed solution — `AzurPilot.slnx` в корне репозитория.
   (`IMuMuHost` из `AzurPilot.Windows` и orchestration lifecycle из `AzurPilot.Core`) и выполняет
   lifecycle-матрицу с восстановлением начального состояния; аргументы разбирает только он сам, а в
   hosted CI он не запускается и в состав продуктовых артефактов не входит.
+- `tests/AzurPilot.AndroidAcceptance` — исполняемый инструмент реальной приёмки Android-слоя: exact ADB
+  endpoint выбранного экземпляра, готовность Android, пакет игры Global/EN и lifecycle игры с
+  восстановлением начального состояния. Он собирает production-поверхность Android (`IAndroidHost`,
+  `AndroidReadinessService`, `AzurLaneGameStateService` и `AzurLaneGameLifecycleService`) и требует явно
+  выбранный exact instance; аргументы разбирает только он сам, а в hosted CI он не запускается и в состав
+  продуктовых артефактов не входит.
 
 Отдельный процесс нужен первым двум режимам по одной причине: загруженный native модуль остаётся
 доступным до завершения процесса, поэтому отсутствие библиотеки в процессе теста невоспроизводимо.
@@ -74,22 +81,25 @@ Managed solution — `AzurPilot.slnx` в корне репозитория.
 
 Все проекты в `tests/` — инструменты проверки. Они не являются boundary приложения, не входят в число
 трёх managed boundaries, не поставляются как продукт и не должны описываться как boundary в `README.md`,
-`AGENTS.md` и `docs/**`. Инструмент реальной приёмки MuMu — тоже тестовый инструмент, а не продуктовая
-командная строка: пользовательских команд у приложения он не добавляет.
+`AGENTS.md` и `docs/**`. Инструменты реальной приёмки MuMu и Android — тоже тестовые инструменты, а не
+продуктовая командная строка: пользовательских команд у приложения они не добавляют.
 
 ## Runtime-контракты приложения
 
 Приложение уже имеет реальные runtime-контракты: строгую пользовательскую конфигурацию,
 application-level модель отказов, structured logging с correlation identity,
-runtime-диагностический snapshot и первую реальную Windows-возможность — MuMu-capability: обнаружение
-установки, выбор Android-экземпляра и host-side lifecycle с доказуемым postcondition. Их правила имеют
-собственных владельцев — [application-configuration.md](application-configuration.md),
-[application-failures.md](application-failures.md), [runtime-diagnostics.md](runtime-diagnostics.md) и
-[mumu-lifecycle.md](mumu-lifecycle.md); здесь они не повторяются. Пользовательских опций запуска и
-командной строки у приложения нет: startup вычисляет runtime-путь конфигурации сам. Границы остаются
-прежними: `AzurPilot.Core` владеет контрактами конфигурации, отказов и MuMu, не зависящими от Windows,
-`AzurPilot.Windows` — проекцией ошибок платформенной/native boundary и MuMu-adapter, `AzurPilot.App` —
-composition и диагностикой.
+runtime-диагностический snapshot и реальные Windows-возможности: MuMu-capability (обнаружение установки,
+выбор Android-экземпляра и host-side lifecycle с доказуемым postcondition) и Android-слой (bundled ADB,
+точный ADB endpoint выбранного экземпляра, готовность Android и lifecycle игры Azur Lane Global/EN с
+доказуемым postcondition). Их правила имеют собственных владельцев —
+[application-configuration.md](application-configuration.md),
+[application-failures.md](application-failures.md), [runtime-diagnostics.md](runtime-diagnostics.md),
+[mumu-lifecycle.md](mumu-lifecycle.md) и [android-game-lifecycle.md](android-game-lifecycle.md); здесь они
+не повторяются. Пользовательских опций запуска и командной строки у приложения нет: startup вычисляет
+runtime-путь конфигурации сам. Границы остаются прежними: `AzurPilot.Core` владеет контрактами
+конфигурации, отказов, MuMu и Android, не зависящими от Windows, `AzurPilot.Windows` — проекцией ошибок
+платформенной/native boundary, MuMu-adapter и Android-adapter, `AzurPilot.App` — composition и
+диагностикой.
 
 ## Правило зависимостей
 
@@ -108,6 +118,13 @@ composition и диагностикой.
   живут в `AzurPilot.Core`, Windows-адаптер control surface — в `AzurPilot.Windows`, интеграция в
   host — в `AzurPilot.App`. Core не знает о Windows API и не заводит общий filesystem/process layer:
   доступ к реестру, файловой системе и запуску процессов приходит через объявленные им узкие границы.
+- Android-capability не меняет направление зависимостей и не заводит второго слоя для той же
+  ответственности: контракты Android и orchestration ADB readiness и lifecycle игры живут в
+  `AzurPilot.Core`, Android-adapter (bundled ADB, разрешение endpoint, форма команд, разбор ответа) — в
+  `AzurPilot.Windows`, интеграция в host — в `AzurPilot.App`. Второй device framework и второй process
+  framework не вводятся: запуск процесса идёт через одну общую границу, а смысл её отказов принадлежит
+  владельцу возможности, поэтому граница регистрируется по одному разу на владельца со своей проекцией,
+  а не переписывается второй реализацией.
 
 ## Канонический путь сборки и тестирования
 
@@ -172,13 +189,19 @@ MSBuild работает по принципу fail-closed и перед managed
 - `1280x720` не является фундаментальным разрешением архитектуры: в фундаменте и native API нет и
   не должно быть такой константы или предполагаемого размера кадра. Будущий screenshot сохраняется
   в нативном разрешении, а размеры кадра приходят как данные, а не как константа проекта.
-- MuMu-capability реализована как первая реальная Windows-возможность: обнаружение установки
-  MuMuPlayer, стабильная identity и выбор Android-экземпляра, host-side состояние экземпляра и
-  безопасные start/stop/restart с доказуемым postcondition. Правила принадлежат
+- MuMu-capability реализована как реальная Windows-возможность: обнаружение установки MuMuPlayer,
+  стабильная identity и выбор Android-экземпляра, host-side состояние экземпляра и безопасные
+  start/stop/restart с доказуемым postcondition. Правила принадлежат
   [mumu-lifecycle.md](mumu-lifecycle.md); секция `mumu` конфигурации, MuMu-коды отказа, MuMu-секция
   диагностики и проверки существуют вместе с этой capability.
-- Отсутствуют и не объявляются абстракциями «на будущее»: ADB и device readiness, lifecycle игры
-  внутри Android, ввод (tap/swipe), screenshot/vision-пайплайн, OCR/ONNX/GPU inference, product CLI,
-  REPL и agent CLI. Для них не создаются placeholder-документы, секции конфигурации, коды отказов и
-  диагностические секции. Общие команды `build`, `repair` и `update` относятся к инструментам
-  репозитория, а не к будущим product CLI, REPL и agent CLI.
+- Android-слой реализован как следующая реальная Windows-возможность: bundled ADB обнаруженной установки,
+  точный ADB endpoint выбранного экземпляра, готовность Android и lifecycle игры Azur Lane Global/EN с
+  доказуемым postcondition. Правила принадлежат
+  [android-game-lifecycle.md](android-game-lifecycle.md); Android-коды отказа, секции Android и состояния
+  игры в диагностике и проверки существуют вместе с этой capability, а продуктовые настройки для неё не
+  вводятся: product identity и endpoint — runtime-данные, а не значения схемы.
+- Отсутствуют и не объявляются абстракциями «на будущее»: ввод (tap/swipe/keymap), screenshot/vision-
+  пайплайн, OCR/ONNX/GPU inference, готовность UI игры, product CLI, REPL и agent CLI. Для них не
+  создаются placeholder-документы, секции конфигурации, коды отказов и диагностические секции. Общие
+  команды `build`, `repair` и `update` относятся к инструментам репозитория, а не к будущим product CLI,
+  REPL и agent CLI.

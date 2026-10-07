@@ -1,4 +1,5 @@
 using AzurPilot.App;
+using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Windows.MuMu;
 
@@ -19,6 +20,10 @@ namespace AzurPilot.Tests.Host;
 /// сообщает Windows-адаптер, выбор экземпляра — Core orchestration, а диагностический итог — application
 /// host. Чужие (framework/host) категории этим не разрешаются.
 /// </para>
+/// <para>
+/// Android-владельцы входят в набор по той же причине: startup выполняет read-only пробу Android, поэтому
+/// разрешение endpoint-а и наблюдение состояния игры идут от реальных сервисов Core orchestration.
+/// </para>
 /// </remarks>
 internal static class ProjectOwnedLogCategories
 {
@@ -31,12 +36,20 @@ internal static class ProjectOwnedLogCategories
     /// <summary>Категория host-side поверхности MuMu в платформенной boundary.</summary>
     private static readonly string MuMuHost = typeof(MuMuWindowsHost).FullName!;
 
+    /// <summary>Категория read-only готовности Android в Core orchestration.</summary>
+    private static readonly string AndroidReadiness = typeof(AndroidReadinessService).FullName!;
+
+    /// <summary>Категория read-only наблюдения состояния игры в Core orchestration.</summary>
+    private static readonly string AzurLaneGameState = typeof(AzurLaneGameStateService).FullName!;
+
     /// <summary>Допустимые категории project-owned событий.</summary>
     internal static IReadOnlySet<string> All { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         ApplicationHost,
         MuMuLifecycle,
         MuMuHost,
+        AndroidReadiness,
+        AzurLaneGameState,
     };
 
     /// <summary>Проверяет, принадлежит ли запись владельцу проекта.</summary>

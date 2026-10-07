@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using AzurPilot.Core.Android;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
@@ -25,6 +26,12 @@ public sealed record AzurPilotStartupResult
 {
     /// <summary>Описание состояния MuMu, которое не доказано наблюдением.</summary>
     private const string UnprovenMuMuState = "не доказано";
+
+    /// <summary>Описание значения Android-секции, которое не доказано наблюдением.</summary>
+    private const string UnprovenAndroidValue = "не наблюдалось";
+
+    /// <summary>Описание факта наблюдения, который не доказан.</summary>
+    private const string UnprovenFact = "не доказано";
 
     private AzurPilotStartupResult(
         int exitCode,
@@ -123,6 +130,8 @@ public sealed record AzurPilotStartupResult
                 + $"capability: {DescribeCapabilities(native)}; OpenCV исполнялся: {DescribeFlag(native.OpencvExecuted)}",
             $"  Совместимость native boundary: {native.CompatibilityReason}",
             $"  MuMu: {DescribeMuMu(diagnostics.MuMu)}",
+            $"  Android: {DescribeAndroid(diagnostics.Android)}",
+            $"  Azur Lane: {DescribeAzurLane(diagnostics.AzurLane)}",
             "Итог: запуск успешен",
         ];
     }
@@ -160,6 +169,11 @@ public sealed record AzurPilotStartupResult
             // MuMu-отказ не является отказом запуска, поэтому секция MuMu описывается данными: она
             // сообщает, на каком шаге диагностика остановилась, а не меняет исход запуска.
             lines.Add($"  MuMu: {DescribeMuMu(diagnostics.MuMu)}");
+
+            // Отказы Android-секций — тоже данные: недоступный ADB, неготовый transport и ненаблюдённое
+            // состояние игры не меняют исход запуска.
+            lines.Add($"  Android: {DescribeAndroid(diagnostics.Android)}");
+            lines.Add($"  Azur Lane: {DescribeAzurLane(diagnostics.AzurLane)}");
         }
 
         lines.Add(
@@ -235,6 +249,88 @@ public sealed record AzurPilotStartupResult
         MuMuLifecycleState.Running => "запущен",
         _ => UnprovenMuMuState,
     };
+
+    /// <summary>Описывает bounded Android-секцию диагностики для оператора.</summary>
+    /// <remarks>
+    /// Значения приходят из внешних источников, поэтому они уже bounded и однострочны: версия Android не
+    /// может добавить строку в человекочитаемый итог. Evidence в итог не печатается — оно остаётся данными
+    /// snapshot. Ненаблюдённый факт сообщается как «не наблюдалось», а не как доказанное отсутствие.
+    /// </remarks>
+    /// <param name="android">Android-секция диагностики.</param>
+    /// <returns>Строка Android-секции человекочитаемого итога.</returns>
+    private static string DescribeAndroid(AzurPilotAndroidDiagnostics android)
+    {
+        StringBuilder builder = new();
+        _ = builder.Append($"ADB: {DescribeFlag(android.IsAdbAvailable)}");
+
+        if (android.Endpoint is string endpoint)
+        {
+            _ = builder.Append($"; endpoint: {endpoint}");
+        }
+
+        _ = builder.Append(android.TransportState is AndroidTransportState transport
+            ? $"; transport: {transport}"
+            : "; transport: не наблюдался");
+        _ = builder.Append(android.IsShellAvailable is bool shell
+            ? $"; shell: {DescribeFlag(shell)}"
+            : "; shell: не наблюдалась");
+        _ = builder.Append(android.BootCompleted is int bootCompleted
+            ? $"; boot_completed: {bootCompleted.ToString(CultureInfo.InvariantCulture)}"
+            : "; boot_completed: не наблюдался");
+
+        if (android.AndroidRelease is not null || android.SdkLevel is not null)
+        {
+            string release = android.AndroidRelease ?? UnprovenAndroidValue;
+            string sdk = android.SdkLevel?.ToString(CultureInfo.InvariantCulture) ?? UnprovenAndroidValue;
+            _ = builder.Append($"; Android: {release} (sdk {sdk})");
+        }
+
+        if (android.Failure is ApplicationFailure failure)
+        {
+            _ = builder.Append($"; шаг: {android.Stage}; код: {failure.Code}");
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>Описывает bounded секцию состояния игры Azur Lane для оператора.</summary>
+    /// <remarks>
+    /// Product identity печатается всегда: она принадлежит продукту, а не наблюдению. Недоказанный факт
+    /// сообщается как «не доказано», а не как доказанное отсутствие: <see langword="null"/> означает
+    /// недоказанное значение, а <see langword="false"/> — доказанное отсутствие. Evidence в итог не
+    /// печатается — оно остаётся данными snapshot.
+    /// </remarks>
+    /// <param name="azurLane">Секция состояния игры диагностики.</param>
+    /// <returns>Строка секции состояния игры человекочитаемого итога.</returns>
+    private static string DescribeAzurLane(AzurPilotAzurLaneDiagnostics azurLane)
+    {
+        StringBuilder builder = new();
+        _ = builder.Append($"{azurLane.Product} ({azurLane.Package})");
+        _ = builder.Append($"; установлен: {DescribeFact(azurLane.IsInstalled)}");
+        _ = builder.Append($"; процесс: {DescribeFact(azurLane.IsProcessRunning)}");
+        _ = builder.Append($"; foreground: {DescribeFact(azurLane.IsForeground)}");
+        _ = builder.Append(azurLane.State is AzurLaneGameState state
+            ? $"; состояние: {state}"
+            : "; состояние: не наблюдалось");
+
+        if (azurLane.Failure is ApplicationFailure failure)
+        {
+            _ = builder.Append($"; код: {failure.Code}");
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>Описывает недоказанный либо доказанный факт наблюдения для оператора.</summary>
+    /// <remarks>
+    /// Три состояния факта различаются явно: недоказанное значение — «не доказано», доказанное отсутствие
+    /// — «нет», доказанное присутствие — «да». Недоказанный факт поэтому не выглядит доказанным
+    /// отсутствием.
+    /// </remarks>
+    /// <param name="fact">Недоказанный либо доказанный факт наблюдения.</param>
+    /// <returns>Человекочитаемое описание факта.</returns>
+    private static string DescribeFact(bool? fact)
+        => fact is bool value ? DescribeFlag(value) : UnprovenFact;
 
     private static string DescribeAbiVersion(AzurPilotNativeDiagnostics native)
         => native.AbiVersion?.ToString(CultureInfo.InvariantCulture) ?? "неизвестна";

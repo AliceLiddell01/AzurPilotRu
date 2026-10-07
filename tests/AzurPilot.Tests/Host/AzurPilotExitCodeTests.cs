@@ -6,12 +6,13 @@ using Xunit;
 namespace AzurPilot.Tests.Host;
 
 /// <summary>
-/// Проверки проекции MuMu-кодов отказа в коды выхода процесса.
+/// Проверки проекции кодов отказа в коды выхода процесса.
 /// </summary>
 /// <remarks>
 /// Соответствие «application-код отказа → код выхода» принадлежит единственному владельцу
-/// <see cref="AzurPilotExitCode"/>: проверки доказывают, что каждый MuMu-код получает явный стабильный
-/// ненулевой код, что коды не совпадают друг с другом и что второй каталог кодов не появился.
+/// <see cref="AzurPilotExitCode"/>: проверки доказывают, что каждый MuMu-код и каждый код ADB readiness и
+/// lifecycle игры получает явный стабильный ненулевой код, что коды не совпадают друг с другом и что
+/// второй каталог кодов не появился.
 /// </remarks>
 [Trait("Category", "Unit")]
 public sealed class AzurPilotExitCodeTests
@@ -36,6 +37,26 @@ public sealed class AzurPilotExitCodeTests
         Assert.Equal(expectedExitCode, AzurPilotExitCode.FromFailure(Failure(failureCode)));
     }
 
+    [Theory(DisplayName = "Код отказа ADB readiness и lifecycle игры проецируется в свой явный код выхода")]
+    [InlineData(ApplicationFailure.AndroidAdbUnavailable, AzurPilotExitCode.AndroidAdbUnavailable)]
+    [InlineData(ApplicationFailure.AndroidEndpointUnavailable, AzurPilotExitCode.AndroidEndpointUnavailable)]
+    [InlineData(ApplicationFailure.AndroidTransportNotReady, AzurPilotExitCode.AndroidTransportNotReady)]
+    [InlineData(ApplicationFailure.AndroidNotReady, AzurPilotExitCode.AndroidNotReady)]
+    [InlineData(ApplicationFailure.AzurLanePackageMissing, AzurPilotExitCode.AzurLanePackageMissing)]
+    [InlineData(ApplicationFailure.AzurLaneStateUnknown, AzurPilotExitCode.AzurLaneStateUnknown)]
+    [InlineData(ApplicationFailure.AzurLaneLauncherUnresolved, AzurPilotExitCode.AzurLaneLauncherUnresolved)]
+    [InlineData(ApplicationFailure.AzurLaneLauncherAmbiguous, AzurPilotExitCode.AzurLaneLauncherAmbiguous)]
+    [InlineData(
+        ApplicationFailure.AzurLaneLifecyclePostconditionNotMet,
+        AzurPilotExitCode.AzurLaneLifecyclePostconditionNotMet)]
+    [InlineData(ApplicationFailure.AzurLaneLifecycleTimeout, AzurPilotExitCode.AzurLaneLifecycleTimeout)]
+    public void AndroidAndGameFailureCodesHaveExplicitExitCodes(string failureCode, int expectedExitCode)
+    {
+        Assert.NotEqual(AzurPilotExitCode.Success, expectedExitCode);
+        Assert.NotEqual(AzurPilotExitCode.InternalError, expectedExitCode);
+        Assert.Equal(expectedExitCode, AzurPilotExitCode.FromFailure(Failure(failureCode)));
+    }
+
     [Fact(DisplayName = "Новый код выхода получает следующее свободное значение, а опубликованные не меняются")]
     public void NewMuMuExitCodeIsAppendedWithoutRenumbering()
     {
@@ -48,6 +69,23 @@ public sealed class AzurPilotExitCodeTests
         Assert.Equal(11, AzurPilotExitCode.MuMuLifecyclePostconditionNotMet);
         Assert.Equal(12, AzurPilotExitCode.MuMuLifecycleTimeout);
         Assert.Equal(13, AzurPilotExitCode.MuMuInstallationAmbiguous);
+    }
+
+    [Fact(DisplayName = "Коды ADB readiness и lifecycle игры добавлены в конец блока без перенумерации")]
+    public void AndroidAndGameExitCodesAreAppendedWithoutRenumbering()
+    {
+        // Значения публикуются впервые, поэтому проверка фиксирует и их порядок, и то, что они не
+        // вторглись в уже опубликованный диапазон MuMu-кодов выше.
+        Assert.Equal(14, AzurPilotExitCode.AndroidAdbUnavailable);
+        Assert.Equal(15, AzurPilotExitCode.AndroidEndpointUnavailable);
+        Assert.Equal(16, AzurPilotExitCode.AndroidTransportNotReady);
+        Assert.Equal(17, AzurPilotExitCode.AndroidNotReady);
+        Assert.Equal(18, AzurPilotExitCode.AzurLanePackageMissing);
+        Assert.Equal(19, AzurPilotExitCode.AzurLaneStateUnknown);
+        Assert.Equal(20, AzurPilotExitCode.AzurLaneLauncherUnresolved);
+        Assert.Equal(21, AzurPilotExitCode.AzurLaneLauncherAmbiguous);
+        Assert.Equal(22, AzurPilotExitCode.AzurLaneLifecyclePostconditionNotMet);
+        Assert.Equal(23, AzurPilotExitCode.AzurLaneLifecycleTimeout);
     }
 
     [Fact(DisplayName = "Каждый код отказа MuMu имеет проекцию, а не общий internal_error")]

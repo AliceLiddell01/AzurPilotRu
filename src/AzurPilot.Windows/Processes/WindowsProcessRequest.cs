@@ -1,7 +1,7 @@
-namespace AzurPilot.Windows.MuMu;
+namespace AzurPilot.Windows.Processes;
 
 /// <summary>
-/// Запрос на запуск внешнего процесса control surface.
+/// Запрос на запуск внешнего процесса Windows-границей запуска.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -10,12 +10,12 @@ namespace AzurPilot.Windows.MuMu;
 /// как ещё один аргумент, перенаправление или разделитель команд.
 /// </para>
 /// <para>
-/// <see cref="WorkingDirectory"/> необязателен: проверенная форма control surface работает без него и
-/// наследует рабочий каталог процесса приложения. Поле существует для случая, когда каталог
+/// <see cref="WorkingDirectory"/> необязателен: проверенные формы внешних утилит работают без него и
+/// наследуют рабочий каталог процесса приложения. Поле существует для случая, когда каталог
 /// действительно требуется, и передаётся процессу как есть.
 /// </para>
 /// </remarks>
-public sealed record MuMuProcessRequest
+public sealed record WindowsProcessRequest
 {
     /// <summary>Абсолютный путь к исполняемому файлу.</summary>
     public required string ExecutablePath { get; init; }
@@ -31,14 +31,14 @@ public sealed record MuMuProcessRequest
 }
 
 /// <summary>
-/// Результат завершившегося процесса control surface.
+/// Результат завершившегося внешнего процесса.
 /// </summary>
 /// <remarks>
 /// <see cref="ExitCode"/> — evidence, а не признак успеха операции: успешность определяет потребитель по
 /// разобранному ответу. <see cref="StandardOutput"/> и <see cref="StandardError"/> ограничены по длине;
 /// признак усечения сообщается явно и не скрывается.
 /// </remarks>
-public sealed record MuMuProcessOutcome
+public sealed record WindowsProcessOutcome
 {
     /// <summary>Код выхода процесса.</summary>
     public required int ExitCode { get; init; }

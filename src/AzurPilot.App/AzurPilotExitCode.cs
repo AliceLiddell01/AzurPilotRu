@@ -60,9 +60,40 @@ public static class AzurPilotExitCode
     /// </summary>
     /// <remarks>
     /// Новый код получает следующее свободное значение и добавляется в конец блока: значения уже
-    /// опубликованных кодов не меняются, потому что код выхода — часть контракта startup.
+    /// опубликованных кодов не меняются, потому что код выхода — часть контракта startup. Это же правило
+    /// действует и для кодов ADB readiness и lifecycle игры ниже.
     /// </remarks>
     public const int MuMuInstallationAmbiguous = 13;
+
+    /// <summary>Исполняемый файл ADB обнаруженной установки MuMuPlayer недоступен.</summary>
+    public const int AndroidAdbUnavailable = 14;
+
+    /// <summary>Точный ADB endpoint выбранного Android-экземпляра не разрешён.</summary>
+    public const int AndroidEndpointUnavailable = 15;
+
+    /// <summary>ADB transport точного endpoint-а не готов к командам.</summary>
+    public const int AndroidTransportNotReady = 16;
+
+    /// <summary>Готовность Android на точном endpoint-е не доказана наблюдением.</summary>
+    public const int AndroidNotReady = 17;
+
+    /// <summary>Пакет игры не установлен на точном endpoint-е.</summary>
+    public const int AzurLanePackageMissing = 18;
+
+    /// <summary>Состояние игры не доказано наблюдением.</summary>
+    public const int AzurLaneStateUnknown = 19;
+
+    /// <summary>Launcher-компонент пакета игры не разрешён.</summary>
+    public const int AzurLaneLauncherUnresolved = 20;
+
+    /// <summary>Launcher-компонент пакета игры неоднозначен.</summary>
+    public const int AzurLaneLauncherAmbiguous = 21;
+
+    /// <summary>Lifecycle-операция игры не привела к требуемому postcondition.</summary>
+    public const int AzurLaneLifecyclePostconditionNotMet = 22;
+
+    /// <summary>Deadline lifecycle-операции игры достигнут без требуемого состояния.</summary>
+    public const int AzurLaneLifecycleTimeout = 23;
 
     /// <summary>Возвращает код выхода для application-level отказа.</summary>
     /// <param name="failure">Ожидаемый отказ application boundary.</param>
@@ -86,6 +117,16 @@ public static class AzurPilotExitCode
             ApplicationFailure.MuMuControlSurfaceUnsupported => MuMuControlSurfaceUnsupported,
             ApplicationFailure.MuMuLifecyclePostconditionNotMet => MuMuLifecyclePostconditionNotMet,
             ApplicationFailure.MuMuLifecycleTimeout => MuMuLifecycleTimeout,
+            ApplicationFailure.AndroidAdbUnavailable => AndroidAdbUnavailable,
+            ApplicationFailure.AndroidEndpointUnavailable => AndroidEndpointUnavailable,
+            ApplicationFailure.AndroidTransportNotReady => AndroidTransportNotReady,
+            ApplicationFailure.AndroidNotReady => AndroidNotReady,
+            ApplicationFailure.AzurLanePackageMissing => AzurLanePackageMissing,
+            ApplicationFailure.AzurLaneStateUnknown => AzurLaneStateUnknown,
+            ApplicationFailure.AzurLaneLauncherUnresolved => AzurLaneLauncherUnresolved,
+            ApplicationFailure.AzurLaneLauncherAmbiguous => AzurLaneLauncherAmbiguous,
+            ApplicationFailure.AzurLaneLifecyclePostconditionNotMet => AzurLaneLifecyclePostconditionNotMet,
+            ApplicationFailure.AzurLaneLifecycleTimeout => AzurLaneLifecycleTimeout,
             _ => InternalError,
         };
     }

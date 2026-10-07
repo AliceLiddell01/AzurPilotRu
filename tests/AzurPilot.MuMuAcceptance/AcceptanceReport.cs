@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Text;
 using AzurPilot.Core.MuMu;
+using AzurPilot.Windows;
 using AzurPilot.Windows.MuMu;
 
 namespace AzurPilot.MuMuAcceptance;
@@ -85,7 +86,7 @@ internal sealed record AcceptanceReportText(string Text, bool IsSanitized);
 /// <para>
 /// Отчёт печатается в <c>stdout</c> как человекочитаемый итог и не смешивается со structured log,
 /// который уходит в <c>stderr</c>. Каждая деталь ограничена по длине владельцем bounded текста
-/// <see cref="MuMuBoundedText"/> и проходит через санитайзер.
+/// <see cref="BoundedDiagnosticText"/> и проходит через санитайзер.
 /// </para>
 /// <para>
 /// Отчёт связан с exact build revision: печатаются identity инструмента и обеих проверяемых сборок
@@ -118,7 +119,7 @@ internal sealed class AcceptanceReport
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(detail);
 
-        string bounded = MuMuBoundedText.Bounded(detail);
+        string bounded = BoundedDiagnosticText.Bounded(detail);
         _steps.Add(new AcceptanceStep(number, name, isProven, Sanitizer.Sanitize(bounded), bounded));
     }
 

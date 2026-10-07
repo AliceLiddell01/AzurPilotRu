@@ -1,13 +1,15 @@
 using System.Diagnostics;
 using AzurPilot.Core.Failures;
 using AzurPilot.Windows.MuMu;
+using AzurPilot.Windows.Processes;
 using Xunit;
 
 namespace AzurPilot.Tests.MuMuWindows;
 
 /// <summary>
-/// Доказательства границы запуска процесса: точный исполняемый файл и список аргументов, отсутствие
-/// оболочки, ограниченный захват вывода, дедлайн, отмена и завершение только собственного процесса.
+/// Доказательства общей границы запуска процесса: точный исполняемый файл и список аргументов, отсутствие
+/// оболочки, ограниченный захват вывода, дедлайн, отмена, завершение только собственного процесса и
+/// проекция отказов владельцем возможности.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -19,17 +21,23 @@ namespace AzurPilot.Tests.MuMuWindows;
 /// Завершение процессов проверяется отдельно: посторонний процесс, запущенный вне границы, не должен
 /// быть затронут превышением дедлайна у процесса границы.
 /// </para>
+/// <para>
+/// Граница не выбирает смысл отказа: она сообщает его проекцией владельца возможности. Поэтому проверки
+/// идут через production-проекцию MuMu (коды и details остаются MuMu-специфичными) и через
+/// подменённую проекцию, которой доказывается, что граница действительно делегирует отказ, а не
+/// подставляет собственный код.
+/// </para>
 /// </remarks>
-[Trait("Category", "MuMuWindows")]
-public sealed class MuMuProcessRunnerTests
+[Trait("Category", "Processes")]
+public sealed class WindowsProcessRunnerTests
 {
-    private static readonly MuMuProcessRunner Runner = new();
+    private static readonly WindowsProcessRunner Runner = new(new MuMuProcessFailureProjection());
     private static readonly string SystemDirectory = Environment.SystemDirectory;
 
     [Fact(DisplayName = "Относительный путь к исполняемому файлу — ошибка программирования")]
     public async Task RelativeExecutablePathIsProgrammingError()
     {
-        MuMuProcessRequest request = new()
+        WindowsProcessRequest request = new()
         {
             ExecutablePath = "MuMuManager.exe",
             Arguments = [],
@@ -42,7 +50,7 @@ public sealed class MuMuProcessRunnerTests
     [Fact(DisplayName = "Неположительный дедлайн — ошибка программирования")]
     public async Task NonPositiveTimeoutIsProgrammingError()
     {
-        MuMuProcessRequest request = new()
+        WindowsProcessRequest request = new()
         {
             ExecutablePath = Path.Combine(SystemDirectory, "ping.exe"),
             Arguments = ["-n", "1", "127.0.0.1"],
@@ -52,19 +60,23 @@ public sealed class MuMuProcessRunnerTests
         _ = await Assert.ThrowsAsync<ArgumentException>(() => Runner.RunAsync(request, CancellationToken.None));
     }
 
+    [Fact(DisplayName = "Проекция отказов — обязательная зависимость границы, а не скрытое значение")]
+    public void MissingFailureProjectionIsProgrammingError()
+        => _ = Assert.Throws<ArgumentNullException>(() => new WindowsProcessRunner(null!));
+
     [Fact(DisplayName = "Недостижимый исполняемый файл проецируется в отказ control surface")]
     public async Task UnreachableExecutableBecomesControlSurfaceFailure()
     {
         string executablePath = Path.Combine(SystemDirectory, "azurpilot-mumu-no-such-utility.exe");
 
-        MuMuProcessRequest request = new()
+        WindowsProcessRequest request = new()
         {
             ExecutablePath = executablePath,
             Arguments = ["version"],
             Timeout = TimeSpan.FromSeconds(5),
         };
 
-        ApplicationResult<MuMuProcessOutcome> result = await Runner.RunAsync(request, CancellationToken.None);
+        ApplicationResult<WindowsProcessOutcome> result = await Runner.RunAsync(request, CancellationToken.None);
 
         Assert.True(result.IsFailure);
 
@@ -76,16 +88,52 @@ public sealed class MuMuProcessRunnerTests
         Assert.DoesNotContain(SystemDirectory, failure.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact(DisplayName = "Отказ запуска делегируется переданной проекции, а не выбирается границей")]
+    public async Task StartFailureIsProjectedByInjectedProjection()
+    {
+        RecordingFailureProjection projection = new();
+        WindowsProcessRunner runner = new(projection);
+
+        ApplicationResult<WindowsProcessOutcome> result = await runner.RunAsync(
+            CreateRequest("azurpilot-no-such-utility.exe", TimeSpan.FromSeconds(5), "version"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(projection.StartFailure, result.FailureInfo!);
+        Assert.Equal(1, projection.StartFailedCount);
+        Assert.Equal(0, projection.TimedOutCount);
+    }
+
+    [Fact(DisplayName = "Превышение дедлайна делегируется проекции вместе с фактами ожидания")]
+    public async Task TimeoutIsProjectedByInjectedProjection()
+    {
+        RecordingFailureProjection projection = new();
+        WindowsProcessRunner runner = new(projection);
+
+        ApplicationResult<WindowsProcessOutcome> result = await runner.RunAsync(
+            CreateRequest("ping.exe", TimeSpan.FromSeconds(1), "-n", "30", "-w", "1000", "127.0.0.1"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(projection.TimeoutFailure, result.FailureInfo!);
+        Assert.Equal(1, projection.TimedOutCount);
+        Assert.Equal(0, projection.StartFailedCount);
+        Assert.True(projection.LastElapsed > TimeSpan.Zero);
+        Assert.Equal(
+            Path.Combine(SystemDirectory, "ping.exe"),
+            projection.LastExecutablePath);
+    }
+
     [Fact(DisplayName = "Завершившийся процесс отдаёт код выхода, вывод и длительность")]
     public async Task CompletedProcessReturnsOutcome()
     {
-        ApplicationResult<MuMuProcessOutcome> result = await Runner.RunAsync(
+        ApplicationResult<WindowsProcessOutcome> result = await Runner.RunAsync(
             CreateRequest("ping.exe", TimeSpan.FromSeconds(30), "-n", "1", "127.0.0.1"),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
 
-        MuMuProcessOutcome outcome = result.Value!;
+        WindowsProcessOutcome outcome = result.Value!;
 
         Assert.Equal(0, outcome.ExitCode);
         Assert.NotEmpty(outcome.StandardOutput);
@@ -107,7 +155,7 @@ public sealed class MuMuProcessRunnerTests
 
         try
         {
-            ApplicationResult<MuMuProcessOutcome> result = await Runner.RunAsync(
+            ApplicationResult<WindowsProcessOutcome> result = await Runner.RunAsync(
                 CreateRequest("findstr.exe", TimeSpan.FromSeconds(30), "/R", "/N", "^", payloadPath),
                 CancellationToken.None);
 
@@ -133,18 +181,18 @@ public sealed class MuMuProcessRunnerTests
 
         try
         {
-            ApplicationResult<MuMuProcessOutcome> result = await Runner.RunAsync(
+            ApplicationResult<WindowsProcessOutcome> result = await Runner.RunAsync(
                 CreateRequest("findstr.exe", TimeSpan.FromSeconds(60), "/R", "/N", "^", payloadPath),
                 CancellationToken.None);
 
             Assert.True(result.IsSuccess);
 
-            MuMuProcessOutcome outcome = result.Value!;
+            WindowsProcessOutcome outcome = result.Value!;
 
             Assert.Equal(0, outcome.ExitCode);
             Assert.True(outcome.StandardOutputTruncated);
             Assert.Equal(
-                MuMuProcessRunner.MaximumCapturedCharactersPerStream,
+                WindowsProcessRunner.MaximumCapturedCharactersPerStream,
                 outcome.StandardOutput.Length);
         }
         finally
@@ -160,7 +208,7 @@ public sealed class MuMuProcessRunnerTests
 
         try
         {
-            ApplicationResult<MuMuProcessOutcome> result = await Runner.RunAsync(
+            ApplicationResult<WindowsProcessOutcome> result = await Runner.RunAsync(
                 CreateRequest("ping.exe", TimeSpan.FromSeconds(1), "-n", "30", "-w", "1000", "127.0.0.1"),
                 CancellationToken.None);
 
@@ -188,7 +236,7 @@ public sealed class MuMuProcessRunnerTests
         using CancellationTokenSource cancellation = new();
         cancellation.CancelAfter(TimeSpan.FromMilliseconds(300));
 
-        ApplicationResult<MuMuProcessOutcome> result = await Runner.RunAsync(
+        ApplicationResult<WindowsProcessOutcome> result = await Runner.RunAsync(
             CreateRequest("ping.exe", TimeSpan.FromSeconds(60), "-n", "30", "-w", "1000", "127.0.0.1"),
             cancellation.Token);
 
@@ -206,7 +254,7 @@ public sealed class MuMuProcessRunnerTests
         using CancellationTokenSource cancellation = new();
         cancellation.Cancel();
 
-        ApplicationResult<MuMuProcessOutcome> result = await Runner.RunAsync(
+        ApplicationResult<WindowsProcessOutcome> result = await Runner.RunAsync(
             CreateRequest("ping.exe", TimeSpan.FromSeconds(30), "-n", "1", "127.0.0.1"),
             cancellation.Token);
 
@@ -214,7 +262,7 @@ public sealed class MuMuProcessRunnerTests
         Assert.Equal(ApplicationFailure.OperationCancelled, result.FailureInfo!.Code);
     }
 
-    private static MuMuProcessRequest CreateRequest(
+    private static WindowsProcessRequest CreateRequest(
         string executableName,
         TimeSpan timeout,
         params string[] arguments)
@@ -266,5 +314,66 @@ public sealed class MuMuProcessRunnerTests
         catch (System.ComponentModel.Win32Exception)
         {
         }
+    }
+
+    /// <summary>
+    /// Подменённая проекция отказов: запоминает вызовы и сообщает собственные отказы.
+    /// </summary>
+    /// <remarks>
+    /// Проекция не повторяет MuMu-коды: она доказывает, что граница сообщает отказ именно переданной
+    /// проекцией. Ожидаемые вызовы, которых проверка не ждёт, объявлены ошибкой, чтобы незамеченный путь
+    /// не выглядел доказанным.
+    /// </remarks>
+    private sealed class RecordingFailureProjection : IProcessFailureProjection
+    {
+        /// <summary>Отказ запуска, которым проекция отвечает границе.</summary>
+        internal ApplicationFailure StartFailure { get; } = new()
+        {
+            Code = ApplicationFailure.InternalError,
+            Message = "Тестовый отказ запуска процесса от подменённой проекции.",
+        };
+
+        /// <summary>Отказ дедлайна, которым проекция отвечает границе.</summary>
+        internal ApplicationFailure TimeoutFailure { get; } = new()
+        {
+            Code = ApplicationFailure.InternalError,
+            Message = "Тестовый отказ дедлайна процесса от подменённой проекции.",
+        };
+
+        /// <summary>Число вызовов проекции о неудачном запуске.</summary>
+        internal int StartFailedCount { get; private set; }
+
+        /// <summary>Число вызовов проекции о превышении дедлайна.</summary>
+        internal int TimedOutCount { get; private set; }
+
+        /// <summary>Длительность ожидания, переданная последним вызовом о превышении дедлайна.</summary>
+        internal TimeSpan LastElapsed { get; private set; }
+
+        /// <summary>Путь к исполняемому файлу, переданный последним вызовом о превышении дедлайна.</summary>
+        internal string LastExecutablePath { get; private set; } = string.Empty;
+
+        /// <inheritdoc />
+        public ApplicationFailure StartFailed(string executablePath, Exception? exception)
+        {
+            StartFailedCount++;
+            return StartFailure;
+        }
+
+        /// <inheritdoc />
+        public ApplicationFailure TimedOut(
+            string executablePath,
+            TimeSpan elapsed,
+            int standardOutputCharacters,
+            int standardErrorCharacters)
+        {
+            TimedOutCount++;
+            LastElapsed = elapsed;
+            LastExecutablePath = executablePath;
+            return TimeoutFailure;
+        }
+
+        /// <inheritdoc />
+        public ApplicationFailure Cancelled()
+            => throw new InvalidOperationException("Подменённая проекция не ожидала отмены операции.");
     }
 }
