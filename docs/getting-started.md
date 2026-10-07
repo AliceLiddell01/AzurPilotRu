@@ -7,7 +7,7 @@
 ## 1. Требования
 
 - **Windows x64** — единственная поддерживаемая платформа
-  ([architecture.md](../.codex/context/architecture.md)).
+  ([architecture.md](architecture/overview.md)).
 - **Git** и **.NET SDK** — доступны из `PATH`. Выбранный .NET SDK задаёт [global.json](../global.json).
 - **Visual Studio 2026** с workload «Desktop development with C++» и x64 MSVC toolset. Минимум
   compiler/toolset и CMake указан в [native/CMakeLists.txt](../native/CMakeLists.txt).
@@ -52,8 +52,8 @@ dotnet test tests/AzurPilot.Tests/AzurPilot.Tests.csproj --configuration Release
 
 MSBuild берёт runtime из `artifacts/native/runtime/<Configuration>` и добавляет DLL в managed outputs.
 Если там нет `AzurPilot.Native.dll` или runtime DLL OpenCV, MSBuild останавливает managed build с
-ошибкой. Подробнее о каноническом пути и границах — [architecture.md](../.codex/context/architecture.md)
-и [verification.md](../.codex/context/verification.md).
+ошибкой. Подробнее о каноническом пути и границах — [architecture.md](architecture/overview.md)
+и [verification.md](testing/verification.md).
 
 ## 4. OpenCV
 
@@ -95,8 +95,8 @@ Acquisition выполняется автоматически при CMake confi
 файл не подменяется defaults: запуск завершается явным отказом и ненулевым кодом выхода.
 
 Путь файла и правила схемы принадлежат
-[application-configuration.md](../.codex/context/application-configuration.md), коды отказа и коды
-выхода процесса — [application-failures.md](../.codex/context/application-failures.md).
+[application-configuration.md](reference/application-configuration.md), коды отказа и коды
+выхода процесса — [application-failures.md](reference/application-failures.md).
 
 Что видно при запуске:
 
@@ -131,7 +131,7 @@ transport.
   `dotnet run --project tests/AzurPilot.MuMuAcceptance -c Release -- --instance mumu:<index>`.
   Приёмка собирается вместе с `AzurPilot.Windows`, поэтому до её запуска нужен native runtime этой
   конфигурации: из каталога `native` выполните CMake workflow preset `native-x64-release`. Что именно
-  доказывает каждая проверка — [verification.md](../.codex/context/verification.md).
+  доказывает каждая проверка — [verification.md](testing/verification.md).
 - **Android-проверки** прогоняют production-код Android-слоя через управляемые внешние границы (host-side
   поверхность Android и общая граница запуска процесса) и доказывают разрешение точного ADB endpoint,
   target-explicit адресацию команд, готовность Android, независимость фактов об игре и lifecycle игры без
@@ -158,10 +158,10 @@ transport.
 | Locked restore завершился ошибкой | Сверьте `Directory.Packages.props` и lock-файлы; изменение графа должно обновлять их согласованно |
 | SHA256 OpenCV не совпал | Не распаковывайте архив; проверьте URL/hash в `native/opencv.json` и удалите повреждённый архив из локального `artifacts/downloads` перед повторным configure |
 | Managed build не нашёл native runtime DLL | Запустите CMake workflow preset той же конфигурации из `native/` |
-| Приложение завершилось ненулевым кодом выхода | Прочитайте код отказа в итоге на `stdout` и в structured logs на `stderr`; значения кодов принадлежат [application-failures.md](../.codex/context/application-failures.md), правила схемы — [application-configuration.md](../.codex/context/application-configuration.md) |
+| Приложение завершилось ненулевым кодом выхода | Прочитайте код отказа в итоге на `stdout` и в structured logs на `stderr`; значения кодов принадлежат [application-failures.md](reference/application-failures.md), правила схемы — [application-configuration.md](reference/application-configuration.md) |
 | `dotnet test` завершился с кодом 5 из-за неизвестной опции | Проект использует `Microsoft.Testing.Platform`; не передавайте неподдерживаемые runner options, например `--nologo` |
-| MuMu-секция сообщает, что установка не обнаружена или экземпляр не выбран | Это диагностический результат, а не отказ запуска: startup MuMu не запускает и не останавливает, а правила принадлежат [mumu-lifecycle.md](../.codex/context/mumu-lifecycle.md) |
-| Android-секция сообщает недоступный ADB, неразрешённый endpoint или неготовый transport | Это диагностический результат, а не отказ запуска: startup не подключает ADB, не запускает игру и не исправляет неготовый transport, а правила принадлежат [android-game-lifecycle.md](../.codex/context/android-game-lifecycle.md) |
+| MuMu-секция сообщает, что установка не обнаружена или экземпляр не выбран | Это диагностический результат, а не отказ запуска: startup MuMu не запускает и не останавливает, а правила принадлежат [mumu-lifecycle.md](architecture/mumu-lifecycle.md) |
+| Android-секция сообщает недоступный ADB, неразрешённый endpoint или неготовый transport | Это диагностический результат, а не отказ запуска: startup не подключает ADB, не запускает игру и не исправляет неготовый transport, а правила принадлежат [android-game-lifecycle.md](architecture/android-game-lifecycle.md) |
 | Секция состояния игры сообщает состояние «не доказано» или ненаблюдённые факты | Это честный результат наблюдения: недоказанный факт не выдаётся за доказанное отсутствие, а наблюдение игры выполняется только при готовом transport |
 
 ## 9. Куда смотреть дальше

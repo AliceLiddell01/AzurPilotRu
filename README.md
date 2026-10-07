@@ -49,8 +49,8 @@ Native workflow выполняет configure (получение и провер
 и запускают interop-тесты и тесты контрактов репозитория.
 
 CI использует эти стандартные команды напрямую. Для native Debug предусмотрен workflow preset
-`native-x64-debug`; подробности команд и проверок — [architecture.md](.codex/context/architecture.md)
-и [verification.md](.codex/context/verification.md).
+`native-x64-debug`; подробности команд и проверок — [architecture.md](docs/architecture/overview.md)
+и [verification.md](docs/testing/verification.md).
 
 ## Приложение при запуске
 
@@ -72,12 +72,12 @@ CI использует эти стандартные команды напря�
   приложения не подключает ADB, не запускает и не останавливает игру и эмулятор.
 
 Путь конфигурации, правила схемы и коды отказа принадлежат
-[application-configuration.md](.codex/context/application-configuration.md) и
-[application-failures.md](.codex/context/application-failures.md), состав логирования и диагностики —
-[runtime-diagnostics.md](.codex/context/runtime-diagnostics.md), правила MuMu-capability —
-[mumu-lifecycle.md](.codex/context/mumu-lifecycle.md), правила Android-слоя и lifecycle игры —
-[android-game-lifecycle.md](.codex/context/android-game-lifecycle.md), проверяемые свойства —
-[verification.md](.codex/context/verification.md) и тесты `tests/AzurPilot.Tests/`.
+[application-configuration.md](docs/reference/application-configuration.md) и
+[application-failures.md](docs/reference/application-failures.md), состав логирования и диагностики —
+[runtime-diagnostics.md](docs/operations/runtime-diagnostics.md), правила MuMu-capability —
+[mumu-lifecycle.md](docs/architecture/mumu-lifecycle.md), правила Android-слоя и lifecycle игры —
+[android-game-lifecycle.md](docs/architecture/android-game-lifecycle.md), проверяемые свойства —
+[verification.md](docs/testing/verification.md) и тесты `tests/AzurPilot.Tests/`.
 
 ## Структура репозитория
 
@@ -89,7 +89,7 @@ CI использует эти стандартные команды напря�
 - `global.json`, `Directory.Packages.props` и `packages.lock.json` — манифесты зависимостей managed-проектов.
 - `artifacts/` — единственная исключённая из Git область для build outputs и полученных зависимостей.
 
-Карта проекта, границы и правило зависимостей — [.codex/context/architecture.md](.codex/context/architecture.md).
+Карта проекта, границы и правило зависимостей — [.codex/context/architecture.md](docs/architecture/overview.md).
 
 ## Документация
 

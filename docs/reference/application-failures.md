@@ -1,7 +1,7 @@
 # Application-level модель отказов — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [application-failures.md](../../.codex/context/application-failures.md).
+Короткий agent-critical contract находится в [application-failures.md](../../reference/application-failures.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Зачем нужен отдельный уровень отказов
@@ -27,7 +27,7 @@
 
 | Код (константа `ApplicationFailure`) | Когда возникает | Повтор |
 | --- | --- | --- |
-| `ConfigurationInvalid` | Существующий файл конфигурации не читается или не соответствует своей схеме; условия и поддерживаемые версии схем принадлежат [application-configuration.md](../../.codex/context/application-configuration.md) | не имеет смысла |
+| `ConfigurationInvalid` | Существующий файл конфигурации не читается или не соответствует своей схеме; условия и поддерживаемые версии схем принадлежат [application-configuration.md](../../reference/application-configuration.md) | не имеет смысла |
 | `ConfigurationSchemaUnsupported` | Версия схемы в файле не поддерживается этой сборкой | не имеет смысла |
 | `NativeUnavailable` | Native библиотека отсутствует или не загружается | имеет смысл после восстановления native runtime |
 | `NativeIncompatible` | Native библиотека загружена, но её ABI несовместим с ожидаемым | не имеет смысла без пересборки |
@@ -52,7 +52,7 @@
 | `InternalError` | Ошибка вне ожидаемых отказов выше | не имеет смысла |
 
 Правила конфигурации, при которых возникают два первых кода, описаны в
-[application-configuration.md](../../.codex/context/application-configuration.md).
+[application-configuration.md](../../reference/application-configuration.md).
 
 Отсутствие установки и её неоднозначность — разные случаи и разные коды: `MuMuInstallationNotFound`
 утверждает, что установки нет, и не сообщается, когда установок несколько. Неоднозначность установки
@@ -76,7 +76,7 @@
 Наборы ключей деталей принадлежат тому коду, который их формирует:
 
 - конфигурационные отказы добавляют ключ с путём файла, а отказ о неподдерживаемой схеме — ещё и
-  версию схемы из файла ([application-configuration.md](../../.codex/context/application-configuration.md));
+  версию схемы из файла ([application-configuration.md](../../reference/application-configuration.md));
 - отказы MuMu добавляют только machine-stable факты: режим выбора и identity экземпляра, число
   найденных экземпляров и установок, причину отказа и код ошибки провайдера, требуемое и наблюдаемое
   состояние, фазу операции, код выхода control surface и прошедшее время; пути установки, полный вывод
@@ -110,7 +110,7 @@
 
 Application host получает готовую проекцию из DI и не дублирует её логику. Ожидаемый отказ native
 boundary не выбрасывается наружу: диагностика возвращает его данными, а решение о продолжении запуска
-принимает startup ([runtime-diagnostics.md](../../.codex/context/runtime-diagnostics.md)).
+принимает startup ([runtime-diagnostics.md](../../operations/runtime-diagnostics.md)).
 
 ## Отказы MuMu lifecycle
 
@@ -147,7 +147,7 @@ MuMu-коды разделены по владельцу причины. Пла�
 
 ## Отказы Android readiness и lifecycle игры
 
-Условия этих отказов принадлежат [android-game-lifecycle.md](../../.codex/context/android-game-lifecycle.md); здесь описан
+Условия этих отказов принадлежат [android-game-lifecycle.md](../../architecture/android-game-lifecycle.md); здесь описан
 владелец кода и признак повторяемости.
 
 Платформенный adapter `AzurPilot.Windows` сообщает два кода, потому что видит файловую систему,

@@ -1,7 +1,7 @@
 # Пользовательская конфигурация приложения — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [application-configuration.md](../../.codex/context/application-configuration.md).
+Короткий agent-critical contract находится в [application-configuration.md](../../reference/application-configuration.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Роль конфигурации
@@ -12,7 +12,7 @@ input, keymap, разрешение экрана, OCR), в схему не до�
 capability, а не заранее. Секция `mumu` появилась вместе с capability MuMu и содержит ровно одну
 реальную настройку — выбор Android-экземпляра. Product identity игры (регион/сервер/пакет) настройкой
 конфигурации не является: поддерживается ровно один клиент — Azur Lane Global/EN, чья identity
-принадлежит владельцу [android-game-lifecycle.md](../../.codex/context/android-game-lifecycle.md), а не пользовательскому
+принадлежит владельцу [android-game-lifecycle.md](../../architecture/android-game-lifecycle.md), а не пользовательскому
 документу. По той же причине в схеме нет ключей вида `adb.*` и `game.*`: точный ADB endpoint и product
 identity — runtime-данные реализованной capability, а не настройки оператора.
 
@@ -21,7 +21,7 @@ identity — runtime-данные реализованной capability, а не
 Владелец пути — `AzurPilotConfigurationPath.GetDefaultRuntimePath()` в
 `src/AzurPilot.Core/Configuration/`: это `%LOCALAPPDATA%\AzurPilot\config.json`, вычисленный через
 BCL API (`Environment.SpecialFolder.LocalApplicationData`). Абсолютная строка пути конкретной машины
-в репозитории запрещена ([architecture.md](../../.codex/context/architecture.md)), поэтому второй владелец пути — в том
+в репозитории запрещена ([architecture.md](../../architecture/overview.md)), поэтому второй владелец пути — в том
 числе в документации — не заводится.
 
 Приложение не создаёт каталог конфигурации и не пишет файл: отсутствие каталога или файла —
@@ -159,7 +159,7 @@ snapshot всегда провалидирован, а изменение или
 ## Отказы конфигурации
 
 Стабильные коды отказа, соответствие «ситуация → код», признак повторяемости, состав details и коды
-выхода процесса принадлежат [application-failures.md](../../.codex/context/application-failures.md): второй перечень здесь
+выхода процесса принадлежат [application-failures.md](../../reference/application-failures.md): второй перечень здесь
 не заводится.
 
 Правило этого документа: отсутствие файла или каталога конфигурации отказом не является — загрузка
@@ -173,9 +173,9 @@ snapshot всегда провалидирован, а изменение или
 
 - Конфигурация не собирается из нескольких источников: `Microsoft.Extensions.Configuration` не
   агрегирует пользовательскую конфигурацию, а строгий JSON snapshot передаётся в DI как готовый
-  объект ([runtime-diagnostics.md](../../.codex/context/runtime-diagnostics.md)).
+  объект ([runtime-diagnostics.md](../../operations/runtime-diagnostics.md)).
 - Hot reload, `config reload`, продуктовая опция выбора пути к файлу конфигурации, example-config и
   migration/repair/update конфигурации не вводятся.
 - Диагностика сообщает о конфигурации bounded сведения (источник, версия схемы, статус валидации,
   минимальный уровень логирования) и не печатает полный документ; состав диагностического snapshot
-  принадлежит [runtime-diagnostics.md](../../.codex/context/runtime-diagnostics.md).
+  принадлежит [runtime-diagnostics.md](../../operations/runtime-diagnostics.md).
