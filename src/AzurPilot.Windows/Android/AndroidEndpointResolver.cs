@@ -27,6 +27,12 @@ namespace AzurPilot.Windows.Android;
 /// Резолвер выполняет ровно один запрос сведений: он не выполняет повторных попыток, не подключается к
 /// устройству и не выполняет никаких mutation.
 /// </para>
+/// <para>
+/// Отказ чтения сведений не превращается в состояние endpoint-а и не переписывается: отмена запроса
+/// пробрасывается без изменений, а причина остальных отказов читается у её владельца
+/// (<see cref="MuMuFailureReasons"/>) и сохраняется в details отказа разрешения. Поэтому недостижимый
+/// запуск control surface или достигнутый дедлайн процесса не сообщаются как нераспознанный ответ.
+/// </para>
 /// </remarks>
 public sealed class AndroidEndpointResolver
 {
@@ -88,8 +94,19 @@ public sealed class AndroidEndpointResolver
 
         if (query.IsFailure)
         {
-            // Отказ чтения сведений означает ровно одно: точный адрес не разрешён.
-            return Unavailable(instance, AndroidHostFailures.ResponseUnrecognizedReason);
+            ApplicationFailure failure = query.FailureInfo!;
+
+            // Отмена — ожидаемый исход запроса отмены, а не состояние endpoint-а: она пробрасывается без
+            // изменений, как и любой другой ожидаемый отказ host-а.
+            if (failure.Code == ApplicationFailure.OperationCancelled)
+            {
+                return ApplicationResult<AndroidEndpoint>.Failure(failure);
+            }
+
+            // Отказ чтения сведений означает ровно одно: точный адрес не разрешён. Причина при этом
+            // остаётся у своего владельца, поэтому недостижимый запуск control surface и достигнутый
+            // дедлайн процесса не выдаются за нераспознанный ответ.
+            return Unavailable(instance, ProjectedReason(failure));
         }
 
         MuMuInstanceInfo? info = query.Value!.Instance;
@@ -131,6 +148,21 @@ public sealed class AndroidEndpointResolver
     private static ApplicationResult<AndroidEndpoint> Unavailable(MuMuInstanceId instance, string reason)
         => ApplicationResult<AndroidEndpoint>.Failure(
             AndroidHostFailures.EndpointUnavailable(instance, reason));
+
+    /// <summary>Читает machine-stable причину отказа чтения сведений у её владельца.</summary>
+    /// <remarks>
+    /// Причина берётся из details отказа, потому что её владелец — набор <see cref="MuMuFailureReasons"/>,
+    /// а не Android-адаптер: резолвер не выводит причину заново и не подменяет её своей. Отказ без
+    /// сообщённой причины описывается как нераспознанный ответ — другой причины адаптер не знает.
+    /// </remarks>
+    /// <param name="failure">Отказ чтения сведений об экземпляре.</param>
+    /// <returns>Machine-stable причина для отказа разрешения endpoint-а.</returns>
+    private static string ProjectedReason(ApplicationFailure failure)
+        => failure.Details is { } details
+            && details.TryGetValue(MuMuFailureDetailKeys.Reason, out string? reason)
+            && !string.IsNullOrWhiteSpace(reason)
+                ? reason
+                : AndroidHostFailures.ResponseUnrecognizedReason;
 
     private static bool IsUsableHost(string host)
     {

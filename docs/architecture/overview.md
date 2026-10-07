@@ -153,7 +153,8 @@ CI напрямую выполняет приведённые команды CMa
 - `native/` — CMake boundary: `CMakeLists.txt`, `CMakePresets.json`, `opencv.json`, `cmake/`,
   `include/` (замороженный ABI), `src/` (реализация), `tests/` (native CTest).
 - `global.json`, `Directory.Packages.props` и `**/packages.lock.json` — владельцы .NET SDK и графа
-  NuGet-зависимостей; подробная карта владельцев находится в [.codex/context/INDEX.md](../../.codex/context/INDEX.md).
+  NuGet-зависимостей; подробная карта владельцев находится в
+  [.codex/context/build-contracts.md](../../.codex/context/build-contracts.md).
 - `.github/workflows/ci.yml` — CI, который вызывает стандартные CMake/.NET команды.
 - `src/` — managed проекты (три boundaries приложения), `tests/` — тестовые инструменты
   (не boundaries, см. выше).

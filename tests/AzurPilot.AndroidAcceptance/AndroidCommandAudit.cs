@@ -138,21 +138,27 @@ internal sealed class AndroidCommandAudit
     }
 
     /// <summary>Ищет нарушение запретов приёмки среди выполненных запусков.</summary>
+    /// <remarks>
+    /// Путь bundled ADB не обязателен: если он не обнаружен, команд ADB запускаться не могло, поэтому
+    /// разрешённой остаётся только control surface обнаруженной установки, а любой другой запуск —
+    /// нарушение. Так аудит остаётся проверкой факта прогона и на прерванной цепочке.
+    /// </remarks>
     /// <param name="controlExecutablePath">Путь control surface обнаруженной установки.</param>
-    /// <param name="adbExecutablePath">Путь bundled ADB обнаруженной установки.</param>
+    /// <param name="adbExecutablePath">
+    /// Путь bundled ADB обнаруженной установки либо <see langword="null"/>, если он не обнаружен.
+    /// </param>
     /// <param name="requestedInstance">Exact instance, выбранный для приёмки.</param>
     /// <param name="endpoint">Разрешённый exact ADB endpoint либо <see langword="null"/>, если он не разрешён.</param>
     /// <param name="package">Идентификатор пакета игры, которым адресуется mutation.</param>
     /// <returns>Описание нарушения или <see langword="null"/>, если запреты не нарушены.</returns>
     internal string? FindViolation(
         string controlExecutablePath,
-        string adbExecutablePath,
+        string? adbExecutablePath,
         MuMuInstanceId requestedInstance,
         AndroidEndpoint? endpoint,
         AndroidPackageId package)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(controlExecutablePath);
-        ArgumentException.ThrowIfNullOrWhiteSpace(adbExecutablePath);
 
         foreach (AuditEntry entry in _entries)
         {
@@ -174,8 +180,9 @@ internal sealed class AndroidCommandAudit
                 continue;
             }
 
-            if (string.Equals(
-                entry.Request.ExecutablePath, adbExecutablePath, StringComparison.OrdinalIgnoreCase))
+            if (adbExecutablePath is not null
+                && string.Equals(
+                    entry.Request.ExecutablePath, adbExecutablePath, StringComparison.OrdinalIgnoreCase))
             {
                 string? adbViolation = ValidateAdb(entry.Request.Arguments, endpoint, package);
                 if (adbViolation is not null)
@@ -186,7 +193,10 @@ internal sealed class AndroidCommandAudit
                 continue;
             }
 
-            return "запускалась программа, отличная от bundled ADB и control surface обнаруженной установки";
+            return adbExecutablePath is null
+                ? "запускалась программа, отличная от control surface обнаруженной установки: "
+                    + "bundled ADB не обнаружен, поэтому команд ADB в этом прогоне быть не могло"
+                : "запускалась программа, отличная от bundled ADB и control surface обнаруженной установки";
         }
 
         return null;

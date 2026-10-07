@@ -1,8 +1,8 @@
 # Начало работы
 
 Практическая входная точка: что установить, как собрать проект и запустить проверки. Правила
-проектной архитектуры и владельцы manifests перечислены в
-[.codex/context/INDEX.md](../.codex/context/INDEX.md).
+проектной архитектуры — в [.codex/context/architecture.md](../.codex/context/architecture.md), владельцы
+manifests и версий — в [.codex/context/build-contracts.md](../.codex/context/build-contracts.md).
 
 ## 1. Требования
 

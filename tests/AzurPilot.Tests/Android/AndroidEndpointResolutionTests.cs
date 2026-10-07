@@ -132,6 +132,42 @@ public sealed class AndroidEndpointResolutionTests
         _ = Assert.Single(runner.Requests);
     }
 
+    [Fact(DisplayName = "Отмена запроса сведений пробрасывается, а не выдаётся за состояние endpoint-а")]
+    public async Task CancelledQueryIsPropagatedUnchanged()
+    {
+        ApplicationResult<AndroidEndpoint> result =
+            await ResolveFailureAsync(MuMuPlatformFailureMapper.ForCancellation());
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ApplicationFailure.OperationCancelled, result.FailureInfo!.Code);
+    }
+
+    [Fact(DisplayName = "Причина отказа чтения сведений сохраняется, а не подменяется нераспознанным ответом")]
+    public async Task ProjectedFailureReasonIsPreserved()
+    {
+        string executable = AndroidTestContext.Installation.ControlExecutablePath;
+
+        ApplicationResult<AndroidEndpoint> timedOut = await ResolveFailureAsync(
+            MuMuPlatformFailureMapper.ForProcessTimeout(executable, TimeSpan.FromSeconds(30), 0, 0));
+        ApplicationResult<AndroidEndpoint> startFailed = await ResolveFailureAsync(
+            MuMuPlatformFailureMapper.ForProcessStartFailure(executable, exception: null));
+
+        AssertUnavailable(timedOut, MuMuFailureReasons.ProcessTimeout);
+        AssertUnavailable(startFailed, MuMuFailureReasons.ProcessStartFailed);
+    }
+
+    [Fact(DisplayName = "Отказ без сообщённой причины описывается нераспознанным ответом")]
+    public async Task FailureWithoutReportedReasonFallsBackToUnrecognizedResponse()
+    {
+        ApplicationResult<AndroidEndpoint> result = await ResolveFailureAsync(new ApplicationFailure
+        {
+            Code = ApplicationFailure.MuMuControlSurfaceUnsupported,
+            Message = "Точка входа control surface MuMu не поддерживается.",
+        });
+
+        AssertUnavailable(result, AndroidDetailValues.ResponseUnrecognized);
+    }
+
     [Fact(DisplayName = "Разрешение выполняет ровно один запрос и не выполняет mutation")]
     public async Task ResolutionPerformsSingleQueryWithoutMutation()
     {
@@ -150,6 +186,23 @@ public sealed class AndroidEndpointResolutionTests
         Assert.DoesNotContain("launch", request.Request.Arguments);
         Assert.DoesNotContain("shutdown", request.Request.Arguments);
         Assert.DoesNotContain("kill-server", request.Request.Arguments);
+    }
+
+    private static async Task<ApplicationResult<AndroidEndpoint>> ResolveFailureAsync(ApplicationFailure failure)
+    {
+        FakeWindowsProcessRunner runner = new();
+        runner.EnqueueFailure(failure);
+        AndroidEndpointResolver resolver = new(runner);
+
+        ApplicationResult<AndroidEndpoint> result = await resolver.ResolveAsync(
+            AndroidTestContext.Installation,
+            FirstInstance,
+            CancellationToken.None);
+
+        // Отказ чтения не приводит к повторному запросу сведений: разрешение выполняет ровно один запрос.
+        _ = Assert.Single(runner.Requests);
+
+        return result;
     }
 
     private static async Task<ApplicationResult<AndroidEndpoint>> ResolveAsync(string payload)

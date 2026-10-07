@@ -29,8 +29,8 @@ Windows, x64. Другие операционные системы не подд
 | Git | Доступен в `PATH` для тестов контрактов репозитория |
 
 Пошаговая установка и диагностика — [docs/getting-started.md](docs/getting-started.md). Владельцы
-закреплённых версий и внешних зависимостей перечислены в [.codex/context/INDEX.md](.codex/context/INDEX.md)
-и описаны в [.codex/context/build-contracts.md](.codex/context/build-contracts.md).
+закреплённых версий и внешних зависимостей перечислены и описаны в
+[.codex/context/build-contracts.md](.codex/context/build-contracts.md).
 
 ## Канонические команды
 

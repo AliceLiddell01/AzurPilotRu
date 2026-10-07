@@ -715,6 +715,11 @@ internal sealed class AndroidAcceptanceRunner
     }
 
     /// <summary>Проверяет аудит выполненных запусков и фиксирует bounded evidence прогона.</summary>
+    /// <remarks>
+    /// Аудит выполняется и на прерванной цепочке: если установка обнаружена, но bundled ADB не найден,
+    /// запусков ADB быть не могло, однако запуски control surface уже были и обязаны быть проверены.
+    /// Поэтому «запусков установки не было» сообщается только тогда, когда установка не обнаружена.
+    /// </remarks>
     /// <param name="options">Проверенные аргументы прогона.</param>
     /// <param name="context">Состояние прогона.</param>
     /// <returns>Успех аудита либо отказ с описанием нарушения.</returns>
@@ -722,17 +727,17 @@ internal sealed class AndroidAcceptanceRunner
     {
         string summary = _audit.Describe(context.AdbExecutablePath);
 
-        if (context.Installation is not MuMuInstallation installation
-            || context.AdbExecutablePath is not string adbExecutablePath)
+        if (context.Installation is not MuMuInstallation installation)
         {
             _report.Record(
                 StepAudit,
                 "Аудит выполненных команд",
                 true,
-                summary + "; установка или bundled ADB не обнаружены, запусков установки не было");
+                summary + "; установка MuMuPlayer не обнаружена, поэтому запусков её программ не было");
             return AcceptanceResult.Proven();
         }
 
+        string? adbExecutablePath = context.AdbExecutablePath;
         string? violation = _audit.FindViolation(
             installation.ControlExecutablePath,
             adbExecutablePath,
@@ -749,10 +754,16 @@ internal sealed class AndroidAcceptanceRunner
             StepAudit,
             "Аудит выполненных команд",
             true,
-            summary + "; запускались только bundled ADB и control surface обнаруженной установки и только "
-            + "команды production-контракта: запрещённые действия (kill-server, install/uninstall, clear "
-            + "data/cache, permissions reset, настройки эмулятора, input, screenshot, другой package, "
-            + "другой ADB target) не обнаружены");
+            summary + "; "
+            + (adbExecutablePath is null
+                ? "bundled ADB не обнаружен, поэтому команд ADB не запускалось; запускалась только control "
+                    + "surface обнаруженной установки и только чтения version/info: запрещённые действия "
+                    + "(kill-server, install/uninstall, clear data/cache, permissions reset, настройки "
+                    + "эмулятора, input, screenshot, другой package, другой ADB target) не обнаружены"
+                : "запускались только bundled ADB и control surface обнаруженной установки и только "
+                    + "команды production-контракта: запрещённые действия (kill-server, install/uninstall, "
+                    + "clear data/cache, permissions reset, настройки эмулятора, input, screenshot, другой "
+                    + "package, другой ADB target) не обнаружены"));
 
         _report.Record(StepAudit, "Формы выполненных команд", true, _audit.DescribeForms(adbExecutablePath));
 
