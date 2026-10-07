@@ -51,11 +51,16 @@ public sealed class AzurPilotApplicationProcessTests
         Assert.Empty(StructuredLogRecord.ReadFrom(run.StandardOutput));
 
         // stderr — только project-owned события приложения: чужих категорий логирования на уровне
-        // Information и выше здесь нет. Пользовательская конфигурация может опустить минимальный уровень
-        // до Debug/Trace, и тогда внутренний шум generic host попадает в stderr по её выбору.
+        // Information и выше здесь нет. С появлением реальной MuMu-capability проект владеет не только
+        // категорией application host, но и категориями MuMu-владельцев (discovery — Windows-адаптер,
+        // выбор экземпляра — Core orchestration); чужой шум этим не разрешается. Пользовательская
+        // конфигурация может опустить минимальный уровень до Debug/Trace, и тогда внутренний шум generic
+        // host попадает в stderr по её выбору.
         Assert.All(
             run.Logs.Where(log => log.IsAtLeast(LogLevel.Information)),
-            log => Assert.Equal("AzurPilot.App", log.Category));
+            log => Assert.True(
+                ProjectOwnedLogCategories.Contains(log),
+                $"Чужая категория логирования в stderr: {log.Category}."));
     }
 
     [Fact(DisplayName = "Код выхода согласован с отчётом: healthy — ноль, отказ — ненулевой и не маскируется")]
@@ -98,18 +103,25 @@ public sealed class AzurPilotApplicationProcessTests
 
         // События, которые прошли политику логирования пользовательской конфигурации, принадлежат одной
         // операции и несут тот же identifier, что и итог: identifier приходит из Activity операции, а не
-        // печатается внутри одного сообщения.
+        // печатается внутри одного сообщения. MuMu-владельцы несут его тем же способом — через scope
+        // записи, поэтому один identifier связывает и их события тоже.
         if (run.Logs.Count == 0)
         {
             return;
         }
 
-        string identifier = Assert.Single(
-            run.Logs.Select(log => log.CorrelationId).OfType<string>().Distinct(StringComparer.Ordinal));
-        Assert.Equal(CorrelationIdLength, identifier.Length);
-        Assert.All(run.Logs, log => Assert.Equal(identifier, log.CorrelationId));
-        Assert.All(run.Logs, log => Assert.Equal(identifier, log.TraceId));
-        Assert.Contains(identifier, reportedIdentifiers);
+        string traceIdentifier = Assert.Single(
+            run.Logs.Select(log => log.TraceId).OfType<string>().Distinct(StringComparer.Ordinal));
+        Assert.Equal(CorrelationIdLength, traceIdentifier.Length);
+        Assert.All(run.Logs, log => Assert.Equal(traceIdentifier, log.TraceId));
+        Assert.Contains(traceIdentifier, reportedIdentifiers);
+
+        // Application host передаёт identifier и явным structured property: записи его владельца обязаны
+        // нести тот же identifier, что и scope.
+        IReadOnlyList<StructuredLogRecord> applicationLogs =
+            [.. run.Logs.Where(log => log.CorrelationId is not null)];
+        Assert.NotEmpty(applicationLogs);
+        Assert.All(applicationLogs, log => Assert.Equal(traceIdentifier, log.CorrelationId));
     }
 
     [Fact(DisplayName = "Продукт не разбирает аргументы запуска: переданный путь конфигурации игнорируется")]

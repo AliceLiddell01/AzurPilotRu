@@ -8,8 +8,11 @@ $RECYCLE.BIN/
 # macOS metadata — не должен попадать в публичный репозиторий от внешних contributors
 .DS_Store
 
-# Visual Studio / JetBrains user state
+# Visual Studio / VS Code / JetBrains user state: локальные настройки IDE не являются
+# контрактом репозитория и, в отличие от отслеживаемых файлов, могут содержать
+# machine-specific пути конкретной машины.
 .vs/
+.vscode/
 .idea/
 *.suo
 *.user

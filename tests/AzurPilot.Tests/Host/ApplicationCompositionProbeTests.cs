@@ -50,6 +50,20 @@ public sealed class ApplicationCompositionProbeTests
     private const string UnsupportedSchemaConfiguration =
         """
         {
+          "schemaVersion": 3,
+          "diagnostics": {
+            "minimumLevel": "Information"
+          }
+        }
+        """;
+
+    /// <summary>
+    /// Документ поддерживаемой схемы v2 без обязательной секции <c>mumu</c>: версия поддерживается, но
+    /// документ не соответствует своей схеме.
+    /// </summary>
+    private const string CurrentSchemaWithoutMuMuSectionConfiguration =
+        """
+        {
           "schemaVersion": 2,
           "diagnostics": {
             "minimumLevel": "Information"
@@ -77,6 +91,9 @@ public sealed class ApplicationCompositionProbeTests
 
     /// <summary>Длина correlation identifier операции.</summary>
     private const int CorrelationIdLength = 32;
+
+    /// <summary>Категория логирования application host: владелец явного correlation property.</summary>
+    private static readonly string ApplicationHostCategory = typeof(AzurPilotHost).Namespace!;
 
     [Fact(DisplayName = "Проба без native runtime сообщает application-level native_unavailable")]
     public void ProbeWithoutNativeRuntimeReportsNativeUnavailable()
@@ -137,14 +154,32 @@ public sealed class ApplicationCompositionProbeTests
         // stdout пробы содержит только её собственные строки: structured runtime log идёт в stderr.
         Assert.Empty(StructuredLogRecord.ReadFrom(run.StandardOutput));
         Assert.NotEmpty(run.Logs);
-        Assert.All(run.Logs, log => Assert.Equal("AzurPilot.App", log.Category));
 
-        // Один correlation identifier связывает все события запуска.
+        // stderr несёт только project-owned события: с реальной MuMu-capability проект владеет и
+        // категориями MuMu-владельцев (discovery — Windows-адаптер, выбор экземпляра — Core
+        // orchestration), но чужие категории этим не разрешаются.
+        Assert.All(
+            run.Logs,
+            log => Assert.True(
+                ProjectOwnedLogCategories.Contains(log),
+                $"Чужая категория логирования в stderr: {log.Category}."));
+
+        // Один correlation identifier связывает все события запуска: MuMu-владельцы несут его scope
+        // записи, application host — ещё и явным structured property. Явное свойство обязательно именно
+        // у событий application host, поэтому проверяется и его наличие, а не только совпадение.
         string identifier = Assert.Single(
-            run.Logs.Select(log => log.CorrelationId).OfType<string>().Distinct(StringComparer.Ordinal));
+            run.Logs.Select(log => log.TraceId).OfType<string>().Distinct(StringComparer.Ordinal));
         Assert.Equal(CorrelationIdLength, identifier.Length);
-        Assert.All(run.Logs, log => Assert.Equal(identifier, log.CorrelationId));
         Assert.All(run.Logs, log => Assert.Equal(identifier, log.TraceId));
+        Assert.Contains(
+            run.Logs,
+            log => string.Equals(log.Category, ApplicationHostCategory, StringComparison.Ordinal));
+        Assert.All(
+            run.Logs.Where(log => string.Equals(log.Category, ApplicationHostCategory, StringComparison.Ordinal)),
+            log => Assert.Equal(identifier, log.CorrelationId));
+        Assert.All(
+            run.Logs.Where(log => log.CorrelationId is not null),
+            log => Assert.Equal(identifier, log.CorrelationId));
 
         // Здоровый snapshot несёт реальные evidence из native boundary: версии сверяются с владельцами
         // этих значений — заголовком ABI и manifest артефакта OpenCV.
@@ -221,5 +256,27 @@ public sealed class ApplicationCompositionProbeTests
         // Граница потоков не зависит от исхода: и в failure-пути stdout не содержит ни одной structured
         // записи — весь structured runtime log идёт в stderr.
         Assert.Empty(StructuredLogRecord.ReadFrom(run.StandardOutput));
+    }
+
+    [Fact(DisplayName = "Проба с документом v2 без секции mumu сообщает configuration_invalid")]
+    public void ProbeWithSupportedSchemaViolationReportsConfigurationInvalid()
+    {
+        using ApplicationCompositionProbe probe = ApplicationCompositionProbe.CreateStaged();
+        using TemporaryConfigurationDirectory directory = new();
+
+        ApplicationProbeRun run = probe.Run(
+            directory.WriteConfiguration(CurrentSchemaWithoutMuMuSectionConfiguration));
+
+        // Версия поддерживается, поэтому это не configuration_schema_unsupported, а несоответствие схеме.
+        Assert.Equal(0, run.ProbeExitCode);
+        Assert.Equal(AzurPilotExitCode.ConfigurationInvalid, run.ApplicationExitCode);
+        Assert.Equal(ApplicationFailure.ConfigurationInvalid, run.ReadFailureCode());
+
+        // Граница потоков не зависит от исхода: и в failure-пути stdout не содержит ни одной structured
+        // записи — весь structured runtime log идёт в stderr.
+        Assert.Empty(StructuredLogRecord.ReadFrom(run.StandardOutput));
+
+        // Строгая валидация не подменяется built-in defaults: native boundary не запрашивается вовсе.
+        Assert.DoesNotContain(run.Logs, log => log.State.ContainsKey(AbiVersionProperty));
     }
 }

@@ -6,4 +6,8 @@
   <!-- Проба для негативной проверки interop boundary: запускается тестом из каталога, где native
        библиотеки заведомо нет. Не является boundary приложения и не поставляется. -->
   <Project Path="tests/AzurPilot.NativeAbsenceProbe/AzurPilot.NativeAbsenceProbe.csproj" />
+  <!-- Инструмент реальной приёмки MuMu на установленной Windows-машине: использует production
+       IMuMuHost и MuMuLifecycleService, ничего не добавляет в AzurPilot.App и в hosted CI не
+       запускается. Не является boundary приложения и не поставляется. -->
+  <Project Path="tests/AzurPilot.MuMuAcceptance/AzurPilot.MuMuAcceptance.csproj" />
 </Solution>

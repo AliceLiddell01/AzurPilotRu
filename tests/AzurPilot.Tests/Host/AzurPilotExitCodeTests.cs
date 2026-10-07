@@ -1,0 +1,92 @@
+using System.Reflection;
+using AzurPilot.App;
+using AzurPilot.Core.Failures;
+using Xunit;
+
+namespace AzurPilot.Tests.Host;
+
+/// <summary>
+/// Проверки проекции MuMu-кодов отказа в коды выхода процесса.
+/// </summary>
+/// <remarks>
+/// Соответствие «application-код отказа → код выхода» принадлежит единственному владельцу
+/// <see cref="AzurPilotExitCode"/>: проверки доказывают, что каждый MuMu-код получает явный стабильный
+/// ненулевой код, что коды не совпадают друг с другом и что второй каталог кодов не появился.
+/// </remarks>
+[Trait("Category", "Unit")]
+public sealed class AzurPilotExitCodeTests
+{
+    /// <summary>Префикс кодов отказа MuMu в каталоге <see cref="ApplicationFailure"/>.</summary>
+    private const string MuMuFailureCodePrefix = "mumu_";
+
+    [Theory(DisplayName = "MuMu-код отказа проецируется в свой явный код выхода")]
+    [InlineData(ApplicationFailure.MuMuInstallationNotFound, AzurPilotExitCode.MuMuInstallationNotFound)]
+    [InlineData(ApplicationFailure.MuMuInstallationAmbiguous, AzurPilotExitCode.MuMuInstallationAmbiguous)]
+    [InlineData(ApplicationFailure.MuMuInstanceNotFound, AzurPilotExitCode.MuMuInstanceNotFound)]
+    [InlineData(ApplicationFailure.MuMuInstanceAmbiguous, AzurPilotExitCode.MuMuInstanceAmbiguous)]
+    [InlineData(ApplicationFailure.MuMuControlSurfaceUnsupported, AzurPilotExitCode.MuMuControlSurfaceUnsupported)]
+    [InlineData(
+        ApplicationFailure.MuMuLifecyclePostconditionNotMet,
+        AzurPilotExitCode.MuMuLifecyclePostconditionNotMet)]
+    [InlineData(ApplicationFailure.MuMuLifecycleTimeout, AzurPilotExitCode.MuMuLifecycleTimeout)]
+    public void MuMuFailureCodesHaveExplicitExitCodes(string failureCode, int expectedExitCode)
+    {
+        Assert.NotEqual(AzurPilotExitCode.Success, expectedExitCode);
+        Assert.NotEqual(AzurPilotExitCode.InternalError, expectedExitCode);
+        Assert.Equal(expectedExitCode, AzurPilotExitCode.FromFailure(Failure(failureCode)));
+    }
+
+    [Fact(DisplayName = "Новый код выхода получает следующее свободное значение, а опубликованные не меняются")]
+    public void NewMuMuExitCodeIsAppendedWithoutRenumbering()
+    {
+        // Значения кодов выхода — часть контракта startup: уже опубликованные коды остаются на своих
+        // номерах, а новый получает следующее свободное значение после них.
+        Assert.Equal(7, AzurPilotExitCode.MuMuInstallationNotFound);
+        Assert.Equal(8, AzurPilotExitCode.MuMuInstanceNotFound);
+        Assert.Equal(9, AzurPilotExitCode.MuMuInstanceAmbiguous);
+        Assert.Equal(10, AzurPilotExitCode.MuMuControlSurfaceUnsupported);
+        Assert.Equal(11, AzurPilotExitCode.MuMuLifecyclePostconditionNotMet);
+        Assert.Equal(12, AzurPilotExitCode.MuMuLifecycleTimeout);
+        Assert.Equal(13, AzurPilotExitCode.MuMuInstallationAmbiguous);
+    }
+
+    [Fact(DisplayName = "Каждый код отказа MuMu имеет проекцию, а не общий internal_error")]
+    public void EveryMuMuFailureCodeIsProjected()
+    {
+        // Набор кодов читается у его владельца ApplicationFailure, поэтому проверка не закрепляет их число
+        // и остаётся верной при добавлении нового MuMu-кода вместе с его проекцией.
+        string[] muMuCodes = [.. FailureCodeConstants()
+            .Where(code => code.StartsWith(MuMuFailureCodePrefix, StringComparison.Ordinal))];
+        Assert.NotEmpty(muMuCodes);
+
+        Assert.All(muMuCodes, code =>
+        {
+            int exitCode = AzurPilotExitCode.FromFailure(Failure(code));
+            Assert.NotEqual(AzurPilotExitCode.Success, exitCode);
+            Assert.NotEqual(AzurPilotExitCode.InternalError, exitCode);
+        });
+    }
+
+    [Fact(DisplayName = "Коды выхода уникальны: соответствие живёт ровно в одном месте")]
+    public void ExitCodesAreUnique()
+    {
+        int[] exitCodes = [.. typeof(AzurPilotExitCode)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(field => field.IsLiteral && field.FieldType == typeof(int))
+            .Select(field => (int)field.GetRawConstantValue()!)];
+
+        Assert.Contains(AzurPilotExitCode.Success, exitCodes);
+        Assert.Equal(exitCodes.Length, exitCodes.Distinct().Count());
+    }
+
+    /// <summary>Читает стабильные строковые коды отказа у их владельца.</summary>
+    /// <returns>Значения публичных строковых констант <see cref="ApplicationFailure"/>.</returns>
+    private static IEnumerable<string> FailureCodeConstants()
+        => typeof(ApplicationFailure)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(field => field.IsLiteral && field.FieldType == typeof(string))
+            .Select(field => (string)field.GetRawConstantValue()!);
+
+    private static ApplicationFailure Failure(string code)
+        => new() { Code = code, Message = "Отказ, проверяемый проекцией в код выхода." };
+}

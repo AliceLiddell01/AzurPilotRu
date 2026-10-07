@@ -7,13 +7,15 @@ using Xunit;
 namespace AzurPilot.Tests.Configuration;
 
 /// <summary>
-/// Доказывает строгую семантику JSON-контракта схемы v1: запрет unmapped members, duplicate properties,
-/// неверного регистра, нарушения required/nullable contract и числовой формы уровня логирования.
+/// Доказывает строгую семантику JSON-контракта: запрет unmapped members, duplicate properties, неверного
+/// регистра, нарушения required/nullable contract и числовой формы уровня логирования. Документы этого
+/// класса объявляют legacy-схему v1, поэтому проверки одновременно доказывают, что допуск v1 как
+/// legacy-входа не ослабил строгость его собственного контракта.
 /// </summary>
 [Trait("Category", "Configuration")]
 public sealed class AzurPilotConfigurationJsonContractTests
 {
-    [Theory(DisplayName = "Документ, не соответствующий строгой схеме v1, отклоняется как configuration_invalid")]
+    [Theory(DisplayName = "Документ, не соответствующий строгой legacy-схеме v1, отклоняется как configuration_invalid")]
     [InlineData("синтаксически невалидный JSON", """{"schemaVersion":1,"diagnostics":""")]
     [InlineData("пустой документ", "")]
     [InlineData("документ из пробелов", "   ")]
@@ -87,18 +89,18 @@ public sealed class AzurPilotConfigurationJsonContractTests
     {
         using TemporaryConfigurationDirectory directory = new();
         string path = directory.WriteConfiguration(
-            """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"}}""");
+            """{"schemaVersion":3,"diagnostics":{"minimumLevel":"Information"}}""");
 
         ApplicationResult<AzurPilotConfigurationSnapshot> result = AzurPilotConfigurationLoader.Load(path);
 
         ApplicationFailure failure = ConfigurationTestAssertions.AssertFailure(
             result,
             ApplicationFailure.ConfigurationSchemaUnsupported,
-            "schemaVersion 2");
+            "schemaVersion 3");
         Assert.NotEqual(ApplicationFailure.ConfigurationInvalid, failure.Code);
 
         IReadOnlyDictionary<string, string> details = failure.Details!;
-        Assert.Equal("2", details["schema_version"]);
+        Assert.Equal("3", details["schema_version"]);
         Assert.Equal(path, details["config_path"]);
     }
 
@@ -109,14 +111,14 @@ public sealed class AzurPilotConfigurationJsonContractTests
         // «версия схемы не поддерживается», а не сообщение о неизвестном свойстве.
         using TemporaryConfigurationDirectory directory = new();
         string path = directory.WriteConfiguration(
-            """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"futureSection":{"enabled":true}}""");
+            """{"schemaVersion":3,"diagnostics":{"minimumLevel":"Information"},"futureSection":{"enabled":true}}""");
 
         ApplicationResult<AzurPilotConfigurationSnapshot> result = AzurPilotConfigurationLoader.Load(path);
 
         _ = ConfigurationTestAssertions.AssertFailure(
             result,
             ApplicationFailure.ConfigurationSchemaUnsupported,
-            "schemaVersion 2 с секцией будущей схемы");
+            "schemaVersion 3 с секцией будущей схемы");
     }
 
     [Fact(DisplayName = "Отсутствующий schemaVersion даёт configuration_invalid, а не неподдерживаемую версию")]
