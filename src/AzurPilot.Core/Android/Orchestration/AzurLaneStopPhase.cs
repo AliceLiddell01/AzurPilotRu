@@ -17,4 +17,13 @@ namespace AzurPilot.Core.Android.Orchestration;
 /// </remarks>
 /// <param name="Observation">Наблюдение, доказавшее остановку игры.</param>
 /// <param name="MutationEvidence">Bounded evidence выполненных mutation остановки.</param>
-internal sealed record AzurLaneStopPhase(AzurLaneGameObservation Observation, string MutationEvidence);
+/// <param name="MutationExitCode">
+/// Код выхода выполненной mutation остановки; <c>0</c>, если mutation не выполнялась, потому что игра была
+/// остановлена уже на входе. Значение сохраняется отдельно от evidence, потому что его читает отказ
+/// исчерпанного бюджета перезапуска: сообщать там нулевой код вместо фактического значило бы утверждать,
+/// что mutation прошла успешно.
+/// </param>
+internal sealed record AzurLaneStopPhase(
+    AzurLaneGameObservation Observation,
+    string MutationEvidence,
+    int MutationExitCode);

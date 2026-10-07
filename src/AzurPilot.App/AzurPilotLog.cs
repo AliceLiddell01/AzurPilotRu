@@ -165,7 +165,10 @@ internal static partial class AzurPilotLog
     /// </remarks>
     /// <param name="logger">Логгер host-а.</param>
     /// <param name="correlationId">Correlation identifier операции.</param>
-    /// <param name="isAdbAvailable">Признак того, что bundled ADB установки обнаружен.</param>
+    /// <param name="isAdbAvailable">
+    /// Признак того, что bundled ADB установки обнаружен, либо <see langword="null"/>, если обнаружение не
+    /// выполнялось или не дало результата.
+    /// </param>
     /// <param name="endpoint">Точный endpoint в форме <c>host:port</c> или пустая строка.</param>
     /// <param name="transportState">Наблюдённое состояние ADB transport или пустая строка.</param>
     [LoggerMessage(
@@ -176,7 +179,7 @@ internal static partial class AzurPilotLog
     public static partial void AndroidDiagnosticsCaptured(
         this ILogger logger,
         string correlationId,
-        bool isAdbAvailable,
+        bool? isAdbAvailable,
         string endpoint,
         string transportState);
 

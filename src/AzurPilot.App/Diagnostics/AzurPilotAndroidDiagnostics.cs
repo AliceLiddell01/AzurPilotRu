@@ -32,12 +32,16 @@ namespace AzurPilot.App;
 /// текст endpoint-а приходят извне, поэтому переносы строк и произвольная длина до секции не доходят.
 /// </para>
 /// </remarks>
-/// <param name="IsAdbAvailable">Признак того, что bundled ADB установки обнаружен.</param>
+/// <param name="IsAdbAvailable">
+/// Признак того, что bundled ADB установки обнаружен: <see langword="true"/> — обнаружен,
+/// <see langword="null"/> — обнаружение не выполнялось или не дало результата.
+/// </param>
 /// <param name="AdbEvidence">Bounded evidence обнаружения bundled ADB.</param>
 /// <param name="Endpoint">
 /// Точный ADB endpoint выбранного экземпляра в форме <c>host:port</c>; <see langword="null"/>, если
 /// endpoint не разрешён.
-/// </param>/// <param name="TransportState">
+/// </param>
+/// <param name="TransportState">
 /// Наблюдённое состояние ADB transport; <see langword="null"/>, если наблюдение не выполнялось.
 /// </param>
 /// <param name="IsShellAvailable">
@@ -54,7 +58,7 @@ namespace AzurPilot.App;
 /// Application-level отказ Android-диагностики; <see langword="null"/>, если отказов не было.
 /// </param>
 public sealed record AzurPilotAndroidDiagnostics(
-    bool IsAdbAvailable,
+    bool? IsAdbAvailable,
     string? AdbEvidence,
     string? Endpoint,
     AndroidTransportState? TransportState,

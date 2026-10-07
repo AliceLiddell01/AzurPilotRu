@@ -178,7 +178,7 @@ public sealed class AndroidDiagnosticsTests
 
         AzurPilotDiagnosticReport report = Capture(androidHost);
 
-        Assert.False(report.Android.IsAdbAvailable);
+        Assert.Null(report.Android.IsAdbAvailable);
         Assert.Null(report.Android.AdbEvidence);
         Assert.Null(report.Android.Endpoint);
         Assert.Null(report.Android.TransportState);
@@ -204,7 +204,7 @@ public sealed class AndroidDiagnosticsTests
 
         Assert.Equal(InstanceStageName, report.Android.Stage);
         Assert.Equal(ApplicationFailure.MuMuInstanceNotFound, report.Android.Failure!.Code);
-        Assert.False(report.Android.IsAdbAvailable);
+        Assert.Null(report.Android.IsAdbAvailable);
         Assert.Null(report.Android.Endpoint);
 
         // Bundled ADB не обнаруживался: шаг после остановившего не выполняется.
@@ -237,7 +237,7 @@ public sealed class AndroidDiagnosticsTests
         Assert.Equal(ApplicationFailure.InternalError, report.Android.Failure!.Code);
         Assert.Equal(ApplicationFailure.InternalError, report.AzurLane.Failure!.Code);
         Assert.Equal(AdbStageName, report.Android.Stage);
-        Assert.False(report.Android.IsAdbAvailable);
+        Assert.Null(report.Android.IsAdbAvailable);
     }
 
     [Fact(DisplayName = "Нарушение контракта после обнаружения ADB сохраняет собранные факты")]

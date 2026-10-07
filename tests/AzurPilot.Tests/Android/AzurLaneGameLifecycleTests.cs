@@ -3,6 +3,7 @@ using AzurPilot.Core.Android;
 using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Windows;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace AzurPilot.Tests.Android;
@@ -25,6 +26,9 @@ namespace AzurPilot.Tests.Android;
 [Trait("Category", "Android")]
 public sealed class AzurLaneGameLifecycleTests
 {
+    /// <summary>Ненулевой код выхода mutation остановки: он не должен подменяться нулём в evidence отказа.</summary>
+    private const int StopExitCode = 7;
+
     // --- Запуск ---
 
     [Fact(DisplayName = "Запуск доказанно запущенной игры успешен без mutation")]
@@ -553,6 +557,72 @@ public sealed class AzurLaneGameLifecycleTests
         AndroidGameMutation[] actualMutations = [.. context.Host.MutationRequests.Select(request => request.Mutation)];
 
         Assert.Equal(expectedMutations, actualMutations);
+    }
+
+    [Fact(DisplayName = "Исчерпанный бюджет перезапуска сообщает фактический код выхода остановки")]
+    public async Task ExhaustedRestartBudgetReportsActualStopExitCode()
+    {
+        AndroidTestContext context = new();
+        TestAndroidDevice device = new(context.Host);
+        device.SetForeground();
+
+        // Mutation остановки доказала остановку, но сообщила ненулевой код выхода: именно он и должен
+        // попасть в evidence отказа, а не подставленный ноль.
+        device.ForceStopExitCode = StopExitCode;
+
+        // Бюджет перезапуска равен интервалу опроса, и фаза остановки расходует его целиком: остатка на
+        // фазу запуска не хватает.
+        AndroidLifecycleTimings timings = new(
+            context.Timings.PollInterval,
+            context.Timings.TransportConnectDeadline,
+            context.Timings.ReadinessDeadline,
+            context.Timings.GameStartDeadline,
+            context.Timings.GameStopDeadline,
+            context.Timings.PollInterval);
+
+        int observations = 0;
+        device.ProcessesObserved = () =>
+        {
+            // Первое наблюдение принадлежит перезапуску, второе — фазе остановки: она и расходует бюджет
+            // перезапуска, поэтому остатка на фазу запуска не остаётся.
+            if (++observations == 2)
+            {
+                using ITimer spent = context.TimeProvider.CreateTimer(
+                    static _ => { },
+                    null,
+                    timings.GameRestartDeadline,
+                    Timeout.InfiniteTimeSpan);
+            }
+        };
+
+        AzurLaneGameLifecycleService lifecycle = new(
+            context.Host,
+            context.GameState,
+            context.Gate,
+            context.TimeProvider,
+            timings,
+            NullLogger<AzurLaneGameLifecycleService>.Instance);
+
+        ApplicationResult<AzurLaneGameLifecycleOutcome> result = await lifecycle.RestartAsync(
+            AndroidTestContext.Installation,
+            AndroidTestContext.Endpoint,
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+
+        ApplicationFailure failure = result.FailureInfo!;
+
+        Assert.Equal(ApplicationFailure.AzurLaneLifecycleTimeout, failure.Code);
+
+        // Код выхода выполненной остановки не подменяется нулём: иначе отказ утверждал бы успешную mutation.
+        Assert.Equal(
+            StopExitCode.ToString(CultureInfo.InvariantCulture),
+            failure.Details![AndroidDetailKeys.ExitCode]);
+
+        // Фаза запуска не выполнялась: остаток бюджета перезапуска был исчерпан остановкой.
+        AndroidGameMutation[] mutations = [.. context.Host.MutationRequests.Select(request => request.Mutation)];
+
+        Assert.Equal([AndroidGameMutation.ForceStop], mutations);
     }
 
     // --- Отмена ---

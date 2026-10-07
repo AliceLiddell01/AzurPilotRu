@@ -53,7 +53,11 @@ internal sealed record AzurPilotAndroidTarget(
 /// </remarks>
 /// <param name="Stage">Bounded machine-stable имя шага, на котором диагностика остановилась.</param>
 /// <param name="Failure">Отказ остановившего шага либо <see langword="null"/>, если отказов не было.</param>
-/// <param name="IsAdbAvailable">Признак того, что bundled ADB установки обнаружен.</param>
+/// <param name="IsAdbAvailable">
+/// Признак того, что bundled ADB установки обнаружен: <see langword="true"/> — обнаружен,
+/// <see langword="null"/> — обнаружение не выполнялось или не дало результата. Доказанного отсутствия ADB
+/// здесь не сообщается: недостижимый шаг обнаружения не является наблюдением «ADB нет».
+/// </param>
 /// <param name="AdbEvidence">Bounded evidence обнаружения bundled ADB.</param>
 /// <param name="Endpoint">Точный endpoint выбранного экземпляра, если он разрешён.</param>
 /// <param name="Readiness">Read-only наблюдение готовности Android, если оно выполнено.</param>
@@ -61,7 +65,7 @@ internal sealed record AzurPilotAndroidTarget(
 internal sealed record AzurPilotAndroidProbe(
     string Stage,
     ApplicationFailure? Failure,
-    bool IsAdbAvailable,
+    bool? IsAdbAvailable,
     string? AdbEvidence,
     AndroidEndpoint? Endpoint,
     AndroidReadinessFacts? Readiness,
@@ -249,7 +253,7 @@ internal sealed record AzurPilotAndroidProbe(
             return new AzurPilotAndroidProbe(
                 stage,
                 mapFailure(exception),
-                IsAdbAvailable: adbEvidence is not null,
+                IsAdbAvailable: adbEvidence is null ? null : true,
                 adbEvidence,
                 resolved,
                 facts,
@@ -261,7 +265,7 @@ internal sealed record AzurPilotAndroidProbe(
         => new(
             stage,
             failure,
-            IsAdbAvailable: false,
+            IsAdbAvailable: null,
             AdbEvidence: null,
             Endpoint: null,
             Readiness: null,

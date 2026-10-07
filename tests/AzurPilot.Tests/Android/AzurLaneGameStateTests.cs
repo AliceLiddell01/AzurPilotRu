@@ -83,8 +83,10 @@ public sealed class AzurLaneGameStateTests
         AzurLaneGameObservation observation = result.Value!;
 
         Assert.Equal(AzurLaneGameState.NotInstalled, observation.State);
-        Assert.Equal(new AzurLaneGameFacts(false, false, false), observation.Facts);
+        Assert.Equal(new AzurLaneGameFacts(false, null, null), observation.Facts);
         Assert.Contains("state=not_installed", observation.Evidence, StringComparison.Ordinal);
+        Assert.Contains("process=unknown", observation.Evidence, StringComparison.Ordinal);
+        Assert.Contains("foreground=unknown", observation.Evidence, StringComparison.Ordinal);
 
         // Факт об отсутствующем пакете не является фактом о его процессах.
         Assert.Empty(context.Host.ProcessRequests);

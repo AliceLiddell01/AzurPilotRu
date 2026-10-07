@@ -374,6 +374,24 @@ public sealed class AdbResponseParserTests
         Assert.Null(observation.Component);
     }
 
+    [Fact(DisplayName = "Нераспознанный mCurrentFocus не подменяется резервным mFocusedApp")]
+    public void UnrecognizedPrimaryMarkerIsNotReplacedByFallbackMarker()
+    {
+        // mCurrentFocus присутствует, но его значение не распознано, а резервный маркер называет пакет игры.
+        // Значение резервного маркера не выдаётся за доказанный передний план: ответ с нераспознанным
+        // первичным маркером означает «не доказано», а не «игра на переднем плане».
+        AndroidForegroundObservation observation = AdbResponseParser.ParseForeground(
+            Outcome(
+                0,
+                "  mCurrentFocus=null\n  mFocusedApp=AppWindowToken{1 u0 "
+                    + AzurLaneProduct.Package
+                    + "/com.manjuu.azurlane.MainActivity}\n"),
+            AzurLaneProduct.Package);
+
+        Assert.Equal(AndroidForegroundStatus.Unknown, observation.Status);
+        Assert.Null(observation.Component);
+    }
+
     // --- Свойства Android ---
 
     [Fact(DisplayName = "Целочисленное свойство читается только из распознанного ответа")]

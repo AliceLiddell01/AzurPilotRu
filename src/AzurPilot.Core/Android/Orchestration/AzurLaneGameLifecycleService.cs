@@ -308,7 +308,8 @@ public sealed class AzurLaneGameLifecycleService
                 return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(stopped.FailureInfo!);
             }
 
-            // Фаза запуска живёт в остатке бюджета перезапуска, а не в новом бюджете.
+            // Фаза запуска живёт в остатке бюджета перезапуска, а не в новом бюджете. Код выхода
+            // выполненной остановки сообщается фактический: нулевой код утверждал бы успешную mutation.
             TimeSpan remaining = _timings.GameRestartDeadline - _timeProvider.GetElapsedTime(started);
             if (remaining <= TimeSpan.Zero)
             {
@@ -320,7 +321,7 @@ public sealed class AzurLaneGameLifecycleService
                         stopped.Value!.Observation.State,
                         AzurLaneGameState.Foreground,
                         started,
-                        mutationExitCode: 0));
+                        mutationExitCode: stopped.Value!.MutationExitCode));
             }
 
             return await RunStartAsync(
@@ -605,7 +606,7 @@ public sealed class AzurLaneGameLifecycleService
                         endpoint, package, AndroidNames.PollingPhase, initial.Evidence));
             case AzurLaneGameState.Stopped:
                 return ApplicationResult<AzurLaneStopPhase>.Success(
-                    new AzurLaneStopPhase(initial, AndroidEvidence.NoMutation));
+                    new AzurLaneStopPhase(initial, AndroidEvidence.NoMutation, MutationExitCode: 0));
             case AzurLaneGameState.Background:
             case AzurLaneGameState.Foreground:
                 break;
@@ -640,7 +641,8 @@ public sealed class AzurLaneGameLifecycleService
         return ApplicationResult<AzurLaneStopPhase>.Success(
             new AzurLaneStopPhase(
                 final.Value!,
-                AndroidNames.Mutation(AndroidGameMutation.ForceStop, exitCode)));
+                AndroidNames.Mutation(AndroidGameMutation.ForceStop, exitCode),
+                exitCode));
     }
 
     /// <summary>Разрешает launcher-компонент пакета игры.</summary>

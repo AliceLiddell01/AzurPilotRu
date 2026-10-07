@@ -261,7 +261,7 @@ public sealed record AzurPilotStartupResult
     private static string DescribeAndroid(AzurPilotAndroidDiagnostics android)
     {
         StringBuilder builder = new();
-        _ = builder.Append($"ADB: {DescribeFlag(android.IsAdbAvailable)}");
+        _ = builder.Append($"ADB: {DescribeFact(android.IsAdbAvailable)}");
 
         if (android.Endpoint is string endpoint)
         {

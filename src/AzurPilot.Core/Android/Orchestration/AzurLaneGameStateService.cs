@@ -79,10 +79,11 @@ public sealed class AzurLaneGameStateService
 
         if (observedPresence == AndroidPackagePresence.Absent)
         {
-            // Доказанное отсутствие пакета: процессов и переднего плана у него быть не может, поэтому
-            // дополнительные команды ADB не выполняются.
+            // Доказанное отсутствие пакета: дополнительные команды ADB не выполняются, поэтому факты о
+            // процессах и переднем плане остаются недоказанными, а не отрицательными. Отсутствие пакета
+            // закрывает вопрос о состоянии игры, но не является наблюдением её процессов.
             return ApplicationResult<AzurLaneGameFacts>.Success(
-                new AzurLaneGameFacts(Installed: false, ProcessRunning: false, Foreground: false));
+                new AzurLaneGameFacts(Installed: false, ProcessRunning: null, Foreground: null));
         }
 
         if (observedPresence != AndroidPackagePresence.Installed)
