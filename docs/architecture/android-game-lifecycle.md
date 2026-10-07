@@ -1,7 +1,8 @@
 # Android и lifecycle игры Azur Lane Global/EN — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [android-game-lifecycle.md](android-game-lifecycle.md).
+Короткий agent-critical contract находится в
+[.codex/context/android-game-lifecycle.md](../../.codex/context/android-game-lifecycle.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Область владения
@@ -170,7 +171,7 @@ endpoint. Наличие «какого-то устройства» в спис�
 - неготовый transport и незавершённая загрузка в пределах deadline дают `AndroidTransportNotReady` и
   `AndroidNotReady` соответственно, а не успех.
 
-Read-only наблюдение (`ObserveAsync`):
+Read-only наблюдение (`Observe`):
 
 - не выполняет `connect`, `reconnect` и любую другую mutation: неготовый transport сообщается фактом
   своего состояния, а не исправляется;

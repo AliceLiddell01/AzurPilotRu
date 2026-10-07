@@ -211,6 +211,11 @@ internal static class AndroidHostFailures
         };
 
     /// <summary>Создаёт отказ «launcher-компонент пакета не разрешён».</summary>
+    /// <remarks>
+    /// Состояние разрешения наблюдалось, а не выведено, поэтому сообщение описывает именно его:
+    /// нераспознанный ответ не выдаётся за доказанное отсутствие компонента, как и в форме Core для
+    /// того же кода.
+    /// </remarks>
     /// <param name="endpoint">Точный endpoint, у которого разрешался launcher.</param>
     /// <param name="package">Идентификатор запрошенного пакета.</param>
     /// <param name="state">Machine-stable состояние разрешения: <c>missing</c> или <c>query_failed</c>.</param>
@@ -228,11 +233,15 @@ internal static class AndroidHostFailures
             [PhaseDetailKey] = MutationPhase,
         };
 
+        string reason = string.Equals(state, QueryFailedStateName, StringComparison.Ordinal)
+            ? "разрешение launcher-компонента не дало распознанного ответа"
+            : "нет разрешимого launcher-компонента";
+
         return new ApplicationFailure
         {
             Code = ApplicationFailure.AzurLaneLauncherUnresolved,
-            Message = $"У пакета {package} на endpoint-е {endpoint} нет разрешимого launcher-компонента: "
-                + "запуск игры не может быть адресован.",
+            Message = $"У пакета {package} на endpoint-е {endpoint} {reason}: запуск игры не может быть "
+                + "адресован.",
             Details = details,
         };
     }

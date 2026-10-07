@@ -67,7 +67,7 @@ public sealed class AzurLaneGameStateService
     /// </remarks>
     /// <param name="endpoint">Точный endpoint, состояние игры на котором наблюдается.</param>
     /// <returns>Успешное наблюдение фактов либо ожидаемый отказ.</returns>
-    public ApplicationResult<AzurLaneGameFacts> ObserveFactsAsync(AndroidEndpoint endpoint)
+    public ApplicationResult<AzurLaneGameFacts> ObserveFacts(AndroidEndpoint endpoint)
     {
         ApplicationResult<AndroidPackagePresence> presence = _host.QueryPackage(endpoint, Package);
         if (presence.IsFailure)
@@ -119,11 +119,11 @@ public sealed class AzurLaneGameStateService
     /// </remarks>
     /// <param name="endpoint">Точный endpoint, состояние игры на котором наблюдается.</param>
     /// <returns>Успешное наблюдение состояния либо ожидаемый отказ.</returns>
-    public ApplicationResult<AzurLaneGameObservation> ObserveAsync(AndroidEndpoint endpoint)
+    public ApplicationResult<AzurLaneGameObservation> Observe(AndroidEndpoint endpoint)
     {
         long started = _timeProvider.GetTimestamp();
 
-        ApplicationResult<AzurLaneGameFacts> observed = ObserveFactsAsync(endpoint);
+        ApplicationResult<AzurLaneGameFacts> observed = ObserveFacts(endpoint);
         if (observed.IsFailure)
         {
             return ApplicationResult<AzurLaneGameObservation>.Failure(observed.FailureInfo!);

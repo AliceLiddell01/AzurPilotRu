@@ -10,15 +10,18 @@ namespace AzurPilot.Tests.Host;
 /// </summary>
 /// <remarks>
 /// Соответствие «application-код отказа → код выхода» принадлежит единственному владельцу
-/// <see cref="AzurPilotExitCode"/>: проверки доказывают, что каждый MuMu-код и каждый код ADB readiness и
-/// lifecycle игры получает явный стабильный ненулевой код, что коды не совпадают друг с другом и что
-/// второй каталог кодов не появился.
+/// <see cref="AzurPilotExitCode"/>: проверки доказывают, что каждый код отказа capability — MuMu, ADB
+/// readiness и lifecycle игры — получает явный стабильный ненулевой код, что коды не совпадают друг с
+/// другом и что второй каталог кодов не появился.
 /// </remarks>
 [Trait("Category", "Unit")]
 public sealed class AzurPilotExitCodeTests
 {
-    /// <summary>Префикс кодов отказа MuMu в каталоге <see cref="ApplicationFailure"/>.</summary>
-    private const string MuMuFailureCodePrefix = "mumu_";
+    /// <summary>
+    /// Префиксы кодов отказа capability в каталоге <see cref="ApplicationFailure"/>: каждый такой код обязан
+    /// иметь собственную проекцию, а не общий <see cref="ApplicationFailure.InternalError"/>.
+    /// </summary>
+    private static readonly string[] CapabilityFailureCodePrefixes = ["mumu_", "android_", "azurlane_"];
 
     [Theory(DisplayName = "MuMu-код отказа проецируется в свой явный код выхода")]
     [InlineData(ApplicationFailure.MuMuInstallationNotFound, AzurPilotExitCode.MuMuInstallationNotFound)]
@@ -88,16 +91,19 @@ public sealed class AzurPilotExitCodeTests
         Assert.Equal(23, AzurPilotExitCode.AzurLaneLifecycleTimeout);
     }
 
-    [Fact(DisplayName = "Каждый код отказа MuMu имеет проекцию, а не общий internal_error")]
-    public void EveryMuMuFailureCodeIsProjected()
+    [Fact(DisplayName = "Каждый код отказа capability имеет проекцию, а не общий internal_error")]
+    public void EveryCapabilityFailureCodeIsProjected()
     {
         // Набор кодов читается у его владельца ApplicationFailure, поэтому проверка не закрепляет их число
-        // и остаётся верной при добавлении нового MuMu-кода вместе с его проекцией.
-        string[] muMuCodes = [.. FailureCodeConstants()
-            .Where(code => code.StartsWith(MuMuFailureCodePrefix, StringComparison.Ordinal))];
-        Assert.NotEmpty(muMuCodes);
+        // и остаётся верной при добавлении нового кода вместе с его проекцией. Префиксы перечисляют все
+        // capability, у которых есть собственные коды: новый код Android или Azur Lane без проекции тоже
+        // не сможет незаметно стать общим internal_error.
+        string[] capabilityCodes = [.. FailureCodeConstants()
+            .Where(code => CapabilityFailureCodePrefixes.Any(
+                prefix => code.StartsWith(prefix, StringComparison.Ordinal)))];
+        Assert.NotEmpty(capabilityCodes);
 
-        Assert.All(muMuCodes, code =>
+        Assert.All(capabilityCodes, code =>
         {
             int exitCode = AzurPilotExitCode.FromFailure(Failure(code));
             Assert.NotEqual(AzurPilotExitCode.Success, exitCode);

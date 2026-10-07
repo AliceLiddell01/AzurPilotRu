@@ -252,7 +252,7 @@ public sealed class AndroidReadinessService
     /// <param name="instance">Identity уже выбранного Android-экземпляра.</param>
     /// <returns>Успешное наблюдение либо ожидаемый отказ.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="installation"/> равен <see langword="null"/>.</exception>
-    public ApplicationResult<AndroidReadinessFacts> ObserveAsync(
+    public ApplicationResult<AndroidReadinessFacts> Observe(
         MuMuInstallation installation,
         MuMuInstanceId instance)
     {
@@ -270,7 +270,7 @@ public sealed class AndroidReadinessService
     /// <summary>Наблюдает Android на уже разрешённом точном endpoint-е, ничего не меняя.</summary>
     /// <param name="endpoint">Точный endpoint, состояние которого запрашивается.</param>
     /// <returns>Успешное наблюдение либо ожидаемый отказ.</returns>
-    public ApplicationResult<AndroidReadinessFacts> ObserveAsync(AndroidEndpoint endpoint)
+    public ApplicationResult<AndroidReadinessFacts> Observe(AndroidEndpoint endpoint)
         => ObserveEndpoint(endpoint);
 
     private ApplicationResult<AndroidReadinessFacts> ObserveEndpoint(AndroidEndpoint endpoint)
@@ -312,7 +312,9 @@ public sealed class AndroidReadinessService
     /// <para>
     /// Ожидание заканчивается, когда transport доказанно готов к командам, когда истекла граница
     /// ожидания подключения или когда истёк общий deadline операции. Отдельного пути в обход этого
-    /// ожидания нет, поэтому окно и повтор не могут разойтись между операциями.
+    /// ожидания нет, поэтому окно и повтор не могут разойтись между операциями. Первое наблюдение
+    /// выполняется всегда: истёкшая граница заканчивает ожидание только после него, поэтому «transport
+    /// не готов» не сообщается без наблюдённого состояния.
     /// </para>
     /// <para>
     /// Если первым истекло общее время операции, а transport так и не стал готов, отказ сообщает
@@ -342,7 +344,11 @@ public sealed class AndroidReadinessService
             }
 
             TimeSpan elapsed = _timeProvider.GetElapsedTime(started);
-            if (elapsed >= deadline || elapsed >= _timings.TransportConnectDeadline)
+
+            // Первое наблюдение выполняется до того, как истёкшая граница закончит ожидание: иначе отказ
+            // сообщал бы «transport не готов» без наблюдения вообще, а доказанно готовый transport был бы
+            // объявлен неготовым. Дальше граница действует как обычно, поэтому ожидание остаётся bounded.
+            if (last is not null && (elapsed >= deadline || elapsed >= _timings.TransportConnectDeadline))
             {
                 return ApplicationResult<AndroidTransportObservation>.Failure(
                     TransportNotReady(endpoint, last, started));

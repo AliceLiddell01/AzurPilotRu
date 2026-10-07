@@ -1,7 +1,8 @@
 # Application-level модель отказов — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [application-failures.md](application-failures.md).
+Короткий agent-critical contract находится в
+[.codex/context/application-failures.md](../../.codex/context/application-failures.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Зачем нужен отдельный уровень отказов

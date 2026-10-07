@@ -103,12 +103,13 @@ internal sealed record AzurPilotAndroidProbe(
     /// </para>
     /// <para>
     /// Наблюдение готовности выполняется read-only путём orchestration
-    /// (<see cref="AndroidReadinessService.ObserveAsync(AndroidEndpoint)"/>), а не <c>EnsureReadyAsync</c>:
+    /// (<see cref="AndroidReadinessService.Observe(AndroidEndpoint)"/>), а не <c>EnsureReadyAsync</c>:
     /// подключение transport остаётся операцией, которую запрашивает presentation-слой, а не startup.
     /// </para>
     /// <para>
     /// Непредвиденное исключение host-а остаётся диагностическим фактом: оно проецируется в
-    /// application-отказ той же production-проекцией, что и остальные ошибки платформенной границы.
+    /// application-отказ той же production-проекцией, что и остальные ошибки платформенной границы, а уже
+    /// собранные наблюдения сохраняются в пробе.
     /// </para>
     /// </remarks>
     /// <param name="muMuHost">Host-side поверхность MuMu из DI.</param>
@@ -138,6 +139,13 @@ internal sealed record AzurPilotAndroidProbe(
         ArgumentNullException.ThrowIfNull(mapFailure);
 
         string stage = InstallationStage;
+
+        // Собранные факты живут вне try: нарушение контракта host-ом на следующем шаге не должно
+        // обнулять то, что диагностика уже доказала — обнаруженный ADB и разрешённый endpoint.
+        string? adbEvidence = null;
+        AndroidEndpoint? resolved = null;
+        AndroidReadinessFacts? facts = null;
+
         try
         {
             ApplicationResult<MuMuInstallation> discovery = muMuHost.DiscoverInstallation();
@@ -167,7 +175,7 @@ internal sealed record AzurPilotAndroidProbe(
             }
 
             // Наружу сообщается только bounded evidence обнаружения: путь к ADB — machine-specific данные.
-            string adbEvidence = BoundedDiagnosticText.Bounded(adb.Value!.VersionEvidence);
+            adbEvidence = BoundedDiagnosticText.Bounded(adb.Value!.VersionEvidence);
 
             stage = EndpointStage;
             ApplicationResult<AndroidEndpoint> endpoint = readiness.ResolveEndpoint(installation, instance.Id);
@@ -183,10 +191,13 @@ internal sealed record AzurPilotAndroidProbe(
                     Game: null);
             }
 
-            AndroidEndpoint resolved = endpoint.Value!;
+            // Разрешённый endpoint живёт в двух формах: точный адрес для команд и nullable факт для пробы,
+            // который переживает нарушение контракта host-ом на следующем шаге.
+            AndroidEndpoint target = endpoint.Value!;
+            resolved = target;
 
             stage = ReadinessStage;
-            ApplicationResult<AndroidReadinessFacts> observed = readiness.ObserveAsync(resolved);
+            ApplicationResult<AndroidReadinessFacts> observed = readiness.Observe(target);
             if (observed.IsFailure)
             {
                 return new AzurPilotAndroidProbe(
@@ -199,13 +210,13 @@ internal sealed record AzurPilotAndroidProbe(
                     Game: null);
             }
 
-            AndroidReadinessFacts facts = observed.Value!;
+            facts = observed.Value!;
             AzurLaneGameObservation? game = null;
 
             if (facts.Transport.State == AndroidTransportState.Device)
             {
                 stage = GameStage;
-                ApplicationResult<AzurLaneGameObservation> observedGame = gameState.ObserveAsync(resolved);
+                ApplicationResult<AzurLaneGameObservation> observedGame = gameState.Observe(target);
                 if (observedGame.IsFailure)
                 {
                     return new AzurPilotAndroidProbe(
@@ -233,8 +244,16 @@ internal sealed record AzurPilotAndroidProbe(
         catch (Exception exception)
         {
             // Нарушение контракта host-ом не отклоняет запуск: оно остаётся данными диагностики, как и
-            // ожидаемый отказ шага.
-            return Stopped(stage, mapFailure(exception));
+            // ожидаемый отказ шага. Уже собранные факты при этом сохраняются, а состояние игры остаётся
+            // ненаблюдённым: отказавший шаг не доказал его.
+            return new AzurPilotAndroidProbe(
+                stage,
+                mapFailure(exception),
+                IsAdbAvailable: adbEvidence is not null,
+                adbEvidence,
+                resolved,
+                facts,
+                Game: null);
         }
     }
 

@@ -43,6 +43,9 @@ public sealed class AndroidDiagnosticsTests
     /// <summary>Синтетический путь bundled ADB: machine-specific путь до секции доходить не должен.</summary>
     private const string AdbPathSentinel = "adb-path-sentinel";
 
+    /// <summary>Синтетическое bounded evidence обнаружения bundled ADB.</summary>
+    private const string AdbVersionEvidenceSentinel = "adb-version-sentinel";
+
     /// <summary>Синтетический корень установки: в исходниках проверок нет machine-specific путей.</summary>
     private const string InstallRootSentinel = "install-root-sentinel";
 
@@ -75,6 +78,9 @@ public sealed class AndroidDiagnosticsTests
 
     /// <summary>Bounded имя шага обнаружения bundled ADB.</summary>
     private const string AdbStageName = "adb";
+
+    /// <summary>Bounded имя шага read-only наблюдения готовности Android.</summary>
+    private const string ReadinessStageName = "readiness";
 
     /// <summary>Bounded имя шага, на котором все наблюдения доказаны.</summary>
     private const string CompleteStageName = "complete";
@@ -234,6 +240,24 @@ public sealed class AndroidDiagnosticsTests
         Assert.False(report.Android.IsAdbAvailable);
     }
 
+    [Fact(DisplayName = "Нарушение контракта после обнаружения ADB сохраняет собранные факты")]
+    public void ThrowingAndroidHostKeepsFactsCollectedBeforeTheFailure()
+    {
+        AzurPilotDiagnosticReport report = Capture(new ThrowingAfterAdbHost());
+
+        // Отказ шага остаётся данными диагностики, но обнаруженный ADB и разрешённый endpoint не
+        // обнуляются: они уже доказаны, а не «не наблюдались».
+        Assert.Equal(ApplicationFailure.InternalError, report.Android.Failure!.Code);
+        Assert.Equal(ReadinessStageName, report.Android.Stage);
+        Assert.True(report.Android.IsAdbAvailable);
+        Assert.Equal(AdbVersionEvidenceSentinel, report.Android.AdbEvidence);
+        Assert.Equal(AndroidEndpoint.FromHostPort(EndpointHost, EndpointPort).ToString(), report.Android.Endpoint);
+
+        // Состояние игры не наблюдалось: отказавший шаг его не доказал.
+        Assert.Null(report.AzurLane.State);
+        Assert.Equal(ApplicationFailure.InternalError, report.AzurLane.Failure!.Code);
+    }
+
     [Fact(DisplayName = "Значения секций bounded, однострочны и не содержат machine-specific путей")]
     public void SectionValuesAreBoundedAndFreeOfMachinePaths()
     {
@@ -330,16 +354,21 @@ public sealed class AndroidDiagnosticsTests
 
         ApplicationHostRun run = application.Run();
 
+        // Секций в итоге нет ровно в одном случае: пользовательская конфигурация машины отклонена, поэтому
+        // snapshot не собирается вовсе. Это условие окружения, а не ослабление проверки: при собранной
+        // диагностике оператор обязан видеть обе секции, а не «хотя бы одну».
+        if (run.ExitCode is AzurPilotExitCode.ConfigurationInvalid
+            or AzurPilotExitCode.ConfigurationSchemaUnsupported)
+        {
+            return;
+        }
+
         IReadOnlyList<string> android = ReadSectionLines(run.StandardOutput, AndroidSectionPrefix);
         IReadOnlyList<string> azurLane = ReadSectionLines(run.StandardOutput, AzurLaneSectionPrefix);
 
-        if (android.Count == 0 && azurLane.Count == 0)
-        {
-            // Пользовательская конфигурация машины может быть отклонена: тогда snapshot не собирается
-            // вовсе, и секций в итоге нет. Это условие окружения, а не ослабление проверки: когда
-            // диагностика собрана, обе секции обязаны быть видны оператору.
-            return;
-        }
+        Assert.True(
+            android.Count > 0 && azurLane.Count > 0,
+            $"Диагностика не напечатала обе секции при коде выхода {run.ExitCode}.");
 
         // Секции печатаются ровно один раз каждая и остаются однострочными: значения bounded, поэтому
         // внешнее evidence не добавляет строк в человекочитаемый итог.
@@ -520,6 +549,63 @@ public sealed class AndroidDiagnosticsTests
     }
 
     /// <summary>
+    /// Host-side граница Android, которая обнаруживает ADB и разрешает endpoint, а затем нарушает контракт
+    /// исключением на наблюдении transport.
+    /// </summary>
+    /// <remarks>
+    /// Проверка доказывает, что факты, уже собранные диагностикой до нарушения контракта, остаются её
+    /// данными: обнаруженный ADB и разрешённый endpoint не теряются из-за отказа следующего шага.
+    /// </remarks>
+    private sealed class ThrowingAfterAdbHost : IAndroidHost
+    {
+        private readonly TestAndroidHost _inner = new();
+
+        public ApplicationResult<AndroidAdbExecutable> DiscoverAdbExecutable(MuMuInstallation installation)
+            => _inner.DiscoverAdbExecutable(installation);
+
+        public ApplicationResult<AndroidEndpoint> ResolveEndpoint(
+            MuMuInstallation installation,
+            MuMuInstanceId instance)
+            => _inner.ResolveEndpoint(installation, instance);
+
+        public ApplicationResult<AndroidTransportObservation> QueryTransport(AndroidEndpoint endpoint)
+            => throw new InvalidOperationException("Нарушение контракта host-ом Android.");
+
+        public ApplicationResult<AndroidCommandOutcome> ConnectTransport(
+            AndroidEndpoint endpoint,
+            CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Нарушение контракта host-ом Android.");
+
+        public ApplicationResult<AndroidBootObservation> QueryBoot(AndroidEndpoint endpoint)
+            => throw new InvalidOperationException("Нарушение контракта host-ом Android.");
+
+        public ApplicationResult<AndroidPackagePresence> QueryPackage(
+            AndroidEndpoint endpoint,
+            AndroidPackageId package)
+            => throw new InvalidOperationException("Нарушение контракта host-ом Android.");
+
+        public ApplicationResult<AndroidLauncherResolution> ResolveLauncher(
+            AndroidEndpoint endpoint,
+            AndroidPackageId package)
+            => throw new InvalidOperationException("Нарушение контракта host-ом Android.");
+
+        public ApplicationResult<AndroidProcessObservation> ObserveProcesses(
+            AndroidEndpoint endpoint,
+            AndroidPackageId package)
+            => throw new InvalidOperationException("Нарушение контракта host-ом Android.");
+
+        public ApplicationResult<AndroidForegroundObservation> ObserveForeground(AndroidEndpoint endpoint)
+            => throw new InvalidOperationException("Нарушение контракта host-ом Android.");
+
+        public ApplicationResult<AndroidCommandOutcome> RequestGameMutation(
+            AndroidEndpoint endpoint,
+            AndroidPackageId package,
+            AndroidGameMutation mutation,
+            CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Нарушение контракта host-ом Android.");
+    }
+
+    /// <summary>
     /// Управляемая host-side граница Android: каждая команда сообщает заранее заданный результат, а её
     /// вызов учитывается счётчиком.
     /// </summary>
@@ -533,7 +619,7 @@ public sealed class AndroidDiagnosticsTests
         internal TestAndroidHost()
         {
             AdbResult = ApplicationResult<AndroidAdbExecutable>.Success(
-                new AndroidAdbExecutable(AdbPathSentinel, "adb-version-sentinel"));
+                new AndroidAdbExecutable(AdbPathSentinel, AdbVersionEvidenceSentinel));
             EndpointResult = ApplicationResult<AndroidEndpoint>.Success(
                 AndroidEndpoint.FromHostPort(EndpointHost, EndpointPort));
             TransportResult = ApplicationResult<AndroidTransportObservation>.Success(

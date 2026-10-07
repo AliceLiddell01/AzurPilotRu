@@ -147,7 +147,7 @@ public sealed class AzurLaneGameLifecycleService
 
         try
         {
-            ApplicationResult<AzurLaneGameObservation> initial = _stateService.ObserveAsync(endpoint);
+            ApplicationResult<AzurLaneGameObservation> initial = _stateService.Observe(endpoint);
             if (initial.IsFailure)
             {
                 return Failed(operation, endpoint, package, initial.FailureInfo!, AzurLaneGameState.Unknown);
@@ -202,7 +202,7 @@ public sealed class AzurLaneGameLifecycleService
 
         try
         {
-            ApplicationResult<AzurLaneGameObservation> initial = _stateService.ObserveAsync(endpoint);
+            ApplicationResult<AzurLaneGameObservation> initial = _stateService.Observe(endpoint);
             if (initial.IsFailure)
             {
                 return Failed(operation, endpoint, package, initial.FailureInfo!, AzurLaneGameState.Unknown);
@@ -263,7 +263,7 @@ public sealed class AzurLaneGameLifecycleService
         try
         {
             long started = _timeProvider.GetTimestamp();
-            ApplicationResult<AzurLaneGameObservation> initial = _stateService.ObserveAsync(endpoint);
+            ApplicationResult<AzurLaneGameObservation> initial = _stateService.Observe(endpoint);
             if (initial.IsFailure)
             {
                 return Failed(operation, endpoint, package, initial.FailureInfo!, AzurLaneGameState.Unknown);
@@ -856,7 +856,7 @@ public sealed class AzurLaneGameLifecycleService
                         AndroidNames.PollingPhase));
             }
 
-            ApplicationResult<AzurLaneGameObservation> observation = _stateService.ObserveAsync(endpoint);
+            ApplicationResult<AzurLaneGameObservation> observation = _stateService.Observe(endpoint);
             if (observation.IsFailure)
             {
                 return ApplicationResult<AzurLaneGameObservation>.Failure(observation.FailureInfo!);
@@ -875,7 +875,14 @@ public sealed class AzurLaneGameLifecycleService
             {
                 ApplicationFailure notMet = AndroidFailures.LifecyclePostconditionNotMet(
                     endpoint, package, current.State, targetState, elapsed, mutationExitCode);
-                LogFailure(operation, endpoint, package, notMet.Code, current.State, elapsed);
+                LogFailure(
+                    operation,
+                    endpoint,
+                    package,
+                    notMet.Code,
+                    current.State,
+                    elapsed,
+                    AndroidNames.PollingPhase);
                 return ApplicationResult<AzurLaneGameObservation>.Failure(notMet);
             }
 
@@ -991,7 +998,14 @@ public sealed class AzurLaneGameLifecycleService
     {
         ApplicationFailure failure = AndroidFailures.Cancelled(
             endpoint, package, AzurLaneGameState.Unknown, TimeSpan.Zero, GatePhase);
-        LogFailure(operation, endpoint, package, failure.Code, AzurLaneGameState.Unknown, TimeSpan.Zero);
+        LogFailure(
+            operation,
+            endpoint,
+            package,
+            failure.Code,
+            AzurLaneGameState.Unknown,
+            TimeSpan.Zero,
+            GatePhase);
         return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(failure);
     }
 
@@ -1011,7 +1025,14 @@ public sealed class AzurLaneGameLifecycleService
         AzurLaneGameState state,
         long started)
     {
-        LogFailure(operation, endpoint, package, failure.Code, state, _timeProvider.GetElapsedTime(started));
+        LogFailure(
+            operation,
+            endpoint,
+            package,
+            failure.Code,
+            state,
+            _timeProvider.GetElapsedTime(started),
+            AndroidNames.PollingPhase);
         return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(failure);
     }
 
@@ -1046,12 +1067,14 @@ public sealed class AzurLaneGameLifecycleService
         AndroidPackageId package,
         string failureCode,
         AzurLaneGameState state,
-        TimeSpan elapsed)
+        TimeSpan elapsed,
+        string phase)
     {
         if (failureCode == ApplicationFailure.OperationCancelled)
         {
             // Отмена — ожидаемый исход запроса отмены, а не отказ операции: она логируется отдельным
-            // событием на уровне Warning, чтобы не выглядеть как ошибка lifecycle.
+            // событием на уровне Warning, чтобы не выглядеть как ошибка lifecycle. Фаза приходит от
+            // вызывающей стороны: она та же, что в details отказа, поэтому запись не расходится с ними.
             if (_logger.IsEnabled(LogLevel.Warning))
             {
                 AndroidLog.GameLifecycleCancelled(
@@ -1059,7 +1082,7 @@ public sealed class AzurLaneGameLifecycleService
                     operation,
                     endpoint.ToString(),
                     package.ToString(),
-                    AndroidNames.PollingPhase,
+                    phase,
                     (long)elapsed.TotalMilliseconds);
             }
 

@@ -39,7 +39,7 @@ public sealed class AndroidUnprovenObservationTests
         device.SetPackageQueryFailed();
 
         ApplicationResult<AzurLaneGameObservation> result =
-            context.GameState.ObserveAsync(AndroidTestContext.Endpoint);
+            context.GameState.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(
             result.IsSuccess,
@@ -59,7 +59,7 @@ public sealed class AndroidUnprovenObservationTests
         device.SetUnprovenProcesses();
 
         ApplicationResult<AzurLaneGameObservation> result =
-            context.GameState.ObserveAsync(AndroidTestContext.Endpoint);
+            context.GameState.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(
             result.IsSuccess,
@@ -78,7 +78,7 @@ public sealed class AndroidUnprovenObservationTests
         device.SetUnknownForeground();
 
         ApplicationResult<AzurLaneGameObservation> result =
-            context.GameState.ObserveAsync(AndroidTestContext.Endpoint);
+            context.GameState.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(
             result.IsSuccess,
@@ -97,7 +97,7 @@ public sealed class AndroidUnprovenObservationTests
         device.SetUnprovenProcesses();
 
         ApplicationResult<AzurLaneGameFacts> facts =
-            context.GameState.ObserveFactsAsync(AndroidTestContext.Endpoint);
+            context.GameState.ObserveFacts(AndroidTestContext.Endpoint);
 
         Assert.True(
             facts.IsSuccess,
@@ -153,7 +153,7 @@ public sealed class AndroidUnprovenObservationTests
         device.SetPackageQueryFailed();
 
         ApplicationResult<AzurLaneGameFacts> facts =
-            context.GameState.ObserveFactsAsync(AndroidTestContext.Endpoint);
+            context.GameState.ObserveFacts(AndroidTestContext.Endpoint);
 
         Assert.True(facts.IsSuccess);
 
@@ -171,7 +171,7 @@ public sealed class AndroidUnprovenObservationTests
         device.SetUnprovenProcesses();
 
         ApplicationResult<AzurLaneGameFacts> facts =
-            context.GameState.ObserveFactsAsync(AndroidTestContext.Endpoint);
+            context.GameState.ObserveFacts(AndroidTestContext.Endpoint);
 
         Assert.True(facts.IsSuccess);
         Assert.True(facts.Value!.Installed);
@@ -186,7 +186,7 @@ public sealed class AndroidUnprovenObservationTests
         device.SetUnknownForeground();
 
         ApplicationResult<AzurLaneGameFacts> facts =
-            context.GameState.ObserveFactsAsync(AndroidTestContext.Endpoint);
+            context.GameState.ObserveFacts(AndroidTestContext.Endpoint);
 
         Assert.True(facts.IsSuccess);
         Assert.True(facts.Value!.Installed);

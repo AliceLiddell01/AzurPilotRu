@@ -76,7 +76,7 @@ public sealed class AzurLaneGameStateTests
         device.SetNotInstalled();
 
         ApplicationResult<AzurLaneGameObservation> result =
-            context.GameState.ObserveAsync(AndroidTestContext.Endpoint);
+            context.GameState.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(result.IsSuccess);
 
@@ -99,7 +99,7 @@ public sealed class AzurLaneGameStateTests
         device.SetStopped();
 
         ApplicationResult<AzurLaneGameObservation> result =
-            context.GameState.ObserveAsync(AndroidTestContext.Endpoint);
+            context.GameState.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(AzurLaneGameState.Stopped, result.Value!.State);
@@ -116,7 +116,7 @@ public sealed class AzurLaneGameStateTests
         device.SetBackground(4242, 4243);
 
         ApplicationResult<AzurLaneGameObservation> result =
-            context.GameState.ObserveAsync(AndroidTestContext.Endpoint);
+            context.GameState.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(result.IsSuccess);
 
@@ -144,7 +144,7 @@ public sealed class AzurLaneGameStateTests
         device.SetForeground("com.manjuu.azurlane.MainActivity");
 
         ApplicationResult<AzurLaneGameObservation> result =
-            context.GameState.ObserveAsync(AndroidTestContext.Endpoint);
+            context.GameState.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(result.IsSuccess);
 
@@ -176,7 +176,7 @@ public sealed class AzurLaneGameStateTests
             ApplicationResult<AndroidForegroundObservation>.Failure(failure);
 
         ApplicationResult<AzurLaneGameObservation> result =
-            context.GameState.ObserveAsync(AndroidTestContext.Endpoint);
+            context.GameState.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(result.IsFailure);
         Assert.Equal(failure, result.FailureInfo!);
@@ -189,7 +189,7 @@ public sealed class AzurLaneGameStateTests
         TestAndroidDevice device = new(context.Host);
         device.SetForeground();
 
-        Assert.True(context.GameState.ObserveAsync(AndroidTestContext.Endpoint).IsSuccess);
+        Assert.True(context.GameState.Observe(AndroidTestContext.Endpoint).IsSuccess);
 
         Assert.Empty(context.Host.ConnectRequests);
         Assert.Empty(context.Host.MutationRequests);
@@ -207,7 +207,7 @@ public sealed class AzurLaneGameStateTests
 
         Assert.Equal(AzurLaneProduct.Package, AzurLaneGameStateService.Package.ToString());
 
-        ApplicationResult<AzurLaneGameFacts> facts = context.GameState.ObserveFactsAsync(AndroidTestContext.Endpoint);
+        ApplicationResult<AzurLaneGameFacts> facts = context.GameState.ObserveFacts(AndroidTestContext.Endpoint);
 
         Assert.True(facts.IsSuccess);
         Assert.Equal(new AzurLaneGameFacts(true, true, false), facts.Value!);
@@ -229,7 +229,7 @@ public sealed class AzurLaneGameStateTests
         device.SetForeground();
 
         AzurLaneGameObservation observation =
-            context.GameState.ObserveAsync(AndroidTestContext.Endpoint).Value!;
+            context.GameState.Observe(AndroidTestContext.Endpoint).Value!;
 
         Assert.InRange(observation.Evidence.Length, 1, BoundedDiagnosticText.MaxLength);
         Assert.DoesNotContain("\n", observation.Evidence, StringComparison.Ordinal);

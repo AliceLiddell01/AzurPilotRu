@@ -1,7 +1,8 @@
 # Verification проекта — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [verification.md](verification.md).
+Короткий agent-critical contract находится в
+[.codex/context/verification.md](../../.codex/context/verification.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Команды CI

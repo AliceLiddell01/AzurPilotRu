@@ -156,6 +156,38 @@ public sealed class AndroidReadinessOrchestrationTests
         Assert.Empty(context.Host.BootRequests);
     }
 
+    [Fact(DisplayName = "Истёкшая граница ожидания не отменяет первое наблюдение transport")]
+    public async Task ExpiredTransportDeadlineStillObservesTransport()
+    {
+        AndroidTestContext context = new();
+        context.Host.EndpointHandler = (_, _) =>
+            ApplicationResult<AndroidEndpoint>.Success(AndroidTestContext.Endpoint);
+        context.Host.ConnectHandler = (_, _) =>
+        {
+            // Подключение transport занимает всё окно ожидания: управляемые часы продвигаются ровно на
+            // задержку созданного таймера, поэтому к первому наблюдению граница уже истекла.
+            using ITimer elapsed = context.TimeProvider.CreateTimer(
+                static _ => { },
+                null,
+                context.Timings.TransportConnectDeadline,
+                Timeout.InfiniteTimeSpan);
+
+            return AndroidTestContext.Command();
+        };
+        context.Host.TransportHandler = _ => DeviceResult();
+        context.Host.BootHandler = _ => BootResult(shellAvailable: true, bootCompleted: 1);
+
+        ApplicationResult<AndroidReadinessOutcome> result = await context.Readiness.EnsureReadyAsync(
+            AndroidTestContext.Installation,
+            AndroidTestContext.Instance,
+            CancellationToken.None);
+
+        // Доказанно готовый transport не объявляется неготовым без наблюдения: истёкшая граница заканчивает
+        // ожидание только после первого наблюдения, поэтому отказ не сообщал бы ненаблюдённое состояние.
+        Assert.True(result.IsSuccess);
+        _ = Assert.Single(context.Host.TransportRequests);
+    }
+
     [Fact(DisplayName = "Готовность Android не доказывается в пределах deadline")]
     public async Task BootNotReadyIsReportedWithBoundedPolling()
     {
@@ -326,7 +358,7 @@ public sealed class AndroidReadinessOrchestrationTests
         context.Host.TransportHandler = _ => DeviceResult();
         context.Host.BootHandler = _ => BootResult(shellAvailable: true, bootCompleted: 1);
 
-        ApplicationResult<AndroidReadinessFacts> result = context.Readiness.ObserveAsync(AndroidTestContext.Endpoint);
+        ApplicationResult<AndroidReadinessFacts> result = context.Readiness.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(result.IsSuccess);
 
@@ -350,7 +382,7 @@ public sealed class AndroidReadinessOrchestrationTests
         context.Host.TransportHandler = _ => TransportResult(AndroidTransportState.Offline);
 
         ApplicationResult<AndroidReadinessFacts> offline =
-            context.Readiness.ObserveAsync(AndroidTestContext.Endpoint);
+            context.Readiness.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(offline.IsSuccess);
         Assert.Null(offline.Value!.Boot);
@@ -359,7 +391,7 @@ public sealed class AndroidReadinessOrchestrationTests
         context.Host.TransportHandler = _ => TransportResult(AndroidTransportState.Unknown);
 
         ApplicationResult<AndroidReadinessFacts> unknown =
-            context.Readiness.ObserveAsync(AndroidTestContext.Endpoint);
+            context.Readiness.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(unknown.IsSuccess);
         Assert.Equal(AndroidTransportState.Unknown, unknown.Value!.Transport.State);
@@ -377,7 +409,7 @@ public sealed class AndroidReadinessOrchestrationTests
             ApplicationResult<AndroidEndpoint>.Success(AndroidTestContext.Endpoint);
         context.Host.TransportHandler = _ => TransportResult(AndroidTransportState.Absent);
 
-        ApplicationResult<AndroidReadinessFacts> result = context.Readiness.ObserveAsync(
+        ApplicationResult<AndroidReadinessFacts> result = context.Readiness.Observe(
             AndroidTestContext.Installation,
             AndroidTestContext.Instance);
 
@@ -397,7 +429,7 @@ public sealed class AndroidReadinessOrchestrationTests
         ApplicationFailure failure = Failure(ApplicationFailure.AndroidEndpointUnavailable);
         context.Host.TransportHandler = _ => ApplicationResult<AndroidTransportObservation>.Failure(failure);
 
-        ApplicationResult<AndroidReadinessFacts> result = context.Readiness.ObserveAsync(AndroidTestContext.Endpoint);
+        ApplicationResult<AndroidReadinessFacts> result = context.Readiness.Observe(AndroidTestContext.Endpoint);
 
         Assert.True(result.IsFailure);
         Assert.Equal(failure, result.FailureInfo!);

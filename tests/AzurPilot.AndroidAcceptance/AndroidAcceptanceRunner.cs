@@ -298,7 +298,7 @@ internal sealed class AndroidAcceptanceRunner
 
         // Шаг 4: готовность Android — transport, shell и завершённая загрузка.
         ApplicationResult<AndroidReadinessFacts> observedReadiness =
-            _readiness.ObserveAsync(installation, options.InstanceId);
+            _readiness.Observe(installation, options.InstanceId);
 
         if (observedReadiness.IsFailure)
         {
@@ -359,7 +359,7 @@ internal sealed class AndroidAcceptanceRunner
             + "; наблюдено installed");
 
         // Шаг 6: начальное состояние игры — до единой mutation игры.
-        ApplicationResult<AzurLaneGameObservation> initialObservation = _stateService.ObserveAsync(endpoint);
+        ApplicationResult<AzurLaneGameObservation> initialObservation = _stateService.Observe(endpoint);
         if (initialObservation.IsFailure)
         {
             return Fail(StepInitialState, "Начальное состояние игры", initialObservation.FailureInfo!);
@@ -447,7 +447,7 @@ internal sealed class AndroidAcceptanceRunner
 
         if (operation == AcceptanceGameOperation.Restart)
         {
-            ApplicationResult<AzurLaneGameObservation> observedBefore = _stateService.ObserveAsync(endpoint);
+            ApplicationResult<AzurLaneGameObservation> observedBefore = _stateService.Observe(endpoint);
             if (observedBefore.IsFailure)
             {
                 return Fail(StepPostcondition, "Семантика перезапуска", observedBefore.FailureInfo!);
@@ -506,7 +506,7 @@ internal sealed class AndroidAcceptanceRunner
                 + GameStateName(expected) + ".");
         }
 
-        ApplicationResult<AzurLaneGameObservation> observed = _stateService.ObserveAsync(endpoint);
+        ApplicationResult<AzurLaneGameObservation> observed = _stateService.Observe(endpoint);
         if (observed.IsFailure)
         {
             return Fail(
@@ -608,7 +608,7 @@ internal sealed class AndroidAcceptanceRunner
             return AcceptanceResult.Proven();
         }
 
-        ApplicationResult<AzurLaneGameObservation> observation = _stateService.ObserveAsync(endpoint);
+        ApplicationResult<AzurLaneGameObservation> observation = _stateService.Observe(endpoint);
 
         string reason;
         if (observation.IsFailure)
@@ -647,7 +647,7 @@ internal sealed class AndroidAcceptanceRunner
             }
         }
 
-        ApplicationResult<AzurLaneGameObservation> finalObservation = _stateService.ObserveAsync(endpoint);
+        ApplicationResult<AzurLaneGameObservation> finalObservation = _stateService.Observe(endpoint);
         if (finalObservation.IsFailure)
         {
             return FailRestoration(
@@ -697,7 +697,7 @@ internal sealed class AndroidAcceptanceRunner
                 + outcome.FailureInfo!.Message + ")");
         }
 
-        ApplicationResult<AzurLaneGameObservation> observed = _stateService.ObserveAsync(endpoint);
+        ApplicationResult<AzurLaneGameObservation> observed = _stateService.Observe(endpoint);
         if (observed.IsFailure)
         {
             return AcceptanceResult.NotProven(
@@ -824,7 +824,7 @@ internal sealed class AndroidAcceptanceRunner
     /// <returns>Исход с отказом восстановления.</returns>
     private AcceptanceResult FailRestoration(AndroidEndpoint endpoint, string message)
     {
-        ApplicationResult<AzurLaneGameObservation> left = _stateService.ObserveAsync(endpoint);
+        ApplicationResult<AzurLaneGameObservation> left = _stateService.Observe(endpoint);
         string leftState = left.IsSuccess
             ? GameStateName(left.Value!.State) + " [" + left.Value!.Evidence + "]"
             : "наблюдение отказало (" + left.FailureInfo!.Code + ")";

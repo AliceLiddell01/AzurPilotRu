@@ -19,26 +19,15 @@ namespace AzurPilot.AndroidAcceptance;
 /// Уровень <see cref="LogLevel.Debug"/> не выводится: bounded polling readiness и lifecycle сообщает
 /// наблюдения на уровне Debug, и для приёмки достаточно итоговых событий уровня Information и выше.
 /// </para>
-/// <para>
-/// Provider запоминает тексты записей уровня Warning и выше: это bounded диагностика production-кода,
-/// которой приёмка подтверждает, что оркестрация сообщала о своих решениях, не измеряя время.
-/// </para>
 /// </remarks>
 internal sealed class StderrLoggerProvider : ILoggerProvider
 {
     /// <summary>Минимальный уровень выводимых записей.</summary>
     internal const LogLevel MinimumLevel = LogLevel.Information;
 
-    /// <summary>Сколько последних диагностических текстов удерживается в памяти.</summary>
-    internal const int RetainedDiagnosticCount = 64;
-
-    private static readonly Lock DiagnosticsLock = new();
-    private static readonly List<KeyValuePair<long, string>> DiagnosticMessages = [];
-
     private static int _writtenRecordCount;
     private static int _warningRecordCount;
     private static int _errorRecordCount;
-    private static long _diagnosticSequence;
 
     /// <summary>Число записей, выведенных в <c>stderr</c> за прогон.</summary>
     internal static int WrittenRecordCount => Volatile.Read(ref _writtenRecordCount);
@@ -58,13 +47,10 @@ internal sealed class StderrLoggerProvider : ILoggerProvider
         // Ресурсов, требующих освобождения, у provider-а нет.
     }
 
-    /// <summary>Учитывает выведенную запись и сохраняет её диагностический текст.</summary>
+    /// <summary>Учитывает выведенную запись по уровню.</summary>
     /// <param name="logLevel">Уровень выведенной записи.</param>
-    /// <param name="message">Текст выведенной записи.</param>
-    internal static void CountRecord(LogLevel logLevel, string message)
+    internal static void CountRecord(LogLevel logLevel)
     {
-        ArgumentNullException.ThrowIfNull(message);
-
         _ = Interlocked.Increment(ref _writtenRecordCount);
 
         if (logLevel < LogLevel.Warning)
@@ -75,16 +61,6 @@ internal sealed class StderrLoggerProvider : ILoggerProvider
         _ = logLevel >= LogLevel.Error
             ? Interlocked.Increment(ref _errorRecordCount)
             : Interlocked.Increment(ref _warningRecordCount);
-
-        lock (DiagnosticsLock)
-        {
-            long sequence = Interlocked.Increment(ref _diagnosticSequence);
-            DiagnosticMessages.Add(new KeyValuePair<long, string>(sequence, message));
-            while (DiagnosticMessages.Count > RetainedDiagnosticCount)
-            {
-                DiagnosticMessages.RemoveAt(0);
-            }
-        }
     }
 }
 
@@ -151,6 +127,6 @@ internal sealed class StderrLogger : ILogger
         };
 
         Console.Error.WriteLine(JsonSerializer.Serialize(record, SerializerOptions));
-        StderrLoggerProvider.CountRecord(logLevel, message);
+        StderrLoggerProvider.CountRecord(logLevel);
     }
 }

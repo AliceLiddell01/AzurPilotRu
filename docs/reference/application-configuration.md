@@ -1,7 +1,8 @@
 # Пользовательская конфигурация приложения — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [application-configuration.md](application-configuration.md).
+Короткий agent-critical contract находится в
+[.codex/context/application-configuration.md](../../.codex/context/application-configuration.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Роль конфигурации

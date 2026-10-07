@@ -126,6 +126,19 @@ public sealed class AdbResponseParserTests
         Assert.NotEqual(AndroidPackagePresence.Absent, failedQuery);
     }
 
+    [Fact(DisplayName = "Сообщение об ошибке в stderr не выдаётся за доказанное отсутствие пакета")]
+    public void PackageErrorOnStandardErrorIsNotAbsence()
+    {
+        // Пустой stdout с ненулевым кодом выхода доказывает отсутствие пакета только тогда, когда stderr
+        // тоже пуст: «error: device offline» — это «не удалось спросить», а не «пакета нет».
+        AndroidPackagePresence offline = AdbResponseParser.ParsePackagePresence(
+            Outcome(1, string.Empty, "error: device offline"),
+            Endpoint);
+
+        Assert.Equal(AndroidPackagePresence.QueryFailed, offline);
+        Assert.NotEqual(AndroidPackagePresence.Absent, offline);
+    }
+
     // --- Разрешение launcher-компонента ---
 
     [Fact(DisplayName = "Launcher разрешается ровно одним компонентом запрошенного пакета")]
@@ -342,6 +355,23 @@ public sealed class AdbResponseParserTests
             AzurLaneProduct.Package);
 
         Assert.Equal(AndroidForegroundStatus.Foreground, observation.Status);
+    }
+
+    [Fact(DisplayName = "Значение соседнего поля не приписывается маркеру переднего плана")]
+    public void FocusMarkerDoesNotBorrowValueFromAnotherLine()
+    {
+        // mCurrentFocus=null означает недоказанный передний план. Компонент из следующего поля того же
+        // дампа не относится к маркеру переднего плана и не должен выдавать игру за находящуюся на нём.
+        AndroidForegroundObservation observation = AdbResponseParser.ParseForeground(
+            Outcome(
+                0,
+                "  mCurrentFocus=null\n  mTopFullscreenOpaqueWindowState=Window{1 u0 "
+                    + AzurLaneProduct.Package
+                    + "/com.manjuu.azurlane.MainActivity}\n"),
+            AzurLaneProduct.Package);
+
+        Assert.Equal(AndroidForegroundStatus.Unknown, observation.Status);
+        Assert.Null(observation.Component);
     }
 
     // --- Свойства Android ---

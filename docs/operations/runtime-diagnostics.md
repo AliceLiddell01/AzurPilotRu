@@ -1,7 +1,8 @@
 # Runtime: composition, логирование, correlation и диагностика — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [runtime-diagnostics.md](runtime-diagnostics.md).
+Короткий agent-critical contract находится в
+[.codex/context/runtime-diagnostics.md](../../.codex/context/runtime-diagnostics.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Composition root и состав host-а

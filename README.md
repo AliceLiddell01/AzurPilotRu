@@ -89,7 +89,8 @@ CI использует эти стандартные команды напря�
 - `global.json`, `Directory.Packages.props` и `packages.lock.json` — манифесты зависимостей managed-проектов.
 - `artifacts/` — единственная исключённая из Git область для build outputs и полученных зависимостей.
 
-Карта проекта, границы и правило зависимостей — [.codex/context/architecture.md](docs/architecture/overview.md).
+Карта проекта, границы и правило зависимостей — [.codex/context/architecture.md](.codex/context/architecture.md).
+Развёрнутое описание устройства — [docs/architecture/overview.md](docs/architecture/overview.md).
 
 ## Документация
 

@@ -1,7 +1,8 @@
 # Архитектура проекта: карта и границы — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [architecture.md](overview.md).
+Короткий agent-critical contract находится в
+[.codex/context/architecture.md](../../.codex/context/architecture.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Область и платформа

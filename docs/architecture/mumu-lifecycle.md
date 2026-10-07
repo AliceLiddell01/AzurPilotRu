@@ -1,7 +1,8 @@
 # MuMu lifecycle: control surface, identity и host-side состояние — подробная документация
 
 Этот документ сохраняет развёрнутое описание текущего устройства, rationale, примеры и evidence.
-Короткий agent-critical contract находится в [mumu-lifecycle.md](mumu-lifecycle.md).
+Короткий agent-critical contract находится в
+[.codex/context/mumu-lifecycle.md](../../.codex/context/mumu-lifecycle.md).
 Фактическое состояние production-кода, tests и manifests имеет приоритет над устаревшей prose-документацией.
 
 ## Область владения

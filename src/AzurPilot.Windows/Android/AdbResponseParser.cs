@@ -146,7 +146,10 @@ public static class AdbResponseParser
             return AndroidPackagePresence.QueryFailed;
         }
 
+        // Доказанное отсутствие пакета — пустой ответ целиком: непустой stderr означает, что запрос не
+        // удалось выполнить («error: device offline» и подобные), и такой ответ не выдаётся за «пакета нет».
         return string.IsNullOrWhiteSpace(outcome.StandardOutput)
+            && string.IsNullOrWhiteSpace(outcome.StandardError)
             ? AndroidPackagePresence.Absent
             : AndroidPackagePresence.QueryFailed;
     }
@@ -581,18 +584,26 @@ public static class AdbResponseParser
         string output,
         [NotNullWhen(true)] out AndroidComponent? component)
     {
+        // Переводы строк приводятся к одной форме владельцем этого правила: иначе граница строки зависела бы
+        // от того, чем именно разделены строки ответа.
+        string normalized = output.ReplaceLineEndings("\n");
+
         foreach (string marker in FocusMarkers)
         {
-            int markerIndex = output.IndexOf(marker, StringComparison.Ordinal);
+            int markerIndex = normalized.IndexOf(marker, StringComparison.Ordinal);
 
             if (markerIndex < 0)
             {
                 continue;
             }
 
+            // Значение маркера ограничено его собственной строкой: иначе значение соседнего поля было бы
+            // приписано этому маркеру, и недоказанный передний план выглядел бы доказанным.
             int start = markerIndex + marker.Length;
-            int end = output.IndexOf('}', start);
-            string segment = end < 0 ? output[start..] : output[start..end];
+            int lineEnd = normalized.IndexOf('\n', start);
+            string line = lineEnd < 0 ? normalized[start..] : normalized[start..lineEnd];
+            int end = line.IndexOf('}', StringComparison.Ordinal);
+            string segment = end < 0 ? line : line[..end];
 
             foreach (string token in segment.Split(' ', StringSplitOptions.RemoveEmptyEntries))
             {
