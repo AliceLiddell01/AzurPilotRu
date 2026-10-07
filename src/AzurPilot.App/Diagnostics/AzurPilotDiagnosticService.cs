@@ -1,6 +1,8 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using AzurPilot.Core;
+using AzurPilot.Core.Android;
+using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
@@ -10,7 +12,7 @@ namespace AzurPilot.App;
 
 /// <summary>
 /// Runtime diagnostic operation приложения: собирает bounded snapshot приложения, конфигурации,
-/// native boundary и MuMu.
+/// native boundary, MuMu, Android и состояния игры Azur Lane.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,6 +27,13 @@ namespace AzurPilot.App;
 /// MuMu-секция собирается чтением host-side поверхности, полученной из DI, и её отказ тоже остаётся
 /// данными: диагностика MuMu не выполняет mutation и не решает исход запуска.
 /// </para>
+/// <para>
+/// Секции Android и Azur Lane собираются одной read-only пробой: разрешение цели (установка, выбранный
+/// экземпляр, bundled ADB, точный endpoint), наблюдение готовности Android и наблюдение состояния игры.
+/// Ни на одном шаге не запрашивается mutation: <c>adb connect</c>, подключение и переподключение
+/// transport, запуск и остановка игры и эмулятора не выполняются, а неготовый transport сообщается фактом
+/// своего состояния. Отказ шага остаётся данными секции и не отклоняет запуск.
+/// </para>
 /// </remarks>
 public sealed class AzurPilotDiagnosticService
 {
@@ -33,6 +42,9 @@ public sealed class AzurPilotDiagnosticService
     private readonly Func<string, ApplicationFailure> _mapIncompatibility;
     private readonly IMuMuHost _muMuHost;
     private readonly MuMuLifecycleService _muMuLifecycle;
+    private readonly IAndroidHost _androidHost;
+    private readonly AndroidReadinessService _androidReadiness;
+    private readonly AzurLaneGameStateService _androidGameState;
 
     /// <summary>Создаёт диагностическую операцию приложения.</summary>
     /// <param name="configuration">Загруженный snapshot конфигурации.</param>
@@ -44,6 +56,13 @@ public sealed class AzurPilotDiagnosticService
     /// <param name="muMuLifecycle">
     /// Orchestration MuMu из DI: владелец семантики выбора экземпляра, который диагностика не повторяет.
     /// </param>
+    /// <param name="androidHost">Host-side поверхность Android: production-реализация приходит из DI.</param>
+    /// <param name="androidReadiness">
+    /// Read-only наблюдение готовности Android из DI: подключение transport диагностика не выполняет.
+    /// </param>
+    /// <param name="androidGameState">
+    /// Read-only наблюдение состояния игры Azur Lane из DI: lifecycle игры диагностика не выполняет.
+    /// </param>
     /// <exception cref="ArgumentNullException">
     /// Любой из аргументов равен <see langword="null"/>.
     /// </exception>
@@ -52,30 +71,53 @@ public sealed class AzurPilotDiagnosticService
         Func<Exception, ApplicationFailure> mapFailure,
         Func<string, ApplicationFailure> mapIncompatibility,
         IMuMuHost muMuHost,
-        MuMuLifecycleService muMuLifecycle)
+        MuMuLifecycleService muMuLifecycle,
+        IAndroidHost androidHost,
+        AndroidReadinessService androidReadiness,
+        AzurLaneGameStateService androidGameState)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(mapFailure);
         ArgumentNullException.ThrowIfNull(mapIncompatibility);
         ArgumentNullException.ThrowIfNull(muMuHost);
         ArgumentNullException.ThrowIfNull(muMuLifecycle);
+        ArgumentNullException.ThrowIfNull(androidHost);
+        ArgumentNullException.ThrowIfNull(androidReadiness);
+        ArgumentNullException.ThrowIfNull(androidGameState);
 
         _configuration = configuration;
         _mapFailure = mapFailure;
         _mapIncompatibility = mapIncompatibility;
         _muMuHost = muMuHost;
         _muMuLifecycle = muMuLifecycle;
+        _androidHost = androidHost;
+        _androidReadiness = androidReadiness;
+        _androidGameState = androidGameState;
     }
 
     /// <summary>Собирает bounded диагностический snapshot текущего запуска.</summary>
-    /// <returns>Snapshot приложения, конфигурации, native boundary и MuMu.</returns>
+    /// <returns>Snapshot приложения, конфигурации, native boundary, MuMu, Android и игры Azur Lane.</returns>
     public AzurPilotDiagnosticReport Capture()
     {
+        // Проба собирается один раз и переиспользуется обеими Android-секциями: цель Android (установка,
+        // выбранный экземпляр, bundled ADB, точный endpoint) разрешается одним read-only путём, а не
+        // повторно для каждой секции.
+        AzurPilotAndroidProbe android = AzurPilotAndroidProbe.Capture(
+            _muMuHost,
+            _muMuLifecycle,
+            _androidHost,
+            _androidReadiness,
+            _androidGameState,
+            _configuration.Configuration.MuMu.Instance,
+            _mapFailure);
+
         return new AzurPilotDiagnosticReport(
             CaptureApplication(),
             AzurPilotConfigurationDiagnostics.FromSnapshot(_configuration),
             CaptureNative(),
-            CaptureMuMu());
+            CaptureMuMu(),
+            AzurPilotAndroidDiagnostics.Capture(android),
+            AzurPilotAzurLaneDiagnostics.Capture(android));
     }
 
     /// <summary>Собирает сведения о сборке, runtime и процессе.</summary>

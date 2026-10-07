@@ -10,4 +10,9 @@
        IMuMuHost и MuMuLifecycleService, ничего не добавляет в AzurPilot.App и в hosted CI не
        запускается. Не является boundary приложения и не поставляется. -->
   <Project Path="tests/AzurPilot.MuMuAcceptance/AzurPilot.MuMuAcceptance.csproj" />
+  <!-- Инструмент реальной приёмки Android-слоя (ADB readiness и lifecycle игры Azur Lane Global/EN) на
+       установленной Windows-машине: использует production-контракты AzurPilot.Core и платформенные
+       реализации AzurPilot.Windows, ничего не добавляет в AzurPilot.App и в hosted CI не запускается.
+       Не является boundary приложения и не поставляется. -->
+  <Project Path="tests/AzurPilot.AndroidAcceptance/AzurPilot.AndroidAcceptance.csproj" />
 </Solution>

@@ -1,6 +1,7 @@
 using System.Reflection;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
+using AzurPilot.Windows;
 using AzurPilot.Windows.MuMu;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -343,7 +344,7 @@ public sealed class MuMuWindowsHostTests
         Assert.Contains("player_state=start_finished", state.Evidence, StringComparison.Ordinal);
         Assert.Contains("is_process_started=true", state.Evidence, StringComparison.Ordinal);
         Assert.Contains("is_android_started=true", state.Evidence, StringComparison.Ordinal);
-        Assert.True(state.Evidence.Length <= MuMuBoundedText.MaxLength);
+        Assert.True(state.Evidence.Length <= BoundedDiagnosticText.MaxLength);
     }
 
     [Fact(DisplayName = "Остановленный экземпляр наблюдается как Stopped с bounded evidence")]
@@ -536,8 +537,8 @@ public sealed class MuMuWindowsHostTests
 
         MuMuLifecycleCommandOutcome outcome = result.Value!;
 
-        Assert.True(rawOutput.Length > MuMuBoundedText.MaxLength);
-        Assert.True(outcome.BoundedOutput.Length <= MuMuBoundedText.MaxLength);
+        Assert.True(rawOutput.Length > BoundedDiagnosticText.MaxLength);
+        Assert.True(outcome.BoundedOutput.Length <= BoundedDiagnosticText.MaxLength);
         Assert.StartsWith("{\"errcode\": 0, \"errmsg\": \"", outcome.BoundedOutput, StringComparison.Ordinal);
         Assert.EndsWith("...", outcome.BoundedOutput, StringComparison.Ordinal);
     }
@@ -687,7 +688,7 @@ public sealed class MuMuWindowsHostTests
             new FakeMuMuInstallationRegistrySource(),
             new FakeMuMuInstallMetadataSource(),
             new FakeMuMuFileSystemProbe(),
-            new FakeMuMuProcessRunner(),
+            new FakeWindowsProcessRunner(),
             TimeSpan.Zero,
             NullLogger<MuMuWindowsHost>.Instance));
 
@@ -697,7 +698,7 @@ public sealed class MuMuWindowsHostTests
         FakeMuMuInstallationRegistrySource registry = new();
         FakeMuMuInstallMetadataSource metadata = new();
         FakeMuMuFileSystemProbe fileSystem = new();
-        FakeMuMuProcessRunner runner = new();
+        FakeWindowsProcessRunner runner = new();
         NullLogger<MuMuWindowsHost> logger = NullLogger<MuMuWindowsHost>.Instance;
 
         _ = Assert.Throws<ArgumentNullException>(
@@ -756,7 +757,7 @@ public sealed class MuMuWindowsHostTests
 
         internal FakeMuMuFileSystemProbe FileSystem { get; } = new();
 
-        internal FakeMuMuProcessRunner Runner { get; } = new();
+        internal FakeWindowsProcessRunner Runner { get; } = new();
 
         internal MuMuWindowsHost Host { get; }
 

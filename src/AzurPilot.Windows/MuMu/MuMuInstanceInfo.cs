@@ -44,6 +44,14 @@ public sealed record MuMuInstanceInfo
     /// <summary>Идентификатор процесса экземпляра или <see langword="null"/>, если процесса нет.</summary>
     public int? ProcessId { get; init; }
 
+    /// <summary>Host ADB endpoint экземпляра или <see langword="null"/>, если он не сообщён.</summary>
+    /// <remarks>
+    /// Transport metadata, а не identity: значение изменяемо и в идентичности экземпляра не участвует.
+    /// Вместе с <see cref="AdbPort"/> оно образует точный ADB endpoint, которым адресуется устройство
+    /// этого экземпляра; значение по умолчанию вместо несообщённого не подставляется.
+    /// </remarks>
+    public string? AdbHostIp { get; init; }
+
     /// <summary>Порт ADB экземпляра или <see langword="null"/>, если он не сообщён.</summary>
     public int? AdbPort { get; init; }
 

@@ -50,7 +50,7 @@ internal static class MuMuHostFailures
 
         if (rejectionReasons.Count > 0)
         {
-            details[MuMuFailureDetailKeys.RejectionReasons] = MuMuBoundedText.Bounded(string.Join(",", rejectionReasons));
+            details[MuMuFailureDetailKeys.RejectionReasons] = BoundedDiagnosticText.Bounded(string.Join(",", rejectionReasons));
         }
 
         return new ApplicationFailure

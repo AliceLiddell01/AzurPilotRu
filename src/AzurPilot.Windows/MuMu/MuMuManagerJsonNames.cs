@@ -39,6 +39,9 @@ public static class MuMuManagerJsonNames
     /// <summary>Идентификатор процесса экземпляра.</summary>
     public const string ProcessId = "pid";
 
+    /// <summary>Host ADB endpoint экземпляра.</summary>
+    public const string AdbHostIp = "adb_host_ip";
+
     /// <summary>Порт ADB экземпляра.</summary>
     public const string AdbPort = "adb_port";
 

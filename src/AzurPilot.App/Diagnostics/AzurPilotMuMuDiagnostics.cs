@@ -1,7 +1,7 @@
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
-using AzurPilot.Windows.MuMu;
+using AzurPilot.Windows;
 
 namespace AzurPilot.App;
 
@@ -24,7 +24,7 @@ namespace AzurPilot.App;
 /// </para>
 /// <para>
 /// Текстовые значения секции приводятся к bounded однострочной форме владельцем ограничения
-/// <see cref="MuMuBoundedText"/>: отображаемое имя и evidence приходят извне, поэтому переносы строк и
+/// <see cref="BoundedDiagnosticText"/>: отображаемое имя и evidence приходят извне, поэтому переносы строк и
 /// произвольная длина до секции не доходят.
 /// </para>
 /// </remarks>
@@ -131,13 +131,13 @@ public sealed record AzurPilotMuMuDiagnostics(
 
             return new AzurPilotMuMuDiagnostics(
                 IsInstallationDiscovered: true,
-                Version: MuMuBoundedText.Bounded(installation.Version),
+                Version: BoundedDiagnosticText.Bounded(installation.Version),
                 ControlSurfaceStatus: controlSurfaceStatus,
                 ConfiguredInstance: configuredInstance,
                 SelectedInstanceId: instance.Id.ToString(),
-                SelectedInstanceDisplayName: MuMuBoundedText.Bounded(instance.DisplayName),
+                SelectedInstanceDisplayName: BoundedDiagnosticText.Bounded(instance.DisplayName),
                 LifecycleState: observation.IsSuccess ? observation.Value!.State : null,
-                Evidence: observation.IsSuccess ? MuMuBoundedText.Bounded(observation.Value!.Evidence) : null,
+                Evidence: observation.IsSuccess ? BoundedDiagnosticText.Bounded(observation.Value!.Evidence) : null,
                 Failure: observation.IsFailure ? observation.FailureInfo : null);
         }
         catch (Exception exception)
@@ -165,7 +165,7 @@ public sealed record AzurPilotMuMuDiagnostics(
         ApplicationFailure failure)
         => new(
             IsInstallationDiscovered: version is not null,
-            Version: version is null ? null : MuMuBoundedText.Bounded(version),
+            Version: version is null ? null : BoundedDiagnosticText.Bounded(version),
             ControlSurfaceStatus: controlSurfaceStatus,
             ConfiguredInstance: configuredInstance,
             SelectedInstanceId: null,

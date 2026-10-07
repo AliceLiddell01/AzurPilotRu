@@ -1,5 +1,6 @@
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
+using AzurPilot.Windows.Processes;
 using Microsoft.Extensions.Logging;
 
 namespace AzurPilot.Windows.MuMu;
@@ -12,7 +13,7 @@ namespace AzurPilot.Windows.MuMu;
 /// <para>
 /// Реализация ничего не делает сама: обнаружение установки выполняет
 /// <see cref="MuMuInstallationDiscovery"/>, разбор ответов и построение аргументов —
-/// <see cref="MuMuManagerClient"/>, запуск процесса — <see cref="IMuMuProcessRunner"/>, а правило
+/// <see cref="MuMuManagerClient"/>, запуск процесса — <see cref="IWindowsProcessRunner"/>, а правило
 /// состояния — <see cref="MuMuPlayerStateMap"/>. Второй parser, второй набор аргументов, второй probing
 /// реестра и файловой системы и второй запуск процесса здесь не заводятся.
 /// </para>
@@ -36,7 +37,7 @@ public sealed class MuMuWindowsHost : IMuMuHost
     private const string AbsentPlayerState = "absent";
 
     private readonly MuMuInstallationDiscovery _discovery;
-    private readonly IMuMuProcessRunner _processRunner;
+    private readonly IWindowsProcessRunner _processRunner;
     private readonly TimeSpan _commandTimeout;
     private readonly ILogger<MuMuWindowsHost> _logger;
 
@@ -51,7 +52,7 @@ public sealed class MuMuWindowsHost : IMuMuHost
         IMuMuInstallationRegistrySource registrySource,
         IMuMuInstallMetadataSource metadataSource,
         IMuMuFileSystemProbe fileSystemProbe,
-        IMuMuProcessRunner processRunner,
+        IWindowsProcessRunner processRunner,
         ILogger<MuMuWindowsHost> logger)
         : this(
             registrySource,
@@ -76,7 +77,7 @@ public sealed class MuMuWindowsHost : IMuMuHost
         IMuMuInstallationRegistrySource registrySource,
         IMuMuInstallMetadataSource metadataSource,
         IMuMuFileSystemProbe fileSystemProbe,
-        IMuMuProcessRunner processRunner,
+        IWindowsProcessRunner processRunner,
         TimeSpan commandTimeout,
         ILogger<MuMuWindowsHost> logger)
     {
@@ -272,17 +273,14 @@ public sealed class MuMuWindowsHost : IMuMuHost
     }
 
     private static string BuildEvidence(MuMuInstanceInfo info)
-        => MuMuBoundedText.Bounded(
+        => BoundedDiagnosticText.Bounded(
             "index=" + info.Id.Index
             + ";player_state=" + (info.RawPlayerState ?? AbsentPlayerState)
             + ";is_process_started=" + (info.IsProcessStarted ? "true" : "false")
             + ";is_android_started=" + (info.IsAndroidStarted ? "true" : "false"));
 
     private MuMuManagerClient ClientFor(MuMuInstallation installation)
-        => new(
-            _processRunner,
-            new MuMuControlSurface { ExecutablePath = installation.ControlExecutablePath },
-            _commandTimeout);
+        => MuMuManagerClient.ForInstallation(_processRunner, installation, _commandTimeout);
 
     private void LogDiscoveryFailed(string failureCode, int installationsFound, int rejectedCandidates)
     {

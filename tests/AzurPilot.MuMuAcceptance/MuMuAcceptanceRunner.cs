@@ -2,7 +2,9 @@ using System.Globalization;
 using System.Text.Json;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
+using AzurPilot.Windows;
 using AzurPilot.Windows.MuMu;
+using AzurPilot.Windows.Processes;
 
 namespace AzurPilot.MuMuAcceptance;
 
@@ -55,7 +57,7 @@ internal sealed class MuMuAcceptanceRunner
 
     private readonly IMuMuHost _host;
     private readonly MuMuLifecycleService _lifecycle;
-    private readonly IMuMuProcessRunner _processRunner;
+    private readonly IWindowsProcessRunner _processRunner;
     private readonly IMuMuFileSystemProbe _fileSystemProbe;
     private readonly MuMuCommandAudit _audit;
     private readonly AcceptanceReport _report;
@@ -70,7 +72,7 @@ internal sealed class MuMuAcceptanceRunner
     internal MuMuAcceptanceRunner(
         IMuMuHost host,
         MuMuLifecycleService lifecycle,
-        IMuMuProcessRunner processRunner,
+        IWindowsProcessRunner processRunner,
         IMuMuFileSystemProbe fileSystemProbe,
         MuMuCommandAudit audit,
         AcceptanceReport report)
@@ -1239,8 +1241,8 @@ internal sealed class MuMuAcceptanceRunner
             ? observed.Value!.State
             : MuMuLifecycleState.Unknown;
 
-        ApplicationResult<MuMuProcessOutcome> document = await _processRunner.RunAsync(
-            new MuMuProcessRequest
+        ApplicationResult<WindowsProcessOutcome> document = await _processRunner.RunAsync(
+            new WindowsProcessRequest
             {
                 ExecutablePath = installation.ControlExecutablePath,
                 Arguments = MuMuManagerCommandBuilder.BuildInstanceInfoArguments(id),
@@ -1420,7 +1422,7 @@ internal sealed class MuMuAcceptanceRunner
             true,
             "отчёт в stdout, structured log в stderr (записей: "
             + StderrLoggerProvider.WrittenRecordCount.ToString(CultureInfo.InvariantCulture)
-            + "); bounded текст ограничен " + MuMuBoundedText.MaxLength.ToString(CultureInfo.InvariantCulture)
+            + "); bounded текст ограничен " + BoundedDiagnosticText.MaxLength.ToString(CultureInfo.InvariantCulture)
             + " символами; каталог установки заменён на " + AcceptanceSanitizer.InstallRootPlaceholder);
 
         return AcceptanceResult.Proven();

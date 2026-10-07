@@ -8,18 +8,23 @@ namespace AzurPilot.Core.Failures;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Контракт фиксирован: допустимы ровно тринадцать кодов — <see cref="ConfigurationInvalid"/>,
+/// Контракт фиксирован: допустимы ровно двадцать три кода — <see cref="ConfigurationInvalid"/>,
 /// <see cref="ConfigurationSchemaUnsupported"/>, <see cref="NativeUnavailable"/>,
-/// <see cref="NativeIncompatible"/>, <see cref="OperationCancelled"/>, <see cref="InternalError"/> и семь
+/// <see cref="NativeIncompatible"/>, <see cref="OperationCancelled"/>, <see cref="InternalError"/>, семь
 /// кодов MuMu-отказов: <see cref="MuMuInstallationNotFound"/>,
 /// <see cref="MuMuInstallationAmbiguous"/>, <see cref="MuMuInstanceNotFound"/>,
 /// <see cref="MuMuInstanceAmbiguous"/>, <see cref="MuMuControlSurfaceUnsupported"/>,
-/// <see cref="MuMuLifecyclePostconditionNotMet"/> и <see cref="MuMuLifecycleTimeout"/>. Каталог кодов под
-/// будущие capability (adb, package, game, screenshot, vision и подобные) намеренно не заводится: код
-/// появляется вместе с реальной capability.
+/// <see cref="MuMuLifecyclePostconditionNotMet"/> и <see cref="MuMuLifecycleTimeout"/>, а также десять
+/// кодов ADB readiness и lifecycle игры: <see cref="AndroidAdbUnavailable"/>,
+/// <see cref="AndroidEndpointUnavailable"/>, <see cref="AndroidTransportNotReady"/>,
+/// <see cref="AndroidNotReady"/>, <see cref="AzurLanePackageMissing"/>, <see cref="AzurLaneStateUnknown"/>,
+/// <see cref="AzurLaneLauncherUnresolved"/>, <see cref="AzurLaneLauncherAmbiguous"/>,
+/// <see cref="AzurLaneLifecyclePostconditionNotMet"/> и <see cref="AzurLaneLifecycleTimeout"/>. Каталог
+/// кодов под отсутствующие capability (screenshot, vision, OCR, ввод, gameplay, REPL и подобные)
+/// намеренно не заводится: код появляется вместе с реальной capability.
 /// </para>
 /// <para>
-/// Ожидаемые MuMu-отказы не подменяются <see cref="InternalError"/>: <see cref="InternalError"/>
+/// Ожидаемые MuMu- и Android-отказы не подменяются <see cref="InternalError"/>: <see cref="InternalError"/>
 /// остаётся только для действительно неожиданного нарушения контракта.
 /// </para>
 /// <para>
@@ -77,6 +82,36 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <summary>Код отказа: deadline lifecycle-операции MuMu достигнут без нужного terminal state.</summary>
     public const string MuMuLifecycleTimeout = "mumu_lifecycle_timeout";
 
+    /// <summary>Код отказа: исполняемый файл ADB обнаруженной установки MuMuPlayer недоступен.</summary>
+    public const string AndroidAdbUnavailable = "android_adb_unavailable";
+
+    /// <summary>Код отказа: точный ADB endpoint выбранного Android-экземпляра не разрешён.</summary>
+    public const string AndroidEndpointUnavailable = "android_endpoint_unavailable";
+
+    /// <summary>Код отказа: ADB transport точного endpoint-а не готов к командам.</summary>
+    public const string AndroidTransportNotReady = "android_transport_not_ready";
+
+    /// <summary>Код отказа: готовность Android на точном endpoint-е не доказана наблюдением.</summary>
+    public const string AndroidNotReady = "android_not_ready";
+
+    /// <summary>Код отказа: пакет игры не установлен на точном endpoint-е.</summary>
+    public const string AzurLanePackageMissing = "azurlane_package_missing";
+
+    /// <summary>Код отказа: состояние игры не доказано наблюдением.</summary>
+    public const string AzurLaneStateUnknown = "azurlane_state_unknown";
+
+    /// <summary>Код отказа: launcher-компонент пакета игры не разрешён.</summary>
+    public const string AzurLaneLauncherUnresolved = "azurlane_launcher_unresolved";
+
+    /// <summary>Код отказа: launcher-компонент пакета игры неоднозначен.</summary>
+    public const string AzurLaneLauncherAmbiguous = "azurlane_launcher_ambiguous";
+
+    /// <summary>Код отказа: lifecycle-операция игры не привела к требуемому postcondition.</summary>
+    public const string AzurLaneLifecyclePostconditionNotMet = "azurlane_lifecycle_postcondition_not_met";
+
+    /// <summary>Код отказа: deadline lifecycle-операции игры достигнут без требуемого состояния.</summary>
+    public const string AzurLaneLifecycleTimeout = "azurlane_lifecycle_timeout";
+
     private static readonly FrozenSet<string> AllowedCodes =
         new[]
         {
@@ -93,6 +128,16 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
             MuMuControlSurfaceUnsupported,
             MuMuLifecyclePostconditionNotMet,
             MuMuLifecycleTimeout,
+            AndroidAdbUnavailable,
+            AndroidEndpointUnavailable,
+            AndroidTransportNotReady,
+            AndroidNotReady,
+            AzurLanePackageMissing,
+            AzurLaneStateUnknown,
+            AzurLaneLauncherUnresolved,
+            AzurLaneLauncherAmbiguous,
+            AzurLaneLifecyclePostconditionNotMet,
+            AzurLaneLifecycleTimeout,
         }.ToFrozenSet(StringComparer.Ordinal);
 
     private readonly FrozenDictionary<string, string>? _details;
@@ -104,8 +149,13 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <see cref="InternalError"/>, <see cref="MuMuInstallationNotFound"/>,
     /// <see cref="MuMuInstallationAmbiguous"/>, <see cref="MuMuInstanceNotFound"/>,
     /// <see cref="MuMuInstanceAmbiguous"/>, <see cref="MuMuControlSurfaceUnsupported"/>,
-    /// <see cref="MuMuLifecyclePostconditionNotMet"/>, <see cref="MuMuLifecycleTimeout"/>. Любое другое
-    /// значение — ошибка программирования и приводит к <see cref="ArgumentException"/> при создании
+    /// <see cref="MuMuLifecyclePostconditionNotMet"/>, <see cref="MuMuLifecycleTimeout"/>,
+    /// <see cref="AndroidAdbUnavailable"/>, <see cref="AndroidEndpointUnavailable"/>,
+    /// <see cref="AndroidTransportNotReady"/>, <see cref="AndroidNotReady"/>,
+    /// <see cref="AzurLanePackageMissing"/>, <see cref="AzurLaneStateUnknown"/>,
+    /// <see cref="AzurLaneLauncherUnresolved"/>, <see cref="AzurLaneLauncherAmbiguous"/>,
+    /// <see cref="AzurLaneLifecyclePostconditionNotMet"/>, <see cref="AzurLaneLifecycleTimeout"/>. Любое
+    /// другое значение — ошибка программирования и приводит к <see cref="ArgumentException"/> при создании
     /// отказа.
     /// </value>
     public required string Code

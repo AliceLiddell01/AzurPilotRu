@@ -1,6 +1,7 @@
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Windows.MuMu;
+using AzurPilot.Windows.Processes;
 
 namespace AzurPilot.MuMuAcceptance;
 
@@ -22,7 +23,7 @@ namespace AzurPilot.MuMuAcceptance;
 /// </remarks>
 internal sealed class MuMuCommandAudit
 {
-    private readonly List<MuMuProcessRequest> _requests = [];
+    private readonly List<WindowsProcessRequest> _requests = [];
 
     /// <summary>Число записанных запусков процессов.</summary>
     internal int Count => _requests.Count;
@@ -43,7 +44,7 @@ internal sealed class MuMuCommandAudit
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
 
         int count = 0;
-        foreach (MuMuProcessRequest request in _requests)
+        foreach (WindowsProcessRequest request in _requests)
         {
             if (request.Arguments.Count < 2
                 || !string.Equals(
@@ -65,7 +66,7 @@ internal sealed class MuMuCommandAudit
 
     /// <summary>Записывает запрос на запуск процесса.</summary>
     /// <param name="request">Описание запуска, полученное границей процесса.</param>
-    internal void Record(MuMuProcessRequest request)
+    internal void Record(WindowsProcessRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         _requests.Add(request);
@@ -79,7 +80,7 @@ internal sealed class MuMuCommandAudit
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(controlExecutablePath);
 
-        foreach (MuMuProcessRequest request in _requests)
+        foreach (WindowsProcessRequest request in _requests)
         {
             if (!string.Equals(request.ExecutablePath, controlExecutablePath, StringComparison.OrdinalIgnoreCase))
             {
@@ -146,7 +147,7 @@ internal sealed class MuMuCommandAudit
     {
         List<string> subcommands = [];
         List<string> operations = [];
-        foreach (MuMuProcessRequest request in _requests)
+        foreach (WindowsProcessRequest request in _requests)
         {
             if (request.Arguments.Count == 0)
             {
@@ -217,15 +218,15 @@ internal sealed class MuMuCommandAudit
 /// Запись выполняется до делегирования, поэтому в аудит попадает и запуск, завершившийся отказом:
 /// отказ не является основанием считать команду невыполненной.
 /// </remarks>
-internal sealed class AuditingProcessRunner : IMuMuProcessRunner
+internal sealed class AuditingProcessRunner : IWindowsProcessRunner
 {
-    private readonly IMuMuProcessRunner _inner;
+    private readonly IWindowsProcessRunner _inner;
     private readonly MuMuCommandAudit _audit;
 
     /// <summary>Создаёт записывающую границу поверх production-реализации.</summary>
     /// <param name="inner">Production-граница запуска процесса.</param>
     /// <param name="audit">Аудит, в который попадают запуски.</param>
-    internal AuditingProcessRunner(IMuMuProcessRunner inner, MuMuCommandAudit audit)
+    internal AuditingProcessRunner(IWindowsProcessRunner inner, MuMuCommandAudit audit)
     {
         ArgumentNullException.ThrowIfNull(inner);
         ArgumentNullException.ThrowIfNull(audit);
@@ -235,8 +236,8 @@ internal sealed class AuditingProcessRunner : IMuMuProcessRunner
     }
 
     /// <inheritdoc />
-    public async Task<ApplicationResult<MuMuProcessOutcome>> RunAsync(
-        MuMuProcessRequest request,
+    public async Task<ApplicationResult<WindowsProcessOutcome>> RunAsync(
+        WindowsProcessRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);

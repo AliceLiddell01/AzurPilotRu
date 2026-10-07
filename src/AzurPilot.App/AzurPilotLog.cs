@@ -156,4 +156,103 @@ internal static partial class AzurPilotLog
         string correlationId,
         string failureCode,
         string controlSurfaceStatus);
+
+    /// <summary>Android-диагностика собрана без отказов.</summary>
+    /// <remarks>
+    /// Событие описывает read-only результат: доступность bundled ADB, разрешённый точный endpoint и
+    /// наблюдённое состояние ADB transport. Полного списка устройств, вывода команд ADB и
+    /// machine-specific путей в событии нет.
+    /// </remarks>
+    /// <param name="logger">Логгер host-а.</param>
+    /// <param name="correlationId">Correlation identifier операции.</param>
+    /// <param name="isAdbAvailable">
+    /// Признак того, что bundled ADB установки обнаружен, либо <see langword="null"/>, если обнаружение не
+    /// выполнялось или не дало результата.
+    /// </param>
+    /// <param name="endpoint">Точный endpoint в форме <c>host:port</c> или пустая строка.</param>
+    /// <param name="transportState">Наблюдённое состояние ADB transport или пустая строка.</param>
+    [LoggerMessage(
+        EventId = 1009,
+        Level = LogLevel.Information,
+        Message = "Android-диагностика: ADB доступен: {IsAdbAvailable}, endpoint {Endpoint}, "
+            + "transport {TransportState}; операция {CorrelationId}")]
+    public static partial void AndroidDiagnosticsCaptured(
+        this ILogger logger,
+        string correlationId,
+        bool? isAdbAvailable,
+        string endpoint,
+        string transportState);
+
+    /// <summary>Android-диагностика сообщила ожидаемый отказ.</summary>
+    /// <remarks>
+    /// Отказ Android — диагностический результат, а не отказ запуска: событие сообщает bounded имя шага,
+    /// на котором диагностика остановилась, и код отказа, но исход startup от него не зависит.
+    /// </remarks>
+    /// <param name="logger">Логгер host-а.</param>
+    /// <param name="correlationId">Correlation identifier операции.</param>
+    /// <param name="androidStage">Bounded machine-stable имя шага, на котором диагностика остановилась.</param>
+    /// <param name="failureCode">Стабильный application-level код отказа Android.</param>
+    [LoggerMessage(
+        EventId = 1010,
+        Level = LogLevel.Warning,
+        Message = "Android-диагностика сообщила отказ: шаг {AndroidStage}, код {FailureCode}; "
+            + "операция {CorrelationId}")]
+    public static partial void AndroidDiagnosticsFailed(
+        this ILogger logger,
+        string correlationId,
+        string androidStage,
+        string failureCode);
+
+    /// <summary>Состояние игры Azur Lane наблюдалось.</summary>
+    /// <remarks>
+    /// Событие описывает read-only результат: product identity и три независимых факта. Пустое состояние
+    /// и пустые факты означают «не наблюдалось», а не «доказано отсутствующим»: наблюдение выполняется
+    /// только на готовом transport. Полного списка процессов, вывода команд ADB и machine-specific путей в
+    /// событии нет.
+    /// </remarks>
+    /// <param name="logger">Логгер host-а.</param>
+    /// <param name="correlationId">Correlation identifier операции.</param>
+    /// <param name="product">Отображаемое имя продукта.</param>
+    /// <param name="package">Package identity продукта.</param>
+    /// <param name="state">Bounded имя производного состояния игры или пустая строка.</param>
+    /// <param name="isInstalled">Признак установленного пакета; <see langword="null"/>, если не наблюдалось.</param>
+    /// <param name="isProcessRunning">Признак запущенного процесса; <see langword="null"/>, если не наблюдалось.</param>
+    /// <param name="isForeground">Признак переднего плана; <see langword="null"/>, если не наблюдалось.</param>
+    [LoggerMessage(
+        EventId = 1011,
+        Level = LogLevel.Information,
+        Message = "Azur Lane: продукт {Product}, пакет {Package}, состояние {State}, установлен "
+            + "{IsInstalled}, процесс {IsProcessRunning}, foreground {IsForeground}; "
+            + "операция {CorrelationId}")]
+    public static partial void AzurLaneDiagnosticsCaptured(
+        this ILogger logger,
+        string correlationId,
+        string product,
+        string package,
+        string state,
+        bool? isInstalled,
+        bool? isProcessRunning,
+        bool? isForeground);
+
+    /// <summary>Наблюдение состояния игры Azur Lane завершилось отказом.</summary>
+    /// <remarks>
+    /// Отказ наблюдения — диагностический результат, а не отказ запуска: событие сообщает product identity
+    /// и код отказа, но исход startup от него не зависит.
+    /// </remarks>
+    /// <param name="logger">Логгер host-а.</param>
+    /// <param name="correlationId">Correlation identifier операции.</param>
+    /// <param name="product">Отображаемое имя продукта.</param>
+    /// <param name="package">Package identity продукта.</param>
+    /// <param name="failureCode">Стабильный application-level код отказа наблюдения.</param>
+    [LoggerMessage(
+        EventId = 1012,
+        Level = LogLevel.Warning,
+        Message = "Azur Lane: продукт {Product}, пакет {Package}, отказ: код {FailureCode}; "
+            + "операция {CorrelationId}")]
+    public static partial void AzurLaneDiagnosticsFailed(
+        this ILogger logger,
+        string correlationId,
+        string product,
+        string package,
+        string failureCode);
 }

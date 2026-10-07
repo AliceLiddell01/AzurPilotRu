@@ -244,7 +244,7 @@ public static class MuMuManagerResponseParser
                 Id = id,
                 Command = command,
                 ExitCode = exitCode,
-                BoundedOutput = MuMuBoundedText.Bounded(standardOutput),
+                BoundedOutput = BoundedDiagnosticText.Bounded(standardOutput),
                 ProviderError = providerError.Code == 0 ? null : providerError,
             });
         }
@@ -317,6 +317,7 @@ public static class MuMuManagerResponseParser
             || !TryReadOptionalString(element, MuMuManagerJsonNames.AndroidVersion, out string? androidVersion)
             || !TryReadOptionalString(element, MuMuManagerJsonNames.PlayerState, out string? playerState)
             || !TryReadOptionalInt32(element, MuMuManagerJsonNames.ProcessId, out int? processId)
+            || !TryReadOptionalString(element, MuMuManagerJsonNames.AdbHostIp, out string? adbHostIp)
             || !TryReadOptionalInt32(element, MuMuManagerJsonNames.AdbPort, out int? adbPort)
             || !TryReadOptionalInt64(element, MuMuManagerJsonNames.CreatedTimestamp, out long? createdTimestamp)
             || !TryReadOptionalErrorCode(element, MuMuManagerJsonNames.InstanceErrorCode, out bool hasInstanceError)
@@ -337,6 +338,7 @@ public static class MuMuManagerResponseParser
             IsProcessStarted = isProcessStarted,
             IsAndroidStarted = isAndroidStarted,
             ProcessId = processId,
+            AdbHostIp = adbHostIp,
             AdbPort = adbPort,
             CreatedTimestamp = createdTimestamp,
         };

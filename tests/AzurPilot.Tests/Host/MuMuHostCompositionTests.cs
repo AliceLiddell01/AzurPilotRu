@@ -5,6 +5,7 @@ using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Tests.Configuration;
 using AzurPilot.Windows.MuMu;
+using AzurPilot.Windows.Processes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
@@ -30,7 +31,9 @@ public sealed class MuMuHostCompositionTests
     /// </remarks>
     private static readonly string[] ExpectedPublicTypes =
     [
+        "AzurPilotAndroidDiagnostics",
         "AzurPilotApplicationDiagnostics",
+        "AzurPilotAzurLaneDiagnostics",
         "AzurPilotConfigurationDiagnostics",
         "AzurPilotDiagnosticReport",
         "AzurPilotDiagnosticService",
@@ -65,7 +68,14 @@ public sealed class MuMuHostCompositionTests
         _ = Assert.IsType<WindowsMuMuInstallMetadataSource>(
             services.GetRequiredService<IMuMuInstallMetadataSource>());
         _ = Assert.IsType<WindowsMuMuFileSystemProbe>(services.GetRequiredService<IMuMuFileSystemProbe>());
-        _ = Assert.IsType<MuMuProcessRunner>(services.GetRequiredService<IMuMuProcessRunner>());
+
+        // Граница запуска процесса общая для Windows-возможностей, а смысл её отказов принадлежит MuMu:
+        // из DI приходят и общая граница, и MuMu-проекция, и обе остаются в Windows boundary.
+        IWindowsProcessRunner processRunner = services.GetRequiredService<IWindowsProcessRunner>();
+        _ = Assert.IsType<WindowsProcessRunner>(processRunner);
+        Assert.Same(processRunner, services.GetRequiredService<IWindowsProcessRunner>());
+        _ = Assert.IsType<MuMuProcessFailureProjection>(
+            services.GetRequiredService<IProcessFailureProjection>());
 
         // Orchestration и её обязательные зависимости: singleton-ы одного host-а. Второй экземпляр
         // координации mutation нарушил бы process-local гарантию, а второй источник времени — контракт

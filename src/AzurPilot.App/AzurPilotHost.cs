@@ -1,8 +1,12 @@
+using AzurPilot.Core.Android;
+using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Windows;
+using AzurPilot.Windows.Android;
 using AzurPilot.Windows.MuMu;
+using AzurPilot.Windows.Processes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -32,6 +36,14 @@ namespace AzurPilot.App;
 /// </remarks>
 public static class AzurPilotHost
 {
+    /// <summary>Ключ регистрации границы запуска процесса для Android-возможности.</summary>
+    /// <remarks>
+    /// Ключ отделяет регистрацию Android от регистрации MuMu: граница запуска процесса принимает ровно
+    /// одну проекцию отказов, поэтому одна и та же реализация подключается дважды — по одной на владельца
+    /// смысла отказов.
+    /// </remarks>
+    private const string AndroidProcessRunnerKey = "android-adb";
+
     /// <summary>Собирает application host с явно заданным набором зависимостей.</summary>
     /// <param name="configuration">
     /// Результат загрузки пользовательской конфигурации: успешный snapshot либо ожидаемый отказ.
@@ -193,6 +205,7 @@ public static class AzurPilotHost
             _ = builder.Services.AddSingleton<AzurPilotDiagnosticService>();
 
             RegisterMuMuServices(builder);
+            RegisterAndroidServices(builder);
         }
     }
 
@@ -223,7 +236,11 @@ public static class AzurPilotHost
         _ = builder.Services.AddSingleton<IMuMuInstallMetadataSource>(
             static services => new WindowsMuMuInstallMetadataSource(
                 services.GetRequiredService<IMuMuFileSystemProbe>()));
-        _ = builder.Services.AddSingleton<IMuMuProcessRunner, MuMuProcessRunner>();
+        // Граница запуска процесса общая для Windows-возможностей приложения, а смысл её отказов
+        // принадлежит владельцу возможности: MuMu передаёт границе свою проекцию. Второй runner и второй
+        // набор MuMu-кодов поэтому не заводятся, а проекция остаётся обязательной зависимостью границы.
+        _ = builder.Services.AddSingleton<IProcessFailureProjection, MuMuProcessFailureProjection>();
+        _ = builder.Services.AddSingleton<IWindowsProcessRunner, WindowsProcessRunner>();
 
         // Реализация выбирается явной фабрикой: MuMuWindowsHost имеет несколько конструкторов, и какой
         // из них использован, должно быть видно в composition root, а не выводиться DI-эвристикой.
@@ -232,13 +249,66 @@ public static class AzurPilotHost
                 services.GetRequiredService<IMuMuInstallationRegistrySource>(),
                 services.GetRequiredService<IMuMuInstallMetadataSource>(),
                 services.GetRequiredService<IMuMuFileSystemProbe>(),
-                services.GetRequiredService<IMuMuProcessRunner>(),
+                services.GetRequiredService<IWindowsProcessRunner>(),
                 services.GetRequiredService<ILogger<MuMuWindowsHost>>()));
 
         _ = builder.Services.AddSingleton<MuMuInstanceMutationGate>();
         _ = builder.Services.AddSingleton(TimeProvider.System);
         _ = builder.Services.AddSingleton(MuMuLifecycleTimings.Default);
         _ = builder.Services.AddSingleton<MuMuLifecycleService>();
+    }
+
+    /// <summary>Регистрирует Android-сервисы и lifecycle игры Azur Lane этого этапа в DI.</summary>
+    /// <remarks>
+    /// <para>
+    /// Production host-side поверхность Android приходит из платформенной boundary
+    /// <c>AzurPilot.Windows</c>: App связывает её с orchestration, не перенося в себя ни запуск процессов,
+    /// ни разбор ответов ADB.
+    /// </para>
+    /// <para>
+    /// Граница запуска процесса — та же реализация <see cref="WindowsProcessRunner"/>, что и у MuMu, но со
+    /// своей проекцией отказов: конструктор границы принимает ровно одну проекцию, а смысл отказов
+    /// принадлежит владельцу возможности. Поэтому для Android граница регистрируется под своим ключом:
+    /// одна общая реализация, два владельца её отказов, ни второй реализации runner-а, ни второго набора
+    /// Android-кодов.
+    /// </para>
+    /// <para>
+    /// Часы — тот же <see cref="TimeProvider.System"/>, что уже зарегистрирован вместе с MuMu-сервисами:
+    /// второй источник времени нарушил бы контракт deadline, поэтому здесь он повторно не регистрируется.
+    /// </para>
+    /// <para>
+    /// Все Android-сервисы — singleton-ы одного application host. Координация mutation
+    /// <see cref="AndroidGameMutationGate"/> обязана быть единственной на процесс, иначе process-local
+    /// гарантия «одновременной mutation одного target-а нет» перестала бы действовать. Числа времени
+    /// приходят от владельца <see cref="AndroidLifecycleTimings"/>, а не из литералов в сервисах.
+    /// </para>
+    /// <para>
+    /// Регистрация ничего не выполняет: ни одна Android-операция здесь не запускается, и startup не
+    /// подключает ADB и не запускает игру.
+    /// </para>
+    /// </remarks>
+    /// <param name="builder">Построитель host-а.</param>
+    private static void RegisterAndroidServices(HostApplicationBuilder builder)
+    {
+        // Проекция отказов Android и её граница запуска процесса: отдельная регистрация под ключом, чтобы
+        // MuMu-проекция не подменяла смысл отказов ADB.
+        _ = builder.Services.AddSingleton<AdbProcessFailureProjection>();
+        _ = builder.Services.AddKeyedSingleton<IWindowsProcessRunner>(
+            AndroidProcessRunnerKey,
+            static (services, _) => new WindowsProcessRunner(
+                services.GetRequiredService<AdbProcessFailureProjection>()));
+
+        // Реализация выбирается явной фабрикой: AndroidWindowsHost имеет несколько конструкторов, и какой
+        // из них использован, должно быть видно в composition root, а не выводиться DI-эвристикой.
+        _ = builder.Services.AddSingleton<IAndroidHost>(
+            static services => new AndroidWindowsHost(
+                services.GetRequiredKeyedService<IWindowsProcessRunner>(AndroidProcessRunnerKey)));
+
+        _ = builder.Services.AddSingleton(AndroidLifecycleTimings.Default);
+        _ = builder.Services.AddSingleton<AndroidGameMutationGate>();
+        _ = builder.Services.AddSingleton<AndroidReadinessService>();
+        _ = builder.Services.AddSingleton<AzurLaneGameStateService>();
+        _ = builder.Services.AddSingleton<AzurLaneGameLifecycleService>();
     }
 
     /// <summary>Запускает host, выполняет диагностическую операцию и завершает host.</summary>
@@ -266,6 +336,12 @@ public static class AzurPilotHost
             // неподдерживаемая control surface и остановленный экземпляр остаются данными, и startup их
             // не «исправляет». Запуск эмулятора диагностикой не выполняется никогда.
             LogMuMuDiagnostics(logger, operation.CorrelationId, report.MuMu);
+
+            // Android-секции и состояние игры — тоже данные: недоступный ADB, неготовый transport и
+            // ненаблюдённое состояние игры не отклоняют запуск. Startup ничего не подключает и не
+            // запускает: ни ADB, ни игру, ни эмулятор.
+            LogAndroidDiagnostics(logger, operation.CorrelationId, report.Android);
+            LogAzurLaneDiagnostics(logger, operation.CorrelationId, report.AzurLane);
 
             if (report.Native.Failure is not null)
             {
@@ -327,5 +403,77 @@ public static class AzurPilotHost
             muMu.ControlSurfaceStatus,
             muMu.ConfiguredInstance,
             muMu.SelectedInstanceId ?? string.Empty);
+    }
+
+    /// <summary>Записывает bounded результат Android-диагностики в существующий structured log.</summary>
+    /// <remarks>
+    /// Событие остаётся в существующем logging stack и несёт correlation identifier операции, поэтому
+    /// Android-диагностика одного запуска связана с остальными его событиями. Полный список устройств,
+    /// вывод команд ADB и пути установки в событие не попадают.
+    /// </remarks>
+    /// <param name="logger">Логгер application host.</param>
+    /// <param name="correlationId">Correlation identifier операции.</param>
+    /// <param name="android">Android-секция собранного диагностического snapshot.</param>
+    private static void LogAndroidDiagnostics(
+        ILogger logger,
+        string correlationId,
+        AzurPilotAndroidDiagnostics android)
+    {
+        // Отображаемые значения готовятся до вызова логирования: сообщение остаётся статическим
+        // шаблоном, а его аргументы — уже готовыми строками.
+        if (android.Failure is ApplicationFailure failure)
+        {
+            logger.AndroidDiagnosticsFailed(correlationId, android.Stage, failure.Code);
+            return;
+        }
+
+        // Отображаемые значения готовятся до вызова логирования: сообщение остаётся статическим
+        // шаблоном, а его аргументы — уже готовыми строками.
+        string endpoint = android.Endpoint ?? string.Empty;
+        string transportState = android.TransportState?.ToString() ?? string.Empty;
+
+        logger.AndroidDiagnosticsCaptured(
+            correlationId,
+            android.IsAdbAvailable,
+            endpoint,
+            transportState);
+    }
+
+    /// <summary>Записывает bounded результат наблюдения состояния игры Azur Lane в structured log.</summary>
+    /// <remarks>
+    /// Событие остаётся в существующем logging stack и несёт correlation identifier операции, поэтому
+    /// наблюдение одного запуска связано с остальными его событиями. Полный список процессов, вывод команд
+    /// ADB и пути установки в событие не попадают.
+    /// </remarks>
+    /// <param name="logger">Логгер application host.</param>
+    /// <param name="correlationId">Correlation identifier операции.</param>
+    /// <param name="azurLane">Секция состояния игры собранного диагностического snapshot.</param>
+    private static void LogAzurLaneDiagnostics(
+        ILogger logger,
+        string correlationId,
+        AzurPilotAzurLaneDiagnostics azurLane)
+    {
+        // Отображаемые значения готовятся до вызова логирования: сообщение остаётся статическим
+        // шаблоном, а его аргументы — уже готовыми строками.
+        if (azurLane.Failure is ApplicationFailure failure)
+        {
+            logger.AzurLaneDiagnosticsFailed(
+                correlationId,
+                azurLane.Product,
+                azurLane.Package,
+                failure.Code);
+            return;
+        }
+
+        string state = azurLane.State?.ToString() ?? string.Empty;
+
+        logger.AzurLaneDiagnosticsCaptured(
+            correlationId,
+            azurLane.Product,
+            azurLane.Package,
+            state,
+            azurLane.IsInstalled,
+            azurLane.IsProcessRunning,
+            azurLane.IsForeground);
     }
 }

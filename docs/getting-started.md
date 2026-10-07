@@ -1,13 +1,13 @@
 # Начало работы
 
 Практическая входная точка: что установить, как собрать проект и запустить проверки. Правила
-проектной архитектуры и владельцы manifests перечислены в
-[.codex/context/INDEX.md](../.codex/context/INDEX.md).
+проектной архитектуры — в [.codex/context/architecture.md](../.codex/context/architecture.md), владельцы
+manifests и версий — в [.codex/context/build-contracts.md](../.codex/context/build-contracts.md).
 
 ## 1. Требования
 
 - **Windows x64** — единственная поддерживаемая платформа
-  ([architecture.md](../.codex/context/architecture.md)).
+  ([architecture.md](architecture/overview.md)).
 - **Git** и **.NET SDK** — доступны из `PATH`. Выбранный .NET SDK задаёт [global.json](../global.json).
 - **Visual Studio 2026** с workload «Desktop development with C++» и x64 MSVC toolset. Минимум
   compiler/toolset и CMake указан в [native/CMakeLists.txt](../native/CMakeLists.txt).
@@ -47,12 +47,13 @@ dotnet test tests/AzurPilot.Tests/AzurPilot.Tests.csproj --configuration Release
    `artifacts/native/runtime/<Configuration>`.
 4. `dotnet restore --locked-mode` восстанавливает закреплённый lock-файлами граф NuGet.
 5. `dotnet build` собирает solution и передаёт warnings как ошибки.
-6. `dotnet test` запускает interop и repository contract tests без повторной сборки.
+6. `dotnet test` запускает interop, application и capability tests (MuMu, Android/ADB readiness и
+   lifecycle игры) вместе с repository contract tests без повторной сборки.
 
 MSBuild берёт runtime из `artifacts/native/runtime/<Configuration>` и добавляет DLL в managed outputs.
 Если там нет `AzurPilot.Native.dll` или runtime DLL OpenCV, MSBuild останавливает managed build с
-ошибкой. Подробнее о каноническом пути и границах — [architecture.md](../.codex/context/architecture.md)
-и [verification.md](../.codex/context/verification.md).
+ошибкой. Подробнее о каноническом пути и границах — [architecture.md](architecture/overview.md)
+и [verification.md](testing/verification.md).
 
 ## 4. OpenCV
 
@@ -94,17 +95,24 @@ Acquisition выполняется автоматически при CMake confi
 файл не подменяется defaults: запуск завершается явным отказом и ненулевым кодом выхода.
 
 Путь файла и правила схемы принадлежат
-[application-configuration.md](../.codex/context/application-configuration.md), коды отказа и коды
-выхода процесса — [application-failures.md](../.codex/context/application-failures.md).
+[application-configuration.md](reference/application-configuration.md), коды отказа и коды
+выхода процесса — [application-failures.md](reference/application-failures.md).
 
 Что видно при запуске:
 
 - `stdout` — человекочитаемый итог: identity сборки, runtime и процесса, источник и версия схемы
   конфигурации, фактические сведения native boundary (версия ABI, версия OpenCV, capability),
-  строка MuMu-секции (обнаружение установки, выбранный экземпляр и его наблюдённое состояние) и итог
-  запуска. Startup MuMu не запускает и не останавливает;
+  строка MuMu-секции (обнаружение установки, выбранный экземпляр и его наблюдённое состояние), строка
+  Android-секции (доступность bundled ADB, точный endpoint, состояние ADB transport, доступность shell,
+  завершение загрузки Android и версия Android), строка секции состояния игры (product identity
+  Global/EN, установлен ли пакет, запущен ли процесс, находится ли игра на переднем плане, выведенное
+  состояние) и итог запуска. Startup ничего не подключает и не запускает: ни ADB, ни игру, ни эмулятор;
 - `stderr` — structured runtime logs в JSON-формате; каждая запись несёт correlation identifier
   операции. Логи в `stdout` не попадают, поэтому вывод остаётся presentation surface.
+
+Недоказанное значение в строках Android и состояния игры печатается как «не наблюдалось» или «не
+доказано», а не как доказанное отсутствие: диагностика только читает и не «исправляет» неготовый
+transport.
 
 Проверить это поведение целиком, включая границу `stdout`/`stderr`, можно командой из раздела 2:
 `dotnet test` запускает реальный процесс приложения вместе с его диагностикой.
@@ -123,7 +131,17 @@ Acquisition выполняется автоматически при CMake confi
   `dotnet run --project tests/AzurPilot.MuMuAcceptance -c Release -- --instance mumu:<index>`.
   Приёмка собирается вместе с `AzurPilot.Windows`, поэтому до её запуска нужен native runtime этой
   конфигурации: из каталога `native` выполните CMake workflow preset `native-x64-release`. Что именно
-  доказывает каждая проверка — [verification.md](../.codex/context/verification.md).
+  доказывает каждая проверка — [verification.md](testing/verification.md).
+- **Android-проверки** прогоняют production-код Android-слоя через управляемые внешние границы (host-side
+  поверхность Android и общая граница запуска процесса) и доказывают разрешение точного ADB endpoint,
+  target-explicit адресацию команд, готовность Android, независимость фактов об игре и lifecycle игры без
+  установленной MuMu, без ADB и без установленной игры. Поведение реальной установки, реального ADB и
+  реальной игры доказывает отдельная локальная приёмка, которая требует установленной MuMuPlayer и
+  установленной игры Global/EN и в hosted CI не запускается:
+  `dotnet run --project tests/AzurPilot.AndroidAcceptance -c Release -- --instance mumu:<index>`.
+  Приёмка мутирует состояние игры внутри выбранного экземпляра, поэтому явно выбранный exact instance
+  обязателен, а начальное состояние игры восстанавливается в конце прогона. Как и MuMu-приёмка, она
+  собирается вместе с `AzurPilot.Windows`, поэтому до её запуска нужен native runtime этой конфигурации.
 - **Repository contract tests** проверяют отсутствие machine-specific абсолютных путей,
   фундаментального hardcode `1280x720`, Git-visible binaries и build outputs.
 
@@ -140,19 +158,24 @@ Acquisition выполняется автоматически при CMake confi
 | Locked restore завершился ошибкой | Сверьте `Directory.Packages.props` и lock-файлы; изменение графа должно обновлять их согласованно |
 | SHA256 OpenCV не совпал | Не распаковывайте архив; проверьте URL/hash в `native/opencv.json` и удалите повреждённый архив из локального `artifacts/downloads` перед повторным configure |
 | Managed build не нашёл native runtime DLL | Запустите CMake workflow preset той же конфигурации из `native/` |
-| Приложение завершилось ненулевым кодом выхода | Прочитайте код отказа в итоге на `stdout` и в structured logs на `stderr`; значения кодов принадлежат [application-failures.md](../.codex/context/application-failures.md), правила схемы — [application-configuration.md](../.codex/context/application-configuration.md) |
+| Приложение завершилось ненулевым кодом выхода | Прочитайте код отказа в итоге на `stdout` и в structured logs на `stderr`; значения кодов принадлежат [application-failures.md](reference/application-failures.md), правила схемы — [application-configuration.md](reference/application-configuration.md) |
 | `dotnet test` завершился с кодом 5 из-за неизвестной опции | Проект использует `Microsoft.Testing.Platform`; не передавайте неподдерживаемые runner options, например `--nologo` |
-| MuMu-секция сообщает, что установка не обнаружена или экземпляр не выбран | Это диагностический результат, а не отказ запуска: startup MuMu не запускает и не останавливает, а правила принадлежат [mumu-lifecycle.md](../.codex/context/mumu-lifecycle.md) |
+| MuMu-секция сообщает, что установка не обнаружена или экземпляр не выбран | Это диагностический результат, а не отказ запуска: startup MuMu не запускает и не останавливает, а правила принадлежат [mumu-lifecycle.md](architecture/mumu-lifecycle.md) |
+| Android-секция сообщает недоступный ADB, неразрешённый endpoint или неготовый transport | Это диагностический результат, а не отказ запуска: startup не подключает ADB, не запускает игру и не исправляет неготовый transport, а правила принадлежат [android-game-lifecycle.md](architecture/android-game-lifecycle.md) |
+| Секция состояния игры сообщает состояние «не доказано» или ненаблюдённые факты | Это честный результат наблюдения: недоказанный факт не выдаётся за доказанное отсутствие, а наблюдение игры выполняется только при готовом transport |
 
 ## 9. Куда смотреть дальше
 
-- [README.md](../README.md) — назначение проекта, build/test-путь и поведение при запуске.
-- [AGENTS.md](../AGENTS.md) — корневой контракт и router для агентов.
-- [.codex/context/INDEX.md](../.codex/context/INDEX.md) — владельцы правил и manifests.
-- [architecture.md](../.codex/context/architecture.md) — boundaries, source of truth, references, build/runtime boundaries.
-- [build-contracts.md](../.codex/context/build-contracts.md) — version ownership, OpenCV acquisition и Renovate.
-- [application-configuration.md](../.codex/context/application-configuration.md) — схема конфигурации, путь файла и правила загрузки.
-- [application-failures.md](../.codex/context/application-failures.md) — коды отказа и коды выхода процесса.
-- [runtime-diagnostics.md](../.codex/context/runtime-diagnostics.md) — composition, логирование, correlation и диагностика.
-- [mumu-lifecycle.md](../.codex/context/mumu-lifecycle.md) — MuMu-capability: установка, экземпляр и lifecycle.
-- [verification.md](../.codex/context/verification.md) — что доказывают проверки.
+- [README.md](../README.md) — назначение проекта и краткая входная точка.
+- [README документации](README.md) — карта подробных материалов.
+- [architecture/overview.md](architecture/overview.md) — boundaries и текущая архитектура.
+- [architecture/mumu-lifecycle.md](architecture/mumu-lifecycle.md) — MuMu integration/lifecycle.
+- [architecture/android-game-lifecycle.md](architecture/android-game-lifecycle.md) — Android/ADB readiness и lifecycle игры.
+- [reference/application-configuration.md](reference/application-configuration.md) — конфигурация.
+- [reference/application-failures.md](reference/application-failures.md) — application failures.
+- [operations/runtime-diagnostics.md](operations/runtime-diagnostics.md) — logging и диагностика.
+- [testing/verification.md](testing/verification.md) — verification strategy.
+- [testing/android-acceptance.md](testing/android-acceptance.md) — Android real acceptance.
+
+Agent-only routing находится в [AGENTS.md](../AGENTS.md) и
+[.codex/context/INDEX.md](../.codex/context/INDEX.md); обычному читателю не нужно начинать с него.

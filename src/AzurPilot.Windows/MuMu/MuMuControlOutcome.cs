@@ -58,7 +58,7 @@ public sealed record MuMuControlOutcome
 
     /// <summary>Bounded вывод control utility, пригодный для диагностики.</summary>
     /// <remarks>
-    /// Полный вывод процесса в него не попадает: значение ограничено <see cref="MuMuBoundedText"/>.
+    /// Полный вывод процесса в него не попадает: значение ограничено <see cref="BoundedDiagnosticText"/>.
     /// </remarks>
     public required string BoundedOutput { get; init; }
 

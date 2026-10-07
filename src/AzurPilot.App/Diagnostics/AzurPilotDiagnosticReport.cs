@@ -7,17 +7,32 @@ using Microsoft.Extensions.Logging;
 namespace AzurPilot.App;
 
 /// <summary>
-/// Bounded диагностический snapshot одного запуска: приложение, конфигурация, native boundary и MuMu.
+/// Bounded диагностический snapshot одного запуска: приложение, конфигурация, native boundary, MuMu,
+/// Android и состояние игры Azur Lane.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Секции Android и Azur Lane собираются только чтением: snapshot не подключает ADB, не запускает и не
+/// останавливает ни игру, ни эмулятор. Отказ любой секции — данные snapshot, а не причина отказа запуска.
+/// </para>
+/// </remarks>
 /// <param name="Application">Сведения о сборке, runtime и процессе.</param>
 /// <param name="Configuration">Bounded сведения о загруженной конфигурации без её полного дампа.</param>
 /// <param name="Native">Сведения о native boundary: доступность, совместимость и фактические evidence.</param>
 /// <param name="MuMu">Сведения о MuMu: обнаружение установки, выбор экземпляра и host-side состояние.</param>
+/// <param name="Android">
+/// Сведения о Android: bundled ADB, точный endpoint и наблюдённая готовность Android.
+/// </param>
+/// <param name="AzurLane">
+/// Сведения о продукте Azur Lane Global/EN: package identity и наблюдённое состояние игры.
+/// </param>
 public sealed record AzurPilotDiagnosticReport(
     AzurPilotApplicationDiagnostics Application,
     AzurPilotConfigurationDiagnostics Configuration,
     AzurPilotNativeDiagnostics Native,
-    AzurPilotMuMuDiagnostics MuMu);
+    AzurPilotMuMuDiagnostics MuMu,
+    AzurPilotAndroidDiagnostics Android,
+    AzurPilotAzurLaneDiagnostics AzurLane);
 
 /// <summary>Application-секция диагностического snapshot.</summary>
 /// <param name="AssemblyName">Простое имя сборки application host.</param>

@@ -1,184 +1,63 @@
-# Архитектура проекта: карта и границы
+# Архитектура проекта — agent-critical контракт
 
-Владелец: этот файл. Правила ниже имеют единственного владельца — здесь. Владельцы version pins и
-acquisition зависимостей описаны в [build-contracts.md](build-contracts.md) и
-[INDEX.md](INDEX.md), пользовательская конфигурация — в
-[application-configuration.md](application-configuration.md), runtime-логирование и диагностика — в
-[runtime-diagnostics.md](runtime-diagnostics.md), application-level отказы — в
-[application-failures.md](application-failures.md), MuMu-capability — в
-[mumu-lifecycle.md](mumu-lifecycle.md), содержание проверок — [verification.md](verification.md),
-форма C ABI — `native/include/azurpilot_native_abi.h`.
+Подробное описание структуры и текущих capability находится в `../../docs/architecture/overview.md`.
+Этот файл фиксирует только границы, нарушение которых опасно при разработке.
 
-## Область и платформа
+## Платформа и boundaries
 
-AzurPilotRu — персональная реализация AzurPilot и текущий источник истины для своего кода, сборки и
-инструментов репозитория: Windows-only, x64. Проект не кросс-платформенный: другие операционные
-системы не поддерживаются, не эмулируются и не являются целью сборки. Managed часть — .NET/C# (SDK
-задаётся `global.json`, `TargetFramework` и RID — владелец `Directory.Build.props`), native часть —
-C++ с OpenCV.
+- Продукт поддерживает только Windows x64.
+- Managed boundaries ровно три: `AzurPilot.Core`, `AzurPilot.Windows`, `AzurPilot.App`.
+- Отдельная native boundary — C++/OpenCV через versioned C ABI.
+- `tests/**` — инструменты проверки; они не являются product boundary и не поставляются как продукт.
+- Не создавай новый project/layer только ради организационного удобства: нужна реальная граница
+  ответственности.
 
-`AliceLiddell01/Anki-decks` служит архитектурным ориентиром для инструментов репозитория и
-инфраструктуры агентов. `AliceLiddell01/AzurPilot-private-Ru` служит ориентиром для поведения и
-предметной области, но не шаблоном архитектуры. Ни один из этих репозиториев не заменяет AzurPilotRu
-как текущий источник истины.
+## Направление зависимостей
 
-Продуктовая часть приложения во время выполнения отделена от инструментов репозитория. Команды
-`cmake`, `dotnet`, CI и автоматизация обновления зависимостей обслуживают разработку репозитория, а не
-являются возможностями продукта. Будущие продуктовые CLI, REPL и agent CLI не должны включать общие
-операции инструментов репозитория: `build`, `repair` и `update`.
+`AzurPilot.App` → `AzurPilot.Windows` → `AzurPilot.Core`.
 
-## Архитектурные границы
+- Core не зависит от Windows API, App или Windows project.
+- Windows не зависит от App.
+- Managed/native взаимодействие идёт только через C ABI из `native/include/azurpilot_native_abi.h`.
+- Через C ABI не проходят C++/STL ownership-типы и исключения.
+- Новая capability расширяет существующего владельца, а не создаёт параллельный framework/source of truth.
 
-Проект состоит из трёх managed boundaries и одной отдельной native boundary. Дробление на
-дополнительные проекты без реальной границы ответственности запрещено.
+Текущее распределение capability:
 
-| Boundary | Путь | Ответственность |
-| --- | --- | --- |
-| `AzurPilot.Core` | `src/AzurPilot.Core` | Доменные и application-контракты, логика, независимая от Windows, включая MuMu-контракты и orchestration lifecycle |
-| `AzurPilot.Windows` | `src/AzurPilot.Windows` | Windows-specific adapters/infrastructure, включая managed сторону native interop и MuMu-adapter |
-| `AzurPilot.App` | `src/AzurPilot.App` | Composition root и application host: сборка host-а, startup, structured logging, correlation, runtime-диагностика и интеграция MuMu-capability. Командной строки у приложения нет; presentation boundary (REPL, CLI) не реализована |
-| native | `native/` | Отдельная CMake boundary: C++ + OpenCV shared library `AzurPilot.Native.dll` с узким C ABI |
+- Core — доменные/application contracts и orchestration, независимые от Windows;
+- Windows — platform adapters, process/filesystem/registry/native/ADB/MuMu integration;
+- App — composition root, startup, presentation output, logging и runtime diagnostics.
 
-Managed boundaries приложения — ровно три: `AzurPilot.Core`, `AzurPilot.Windows`, `AzurPilot.App`.
-Плюс одна отдельная native boundary. Проекты в каталоге `tests/` — тестовые инструменты, а не
-boundaries: они не входят в состав поставляемых артефактов и не расширяют список boundaries.
+## Product и repository tooling
 
-Managed solution — `AzurPilot.slnx` в корне репозитория.
+Build/CI/dependency automation обслуживают репозиторий и не являются product CLI.
+Будущие product CLI/REPL/agent CLI не получают команды `build`, `repair`, `update` только потому, что
+такие операции есть у developer tooling.
 
-## Тестовые проекты (не границы приложения)
+## Source of truth
 
-Проекты в `tests/` существуют только для проверок и не поставляются:
+- Версии SDK/packages/toolchain принадлежат manifests, перечисленным в `INDEX.md`.
+- Форма C ABI принадлежит native header.
+- Конфигурация, failures, diagnostics, MuMu и Android имеют собственные context owners.
+- Канонические команды сборки/запуска для человека находятся в `docs/getting-started.md`.
+- Не копируй machine-readable значения в новый prose-owner.
 
-- `tests/AzurPilot.Tests` — основной проект проверок: interop boundary, строгая конфигурация,
-  application-level отказы, MuMu-capability и поведение application host. Часть проверок выполняется на
-  реальном процессе приложения, часть — в процессе самого теста; что именно доказывается, принадлежит
-  [verification.md](verification.md).
-- `tests/AzurPilot.NativeAbsenceProbe` — исполняемая проба, которая запускается тестом отдельным
-  процессом и используется в двух режимах: негативная проверка загрузки native boundary (библиотеки
-  нет или подложена fixture с несовместимым ABI) и application startup через composition root с явно
-  переданным путём конфигурации. Во втором режиме проба сообщает полученный код выхода приложения и
-  стабильный application failure code; её собственный код выхода описывает только корректность
-  прогона, а не результат запуска.
-- `tests/AzurPilot.MuMuAcceptance` — исполняемый инструмент реальной приёмки MuMu-capability на
-  Windows-машине с установленной MuMuPlayer. Он собирает production-поверхность capability
-  (`IMuMuHost` из `AzurPilot.Windows` и orchestration lifecycle из `AzurPilot.Core`) и выполняет
-  lifecycle-матрицу с восстановлением начального состояния; аргументы разбирает только он сам, а в
-  hosted CI он не запускается и в состав продуктовых артефактов не входит.
+## Запреты
 
-Отдельный процесс нужен первым двум режимам по одной причине: загруженный native модуль остаётся
-доступным до завершения процесса, поэтому отсутствие библиотеки в процессе теста невоспроизводимо.
-Второй режим — режим самой пробы, а не пользовательская опция приложения: продукт аргументов запуска
-не разбирает, поэтому startup с заданной конфигурацией и полностью управляемым каталогом прогона
-вызывается кодом composition, а не командной строкой. Пользовательский
-`%LOCALAPPDATA%\AzurPilot\config.json` при этом не читается.
+- Machine-specific абсолютные пути и значения конкретной машины не фиксируются в source/config.
+- `1280x720` не является фундаментальным разрешением проекта; размеры будущего кадра — данные.
+- Не создавай placeholder-abstractions/config/failures/docs под capability, которой ещё нет.
+- Не смешивай test/acceptance CLI с будущим product CLI.
 
-Все проекты в `tests/` — инструменты проверки. Они не являются boundary приложения, не входят в число
-трёх managed boundaries, не поставляются как продукт и не должны описываться как boundary в `README.md`,
-`AGENTS.md` и `docs/**`. Инструмент реальной приёмки MuMu — тоже тестовый инструмент, а не продуктовая
-командная строка: пользовательских команд у приложения он не добавляет.
+## Текущее capability-состояние
 
-## Runtime-контракты приложения
+Реализованы:
 
-Приложение уже имеет реальные runtime-контракты: строгую пользовательскую конфигурацию,
-application-level модель отказов, structured logging с correlation identity,
-runtime-диагностический snapshot и первую реальную Windows-возможность — MuMu-capability: обнаружение
-установки, выбор Android-экземпляра и host-side lifecycle с доказуемым postcondition. Их правила имеют
-собственных владельцев — [application-configuration.md](application-configuration.md),
-[application-failures.md](application-failures.md), [runtime-diagnostics.md](runtime-diagnostics.md) и
-[mumu-lifecycle.md](mumu-lifecycle.md); здесь они не повторяются. Пользовательских опций запуска и
-командной строки у приложения нет: startup вычисляет runtime-путь конфигурации сам. Границы остаются
-прежними: `AzurPilot.Core` владеет контрактами конфигурации, отказов и MuMu, не зависящими от Windows,
-`AzurPilot.Windows` — проекцией ошибок платформенной/native boundary и MuMu-adapter, `AzurPilot.App` —
-composition и диагностикой.
+- MuMu discovery/identity/host lifecycle;
+- Android/ADB exact-target readiness;
+- lifecycle Azur Lane Global/EN.
 
-## Правило зависимостей
+Не реализованы и не должны имитироваться placeholder-кодом: input, screenshot/vision pipeline,
+OCR/ONNX/GPU, UI readiness игры, product CLI/REPL/agent CLI.
 
-- Направление managed-зависимостей: `AzurPilot.App` → `AzurPilot.Windows` → `AzurPilot.Core`.
-- `AzurPilot.Core` не зависит ни от одного другого проекта репозитория и не знает о Windows API.
-- `AzurPilot.Windows` не зависит от `AzurPilot.App`. Обратные ссылки запрещены.
-- Managed сторона не обращается к native коду напрямую: единственный канал — C ABI из
-  `native/include/azurpilot_native_abi.h`, вызываемый через source-generated `LibraryImport`.
-- Native boundary не знает о .NET и не зависит от managed кода; никаких managed-типов и
-  managed runtime в native части.
-- Native boundary не зависит от тестового и managed кода; зависимости native targets —
-  только OpenCV и стандартная библиотека C++.
-- Через границу не проходят `cv::Mat`, STL-типы, C++-исключения и владеющие указатели:
-  форма границы описана в заголовке ABI и меняется только вместе с номером ABI.
-- MuMu-capability не меняет направление зависимостей: доменные контракты и orchestration lifecycle
-  живут в `AzurPilot.Core`, Windows-адаптер control surface — в `AzurPilot.Windows`, интеграция в
-  host — в `AzurPilot.App`. Core не знает о Windows API и не заводит общий filesystem/process layer:
-  доступ к реестру, файловой системе и запуску процессов приходит через объявленные им узкие границы.
-
-## Канонический путь сборки и тестирования
-
-Native configure, build и CTest выполняются через workflow preset из каталога `native/`:
-
-```text
-cmake --workflow --preset native-x64-release
-```
-
-Для Debug используется preset `native-x64-debug`. Workflow configure читает OpenCV pin из
-`native/opencv.json`, получает пакет при необходимости, проверяет SHA256 и layout, затем workflow
-собирает native targets и запускает CTest. Имена generator и workflow presets принадлежат
-`native/CMakePresets.json`; минимальная версия CMake и compiler/toolset floor —
-`native/CMakeLists.txt`.
-
-После native workflow из корня репозитория выполняется managed часть:
-
-```text
-dotnet restore AzurPilot.slnx --locked-mode
-dotnet build AzurPilot.slnx --configuration Release --no-restore -warnaserror
-dotnet test tests/AzurPilot.Tests/AzurPilot.Tests.csproj --configuration Release --no-restore --no-build
-```
-
-Версии .NET SDK и NuGet пакетов принадлежат `global.json`, `Directory.Packages.props` и lock-файлам.
-CI напрямую выполняет приведённые команды CMake и .NET. Отдельной точки входа PowerShell и второй
-реализации build logic в workflow нет.
-
-## Структура репозитория
-
-- `AzurPilot.slnx` — managed solution.
-- `native/` — CMake boundary: `CMakeLists.txt`, `CMakePresets.json`, `opencv.json`, `cmake/`,
-  `include/` (замороженный ABI), `src/` (реализация), `tests/` (native CTest).
-- `global.json`, `Directory.Packages.props` и `**/packages.lock.json` — владельцы .NET SDK и графа
-  NuGet-зависимостей; подробная карта владельцев находится в [.codex/context/INDEX.md](INDEX.md).
-- `.github/workflows/ci.yml` — CI, который вызывает стандартные CMake/.NET команды.
-- `src/` — managed проекты (три boundaries приложения), `tests/` — тестовые инструменты
-  (не boundaries, см. выше).
-- `artifacts/` — единственная ignored boundary для generated/build outputs и полученных
-  native dependencies; source tree не засоряется, выходные каталоги не коммитятся.
-
-## Конвенция staging native runtime
-
-Native build помещает DLL native boundary и runtime DLL OpenCV в
-`artifacts/native/runtime/<Configuration>`. `Directory.Build.targets` берёт их оттуда и добавляет в
-выходные каталоги managed проектов через MSBuild `Content` items. Не требуется задавать свойство или
-копировать DLL вручную.
-
-MSBuild работает по принципу fail-closed и перед managed build проверяет, что в staging присутствуют
-`AzurPilot.Native.dll` и runtime DLL OpenCV. Если отсутствует любая из них, сборка завершается
-понятной ошибкой; native interop test не может дать ложный успех без production DLL.
-
-## Запрет путей конкретной машины
-
-В репозитории запрещены абсолютные пути конкретной машины: домашний каталог пользователя, буква
-диска, путь к конкретной установке Visual Studio, OpenCV, Python или иного локального инструмента
-(в том числе как значение по умолчанию и как пример в коде). CMake и MSBuild разрешают пути сборки
-относительно манифестов репозитория и стандартных механизмов обнаружения toolchain; абсолютные пути
-локальной машины не фиксируются в исходниках и конфигурации.
-
-## Продуктовые ограничения текущего этапа
-
-- `1280x720` не является фундаментальным разрешением архитектуры: в фундаменте и native API нет и
-  не должно быть такой константы или предполагаемого размера кадра. Будущий screenshot сохраняется
-  в нативном разрешении, а размеры кадра приходят как данные, а не как константа проекта.
-- MuMu-capability реализована как первая реальная Windows-возможность: обнаружение установки
-  MuMuPlayer, стабильная identity и выбор Android-экземпляра, host-side состояние экземпляра и
-  безопасные start/stop/restart с доказуемым postcondition. Правила принадлежат
-  [mumu-lifecycle.md](mumu-lifecycle.md); секция `mumu` конфигурации, MuMu-коды отказа, MuMu-секция
-  диагностики и проверки существуют вместе с этой capability.
-- Отсутствуют и не объявляются абстракциями «на будущее»: ADB и device readiness, lifecycle игры
-  внутри Android, ввод (tap/swipe), screenshot/vision-пайплайн, OCR/ONNX/GPU inference, product CLI,
-  REPL и agent CLI. Для них не создаются placeholder-документы, секции конфигурации, коды отказов и
-  диагностические секции. Общие команды `build`, `repair` и `update` относятся к инструментам
-  репозитория, а не к будущим product CLI, REPL и agent CLI.
+Подробности конкретной capability читай у её context owner и в `docs/architecture/`.
