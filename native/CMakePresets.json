@@ -3,7 +3,7 @@
   "configurePresets": [
     {
       "name": "native-x64",
-      "displayName": "Native x64 (Visual Studio 18 2026, multi-config)",
+      "displayName": "Нативная сборка x64 (Visual Studio 18 2026, несколько конфигураций)",
       "description": "Windows x64; outputs в artifacts/. Configure получает и проверяет закреплённый OpenCV из native/opencv.json.",
       "generator": "Visual Studio 18 2026",
       "architecture": {
@@ -22,7 +22,7 @@
     },
     {
       "name": "native-x64-asan",
-      "displayName": "Native x64 MSVC AddressSanitizer",
+      "displayName": "Нативная сборка x64 с MSVC AddressSanitizer",
       "description": "Изолированные Release артефакты для MSVC AddressSanitizer; production runtime не затрагивается.",
       "generator": "Visual Studio 18 2026",
       "architecture": {
@@ -45,19 +45,19 @@
   "buildPresets": [
     {
       "name": "native-x64-release",
-      "displayName": "Native x64 Release",
+      "displayName": "Нативная сборка x64 Release",
       "configurePreset": "native-x64",
       "configuration": "Release"
     },
     {
       "name": "native-x64-debug",
-      "displayName": "Native x64 Debug",
+      "displayName": "Нативная сборка x64 Debug",
       "configurePreset": "native-x64",
       "configuration": "Debug"
     },
     {
       "name": "native-x64-asan",
-      "displayName": "Native x64 AddressSanitizer Release",
+      "displayName": "Нативная сборка x64 с AddressSanitizer, Release",
       "configurePreset": "native-x64-asan",
       "configuration": "Release"
     }
@@ -65,7 +65,7 @@
   "testPresets": [
     {
       "name": "native-x64-release",
-      "displayName": "Native x64 CTest Release",
+      "displayName": "Тесты CTest для x64, Release",
       "configurePreset": "native-x64",
       "configuration": "Release",
       "output": {
@@ -77,7 +77,7 @@
     },
     {
       "name": "native-x64-debug",
-      "displayName": "Native x64 CTest Debug",
+      "displayName": "Тесты CTest для x64, Debug",
       "configurePreset": "native-x64",
       "configuration": "Debug",
       "output": {
@@ -89,7 +89,7 @@
     },
     {
       "name": "native-x64-asan",
-      "displayName": "Native x64 CTest AddressSanitizer",
+      "displayName": "Тесты CTest для x64 с AddressSanitizer",
       "configurePreset": "native-x64-asan",
       "configuration": "Release",
       "output": {
@@ -103,7 +103,7 @@
   "workflowPresets": [
     {
       "name": "native-x64-release",
-      "displayName": "Native x64 Release: configure, build, CTest",
+      "displayName": "Нативная сборка x64 Release: конфигурация, сборка и CTest",
       "steps": [
         { "type": "configure", "name": "native-x64" },
         { "type": "build", "name": "native-x64-release" },
@@ -112,7 +112,7 @@
     },
     {
       "name": "native-x64-debug",
-      "displayName": "Native x64 Debug: configure, build, CTest",
+      "displayName": "Нативная сборка x64 Debug: конфигурация, сборка и CTest",
       "steps": [
         { "type": "configure", "name": "native-x64" },
         { "type": "build", "name": "native-x64-debug" },
@@ -121,7 +121,7 @@
     },
     {
       "name": "native-x64-asan",
-      "displayName": "Native x64 AddressSanitizer: configure, build, CTest",
+      "displayName": "Нативная сборка x64 с AddressSanitizer: конфигурация, сборка и CTest",
       "steps": [
         { "type": "configure", "name": "native-x64-asan" },
         { "type": "build", "name": "native-x64-asan" },

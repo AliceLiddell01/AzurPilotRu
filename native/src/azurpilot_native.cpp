@@ -164,11 +164,6 @@ int32_t azurpilot_native_frame_decode_png(
         if (exception.code == cv::Error::StsNoMem) {
             return AZURPILOT_NATIVE_ERROR_OUT_OF_MEMORY;
         }
-        if (exception.code == cv::Error::StsBadArg
-            || exception.code == cv::Error::StsOutOfRange
-            || exception.code == cv::Error::StsParseError) {
-            return AZURPILOT_NATIVE_ERROR_INVALID_PNG;
-        }
         return AZURPILOT_NATIVE_ERROR_OPENCV_FAILURE;
     } catch (const std::exception&) {
         *out_frame = nullptr;
