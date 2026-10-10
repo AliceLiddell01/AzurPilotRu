@@ -8,7 +8,7 @@ Git/GitHub lifecycle принадлежит `azurpilot-git-workflow`, а общ�
 
 Перед первой итерацией установи фактом:
 
-```bash
+```powershell
 git rev-parse --show-toplevel
 git remote -v
 git rev-parse --abbrev-ref HEAD
@@ -260,10 +260,11 @@ Commit содержит только подтверждённые исправл
 Если authoritative review завершён и actionable fixes не требуются, создай
 отдельный marker commit:
 
-```bash
-git commit --allow-empty -m "<сообщение о чистом CodeRabbit review>"
+```powershell
+git commit --allow-empty -m $reviewMessage
 ```
 
+До запуска сформируй непустой `$reviewMessage` по завершённому review.
 Marker commit запрещён для provider/auth/network/rate-limit failure, skipped
 review, слишком большого scope, неуспешной verification и другого
 незавершённого состояния.

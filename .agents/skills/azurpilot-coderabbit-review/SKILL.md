@@ -139,11 +139,12 @@ Authoritative review с нулём findings либо review, в котором �
 
 Такая итерация получает отдельный marker commit:
 
-```bash
-git commit --allow-empty -m "<содержательное сообщение о чистом CodeRabbit review>"
+```powershell
+git commit --allow-empty -m $reviewMessage
 ```
 
-Пустой commit разрешён только как доказуемый маркер реально завершённого
+Заранее сформируй непустой `$reviewMessage` по фактически завершённой
+итерации. Пустой commit разрешён только как доказуемый маркер реально завершённого
 CodeRabbit review. Он запрещён для rate limit, provider failure, review_skipped,
 слишком большого scope и любого другого незавершённого состояния.
 

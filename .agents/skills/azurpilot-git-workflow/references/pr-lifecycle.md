@@ -68,11 +68,14 @@ roadmap/stage number или имя пользователя.
 
 Локальный путь через `gh`:
 
-```bash
-gh pr create --draft --base <base> --head <branch> --title <title> --body-file <путь>
-gh pr edit <number> --title <title> --body-file <путь>
+```powershell
+gh pr create --draft --base $base --head $branch --title $title --body-file $bodyPath
+gh pr edit $prNumber --title $title --body-file $bodyPath
 ```
 
+Переменные `$base`, `$branch`, `$title`, `$bodyPath` и `$prNumber`
+заполняй по проверенному состоянию репозитория, PR и локального файла,
+не подставляй догадки. Это команды PowerShell для Windows checkout.
 Флаги проверяй по фактической установленной версии `gh`.
 
 В локальном workflow body передаётся из проверенного файла, а не собирается

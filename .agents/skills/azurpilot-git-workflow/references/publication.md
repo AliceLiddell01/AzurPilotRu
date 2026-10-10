@@ -3,12 +3,18 @@
 Этот файл владеет порядком действий обычной публикуемой задачи до подтверждённого
 удалённого состояния. Контракт и границы задаёт `SKILL.md`.
 
+Команды ниже предназначены для PowerShell в текущем Windows checkout.
+`$remote` и `$branch` устанавливай только после проверки фактических remote,
+upstream и рабочей ветки; `$taskPaths` — массив только принадлежащих задаче
+путей. Не запускай команды с неинициализированными переменными и не
+переноси их в Bash/WSL2 ради примеров.
+
 ## 1. Установить фактическое состояние checkout
 
 Перед первой операцией записи установи идентичность репозитория и текущее
 состояние:
 
-```bash
+```powershell
 git rev-parse --show-toplevel
 git remote -v
 git rev-parse --abbrev-ref HEAD
@@ -18,8 +24,8 @@ git rev-parse HEAD
 
 Перед публикацией обнови remote refs:
 
-```bash
-git fetch <remote> --prune
+```powershell
+git fetch $remote --prune
 ```
 
 Если checkout относится не к ожидаемому репозиторию либо нельзя однозначно
@@ -33,8 +39,8 @@ git fetch <remote> --prune
    используй фактическое состояние `git remote -v`, а не предположение `origin`.
 2. Определи ветку по умолчанию/base из удалённого состояния:
 
-   ```bash
-   git ls-remote --symref <remote> HEAD
+   ```powershell
+   git ls-remote --symref $remote HEAD
    ```
 
 3. Обнови базу безопасно.
@@ -70,13 +76,13 @@ git fetch <remote> --prune
 3. Просмотри итоговый diff целиком.
 4. Добавь в индекс только пути текущей рабочей задачи:
 
-   ```bash
-   git add -- <путь> [<путь> ...]
+   ```powershell
+   git add -- @taskPaths
    ```
 
 5. Перечитай staged diff:
 
-   ```bash
+   ```powershell
    git diff --cached --stat
    git diff --cached
    git status --porcelain
@@ -144,14 +150,14 @@ repository/branch/remote, явный запрет пользователя ил�
 локальным состоянием, сначала fetch и исследуй расхождение; чужие commits не
 перезаписываются.
 
-```bash
-git ls-remote --refs <remote> refs/heads/<branch>
+```powershell
+git ls-remote --refs $remote "refs/heads/$branch"
 
 # первая публикация
-git push --set-upstream <remote> refs/heads/<branch>:refs/heads/<branch>
+git push --set-upstream $remote "refs/heads/${branch}:refs/heads/${branch}"
 
 # последующая публикация
-git push <remote> refs/heads/<branch>:refs/heads/<branch>
+git push $remote "refs/heads/${branch}:refs/heads/${branch}"
 ```
 
 Force-push не используется без отдельного явного основания.
@@ -166,9 +172,9 @@ Force-push не используется без отдельного явног�
 
 Читай фактическую удалённую ссылку:
 
-```bash
+```powershell
 git rev-parse HEAD
-git ls-remote --refs <remote> refs/heads/<branch>
+git ls-remote --refs $remote "refs/heads/$branch"
 ```
 
 Remote-tracking ref сам по себе недостаточен: он может быть неактуальным.
