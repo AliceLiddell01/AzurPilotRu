@@ -28,7 +28,7 @@
 `<task>` — короткий смысловой идентификатор рабочей задачи, не PR number, SHA,
 roadmap/stage number или имя пользователя.
 
-`/.codex/local/` уже является ignored boundary репозитория. Перед использованием
+Каталог `.codex/local/` уже является ignored boundary репозитория. Перед использованием
 источника проверь фактом, что файл не отслеживается Git и действительно
 игнорируется.
 
@@ -68,11 +68,14 @@ roadmap/stage number или имя пользователя.
 
 Локальный путь через `gh`:
 
-```bash
-gh pr create --draft --base <base> --head <branch> --title <title> --body-file <путь>
-gh pr edit <number> --title <title> --body-file <путь>
+```powershell
+gh pr create --draft --base $base --head $branch --title $title --body-file $bodyPath
+gh pr edit $prNumber --title $title --body-file $bodyPath
 ```
 
+Переменные `$base`, `$branch`, `$title`, `$bodyPath` и `$prNumber`
+заполняй по проверенному состоянию репозитория, PR и локального файла,
+не подставляй догадки. Это команды PowerShell для Windows checkout.
 Флаги проверяй по фактической установленной версии `gh`.
 
 В локальном workflow body передаётся из проверенного файла, а не собирается

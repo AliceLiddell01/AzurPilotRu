@@ -7,6 +7,12 @@ AzurPilotRu — Windows-only x64 приложение: managed часть на .
 
 ## Глобальные инварианты
 
+- Если текущий checkout открыт в Windows, выполняй команды разработки, Git/GitHub,
+  проверки и project skills в этой же Windows-среде через PowerShell и нативные CLI.
+  Не переходи самовольно в WSL2, Git Bash, Linux CLI или к тому же checkout через
+  `/mnt/...` из-за примера команды, отсутствия инструмента или удобства.
+  Другая среда допустима только по отдельному явному указанию пользователя;
+  Linux-прогон не выдавай за Windows-only runtime verification.
 - Managed boundaries приложения — `AzurPilot.Core`, `AzurPilot.Windows`, `AzurPilot.App`; native boundary
   отдельна. Проекты `tests/**` — инструменты проверки, а не product boundaries.
 - Направление managed-зависимостей: `AzurPilot.App` → `AzurPilot.Windows` → `AzurPilot.Core`.
