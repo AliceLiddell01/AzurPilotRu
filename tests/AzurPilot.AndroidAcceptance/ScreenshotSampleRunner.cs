@@ -23,7 +23,7 @@ namespace AzurPilot.AndroidAcceptance;
 /// <param name="FullFrameScansFailed">Число отказов production scans области FullFrame.</param>
 /// <param name="CenterScansPassed">Число успешных production scans области Center.</param>
 /// <param name="CenterScansFailed">Число отказов production scans области Center.</param>
-/// <param name="IsProven">Успешна ли вся выбранная ограниченная выборка.</param>
+/// <param name="IsProven">Успешна ли ограниченная проверка при отсутствии отказов.</param>
 /// <param name="FailureCounts">Счётчики фиксированных причин отказа без имён, путей или текста исключений.</param>
 public sealed record ScreenshotSampleRunReport(
     int EnumeratedFiles,
@@ -367,7 +367,8 @@ public static class ScreenshotSampleRunner
             centerScansPassed,
             centerScansFailed,
             failures,
-            isProven: selected.Count > 0
+            isProven: failures.Count == 0
+                && selected.Count > 0
                 && decodedCount == selected.Count
                 && fullFrameScansPassed == selected.Count
                 && centerScansPassed == selected.Count);

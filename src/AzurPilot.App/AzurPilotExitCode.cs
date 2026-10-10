@@ -104,6 +104,9 @@ public static class AzurPilotExitCode
     /// <summary>Native-анализ RGB-статистики области кадра завершился отказом.</summary>
     public const int NativeFrameAnalysisFailed = 26;
 
+    /// <summary>PNG frame повреждён, превышает предел или не поддерживается.</summary>
+    public const int NativeFrameInvalid = 27;
+
     /// <summary>Возвращает код выхода для application-level отказа.</summary>
     /// <param name="failure">Ожидаемый отказ application boundary.</param>
     /// <returns>Код выхода процесса, соответствующий коду отказа.</returns>
@@ -139,6 +142,7 @@ public static class AzurPilotExitCode
             ApplicationFailure.AndroidScreenshotCaptureFailed => AndroidScreenshotCaptureFailed,
             ApplicationFailure.DiagnosticRegionUnsupported => DiagnosticRegionUnsupported,
             ApplicationFailure.NativeFrameAnalysisFailed => NativeFrameAnalysisFailed,
+            ApplicationFailure.NativeFrameInvalid => NativeFrameInvalid,
             _ => InternalError,
         };
     }
