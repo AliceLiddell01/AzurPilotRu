@@ -206,6 +206,9 @@ polling и не запускай несколько review параллельн�
 ## Инварианты
 
 - Cycle работает с текущим checkout и его опубликованной рабочей веткой.
+- Для Windows checkout CodeRabbit запускается нативным Windows CLI в той же
+  среде; самостоятельный переход в WSL2 запрещён. Preflight среды определён в
+  [`references/review-workflow.md`](references/review-workflow.md).
 - Candidate перед review должен быть committed и pushed.
 - Base определяется по фактическому PR либо remote default branch; не хардкодится.
 - Не публикуй неизвестные пользовательские изменения.
