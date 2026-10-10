@@ -34,6 +34,124 @@ public sealed class WindowsProcessRunnerTests
     private static readonly WindowsProcessRunner Runner = new(new MuMuProcessFailureProjection());
     private static readonly string SystemDirectory = Environment.SystemDirectory;
 
+    [Theory(DisplayName = "Бинарный stdout сохраняет произвольные байты и точно сообщает границу бюджета")]
+    [InlineData(256, 256, false)]
+    [InlineData(257, 256, true)]
+    [InlineData(300000, 1024, true)]
+    [InlineData(0, 1, false)]
+    public async Task BinaryOutputPreservesBytesAndReportsBudget(int count, int budget, bool truncated)
+    {
+        ApplicationResult<WindowsProcessOutcome> result = await Runner.RunAsync(
+            CreateBinaryRequest(count, 300000, 0, budget, TimeSpan.FromSeconds(30)), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        WindowsProcessOutcome outcome = result.Value!;
+        Assert.Equal(WindowsProcessStandardOutputMode.Binary, outcome.Mode);
+        Assert.Empty(outcome.StandardOutput);
+        Assert.Equal(count, outcome.StandardOutputBytesRead);
+        Assert.Equal(Math.Min(count, budget), outcome.StandardOutputBytes.Length);
+        for (int index = 0; index < outcome.StandardOutputBytes.Length; index++)
+        {
+            Assert.Equal((byte)(index % 256), outcome.StandardOutputBytes[index]);
+        }
+
+        Assert.True(outcome.StandardOutputByteStreamEnded);
+        Assert.Equal(truncated, outcome.StandardOutputBytesTruncated);
+        Assert.Equal(!truncated, outcome.StandardOutputBinaryComplete);
+        Assert.True(outcome.StandardErrorTruncated);
+        Assert.Equal(WindowsProcessRunner.MaximumCapturedCharactersPerStream, outcome.StandardError.Length);
+        Assert.Equal(0, outcome.ExitCode);
+    }
+
+    [Theory(DisplayName = "Бинарный захват требует положительного бюджета")]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task BinaryBudgetMustBePositive(int budget)
+    {
+        _ = await Assert.ThrowsAsync<ArgumentException>(() => Runner.RunAsync(
+            CreateBinaryRequest(256, 0, 0, budget, TimeSpan.FromSeconds(1)), CancellationToken.None));
+    }
+
+    [Fact(DisplayName = "Дедлайн бинарного захвата ограничивает ожидание и сохраняет посторонний процесс")]
+    public async Task BinaryDeadlineReturnsFailureWithoutTerminatingForeignProcess()
+    {
+        using Process foreign = StartForeignProcess();
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        try
+        {
+            ApplicationResult<WindowsProcessOutcome> result = await Runner.RunAsync(
+                CreateBinaryRequest(256, 300000, 30000, 1024, TimeSpan.FromSeconds(1)),
+                CancellationToken.None);
+
+            Assert.True(result.IsFailure);
+            Assert.Equal(ApplicationFailure.MuMuLifecycleTimeout, result.FailureInfo!.Code);
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10));
+            Assert.False(foreign.HasExited);
+        }
+        finally
+        {
+            KillForeignProcess(foreign);
+        }
+    }
+
+    [Fact(DisplayName = "Отмена бинарного захвата возвращает ожидаемый отказ")]
+    public async Task BinaryCancellationReturnsFailure()
+    {
+        using CancellationTokenSource cancellation = new(TimeSpan.FromMilliseconds(500));
+        ApplicationResult<WindowsProcessOutcome> result = await Runner.RunAsync(
+            CreateBinaryRequest(256, 300000, 30000, 1024, TimeSpan.FromSeconds(30)), cancellation.Token);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ApplicationFailure.OperationCancelled, result.FailureInfo!.Code);
+    }
+
+    [Fact(DisplayName = "Успех процесса не делает неполные бинарные байты пригодными к использованию")]
+    public void BinaryCompletenessRequiresEofAndNoTruncation()
+    {
+        WindowsProcessOutcome outcome = new()
+        {
+            Mode = WindowsProcessStandardOutputMode.Binary,
+            StandardOutputBytes = [0, 255],
+            StandardOutputBytesRead = 2,
+            ExitCode = 0,
+            StandardOutput = string.Empty,
+            StandardError = string.Empty,
+            Duration = TimeSpan.Zero,
+            StandardOutputTruncated = false,
+            StandardErrorTruncated = false,
+        };
+
+        Assert.False(outcome.StandardOutputBinaryComplete);
+        Assert.False((outcome with
+        {
+            StandardOutputByteStreamEnded = true,
+            StandardOutputBytesTruncated = true,
+        }).StandardOutputBinaryComplete);
+        Assert.True((outcome with { StandardOutputByteStreamEnded = true }).StandardOutputBinaryComplete);
+        Assert.False((outcome with
+        {
+            Mode = WindowsProcessStandardOutputMode.Text,
+            StandardOutputByteStreamEnded = true,
+        }).StandardOutputBinaryComplete);
+    }
+
+    private static WindowsProcessRequest CreateBinaryRequest(
+        int byteCount, int errorCount, int delayMilliseconds, int budget, TimeSpan timeout)
+        => new()
+        {
+            ExecutablePath = Path.Combine(
+                AppContext.BaseDirectory, "native-absence-probe", "AzurPilot.NativeAbsenceProbe.exe"),
+            Arguments = [
+                "--process-output",
+                byteCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                errorCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                delayMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ],
+            Timeout = timeout,
+            StandardOutputMode = WindowsProcessStandardOutputMode.Binary,
+            MaximumStandardOutputBytes = budget,
+        };
+
     [Fact(DisplayName = "Относительный путь к исполняемому файлу — ошибка программирования")]
     public async Task RelativeExecutablePathIsProgrammingError()
     {

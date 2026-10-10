@@ -109,6 +109,37 @@ internal sealed class FakeWindowsProcessRunner : IWindowsProcessRunner
     internal void EnqueueFailure(ApplicationFailure failure)
         => _scripted.Enqueue(ApplicationResult<WindowsProcessOutcome>.Failure(failure));
 
+    /// <summary>Добавляет ограниченный бинарный исход общей границы.</summary>
+    /// <param name="bytes">Сохранённые сырые байты.</param>
+    /// <param name="exitCode">Код выхода процесса.</param>
+    /// <param name="bytesRead">Число наблюдавшихся байтов; по умолчанию длина payload.</param>
+    /// <param name="streamEnded">Поток завершился EOF без ошибки.</param>
+    /// <param name="truncated">Признак превышения бюджета.</param>
+    /// <param name="standardError">Ограниченный текст stderr.</param>
+    /// <param name="standardErrorTruncated">Признак усечения stderr.</param>
+    internal void EnqueueBinaryOutcome(
+        byte[] bytes,
+        int exitCode = 0,
+        long? bytesRead = null,
+        bool streamEnded = true,
+        bool truncated = false,
+        string standardError = "",
+        bool standardErrorTruncated = false)
+        => _scripted.Enqueue(ApplicationResult<WindowsProcessOutcome>.Success(new WindowsProcessOutcome
+        {
+            Mode = WindowsProcessStandardOutputMode.Binary,
+            StandardOutputBytes = bytes,
+            StandardOutputBytesRead = bytesRead ?? bytes.Length,
+            StandardOutputByteStreamEnded = streamEnded,
+            StandardOutputBytesTruncated = truncated,
+            ExitCode = exitCode,
+            StandardOutput = string.Empty,
+            StandardError = standardError,
+            Duration = TimeSpan.FromMilliseconds(17),
+            StandardOutputTruncated = false,
+            StandardErrorTruncated = standardErrorTruncated,
+        }));
+
     /// <inheritdoc />
     public Task<ApplicationResult<WindowsProcessOutcome>> RunAsync(
         WindowsProcessRequest request,

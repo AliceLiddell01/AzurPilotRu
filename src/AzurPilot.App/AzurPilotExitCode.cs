@@ -95,6 +95,15 @@ public static class AzurPilotExitCode
     /// <summary>Deadline lifecycle-операции игры достигнут без требуемого состояния.</summary>
     public const int AzurLaneLifecycleTimeout = 23;
 
+    /// <summary>Screenshot точного Android endpoint-а не получен как полный допустимый PNG.</summary>
+    public const int AndroidScreenshotCaptureFailed = 24;
+
+    /// <summary>Геометрию кадра нельзя отобразить в именованную диагностическую область.</summary>
+    public const int DiagnosticRegionUnsupported = 25;
+
+    /// <summary>Native-анализ RGB-статистики области кадра завершился отказом.</summary>
+    public const int NativeFrameAnalysisFailed = 26;
+
     /// <summary>Возвращает код выхода для application-level отказа.</summary>
     /// <param name="failure">Ожидаемый отказ application boundary.</param>
     /// <returns>Код выхода процесса, соответствующий коду отказа.</returns>
@@ -127,6 +136,9 @@ public static class AzurPilotExitCode
             ApplicationFailure.AzurLaneLauncherAmbiguous => AzurLaneLauncherAmbiguous,
             ApplicationFailure.AzurLaneLifecyclePostconditionNotMet => AzurLaneLifecyclePostconditionNotMet,
             ApplicationFailure.AzurLaneLifecycleTimeout => AzurLaneLifecycleTimeout,
+            ApplicationFailure.AndroidScreenshotCaptureFailed => AndroidScreenshotCaptureFailed,
+            ApplicationFailure.DiagnosticRegionUnsupported => DiagnosticRegionUnsupported,
+            ApplicationFailure.NativeFrameAnalysisFailed => NativeFrameAnalysisFailed,
             _ => InternalError,
         };
     }

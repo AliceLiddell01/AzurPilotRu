@@ -45,7 +45,8 @@ Build/CI/dependency automation обслуживают репозиторий и 
 ## Запреты
 
 - Machine-specific абсолютные пути и значения конкретной машины не фиксируются в source/config.
-- `1280x720` не является фундаментальным разрешением проекта; размеры будущего кадра — данные.
+- `1280x720` не является физическим разрешением проекта; screenshot diagnostic regions используют его
+  только как собственное логическое reference space, а размеры кадра — данные.
 - Не создавай placeholder-abstractions/config/failures/docs под capability, которой ещё нет.
 - Не смешивай test/acceptance CLI с будущим product CLI.
 
@@ -55,9 +56,11 @@ Build/CI/dependency automation обслуживают репозиторий и 
 
 - MuMu discovery/identity/host lifecycle;
 - Android/ADB exact-target readiness;
-- lifecycle Azur Lane Global/EN.
+- lifecycle Azur Lane Global/EN;
+- read-only screenshot capture, geometry и native region statistics.
 
-Не реализованы и не должны имитироваться placeholder-кодом: input, screenshot/vision pipeline,
-OCR/ONNX/GPU, UI readiness игры, product CLI/REPL/agent CLI.
+Не реализованы и не должны имитироваться placeholder-кодом: input, распознавание UI/содержимого,
+OCR/ONNX/GPU, UI readiness игры, product CLI/REPL/agent CLI. Screenshot diagnostic boundaries описаны
+в `screenshot-diagnostics.md`.
 
 Подробности конкретной capability читай у её context owner и в `docs/architecture/`.

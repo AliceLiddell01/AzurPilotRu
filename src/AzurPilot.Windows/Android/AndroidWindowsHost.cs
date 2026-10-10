@@ -7,8 +7,8 @@ using AzurPilot.Windows.Processes;
 namespace AzurPilot.Windows.Android;
 
 /// <summary>
-/// Host-side поверхность Android на Windows: bundled ADB обнаруженной установки MuMuPlayer и lifecycle
-/// игры Azur Lane на точном endpoint-е.
+/// Host-side поверхность Android на Windows: bundled ADB обнаруженной установки MuMuPlayer, lifecycle
+/// игры и read-only screenshot на точном endpoint-е.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,10 +24,10 @@ namespace AzurPilot.Windows.Android;
 /// «не удалось спросить» возвращается как недоказанное наблюдение, а не как доказанное отсутствие.
 /// </para>
 /// <para>
-/// Методы синхронные по контракту Core, а граница процесса асинхронна: host дожидается ровно одной
-/// команды ADB и не добавляет к ней ни повторных попыток, ни ожиданий, ни завершения сервера ADB.
-/// Отмена выполняется только там, где её несёт контракт — <see cref="ConnectTransport"/> и
-/// <see cref="RequestGameMutation"/>.
+/// Lifecycle методы синхронные по контракту Core, screenshot surface асинхронна. Host не добавляет
+/// к запрошенной команде повторных попыток, ожиданий или завершения сервера ADB. Отмена передаётся
+/// там, где её несёт контракт: <see cref="ConnectTransport"/>, <see cref="RequestGameMutation"/>
+/// и <see cref="CaptureScreenshotAsync"/>.
 /// </para>
 /// <para>
 /// Наблюдение foreground сообщает точный наблюдённый ПАКЕТ, а сравнение выполняется по пакету, не по
@@ -41,7 +41,7 @@ namespace AzurPilot.Windows.Android;
 /// конкретный код общим <see cref="ApplicationFailure.InternalError"/>.
 /// </para>
 /// </remarks>
-public sealed class AndroidWindowsHost : IAndroidHost
+public sealed class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost
 {
     private readonly IWindowsProcessRunner _processRunner;
     private readonly AndroidEndpointResolver _endpointResolver;
@@ -119,6 +119,109 @@ public sealed class AndroidWindowsHost : IAndroidHost
         => _endpointResolver.ResolveAsync(installation, instance, CancellationToken.None)
             .GetAwaiter()
             .GetResult();
+
+    /// <inheritdoc />
+    public async Task<ApplicationResult<CapturedAndroidScreenshot>> CaptureScreenshotAsync(
+        MuMuInstanceId instanceId,
+        AndroidEndpoint endpoint,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(instanceId.Index))
+        {
+            return ScreenshotFailure("instance_invalid", instanceId, endpoint);
+        }
+
+        if (string.IsNullOrWhiteSpace(endpoint.Host)
+            || endpoint.Port is < AndroidEndpoint.MinPort or > AndroidEndpoint.MaxPort)
+        {
+            return ScreenshotFailure("endpoint_invalid", instanceId, endpoint);
+        }
+
+        // Discovery/cache принадлежит тому же Android host: отдельного поиска executable или target нет.
+        AdbClient client = GetAdbClient();
+        int maximumPngBytes;
+        try
+        {
+            uint nativeMaximumPngBytes = AzurPilotNativeBridge.GetMaximumPngBytes();
+            if (nativeMaximumPngBytes > int.MaxValue)
+            {
+                return ScreenshotFailure("native_budget_invalid", instanceId, endpoint);
+            }
+
+            maximumPngBytes = (int)nativeMaximumPngBytes;
+        }
+        catch (AzurPilotNativeBoundaryException exception)
+        {
+            return ScreenshotFailure("native_boundary_failed", instanceId, endpoint, exception: exception);
+        }
+
+        ApplicationResult<WindowsProcessOutcome> command = await client.RunBinaryAsync(
+            AdbCommandBuilder.BuildScreenshotArguments(endpoint),
+            maximumPngBytes,
+            cancellationToken).ConfigureAwait(false);
+
+        if (command.IsFailure)
+        {
+            return ApplicationResult<CapturedAndroidScreenshot>.Failure(command.FailureInfo!);
+        }
+
+        WindowsProcessOutcome outcome = command.Value!;
+        if (outcome.ExitCode != 0)
+        {
+            return ScreenshotFailure("command_failed", instanceId, endpoint, outcome);
+        }
+
+        if (outcome.StandardOutputBytesTruncated || outcome.StandardOutputTruncated
+            || outcome.StandardOutputBytes.Length > maximumPngBytes)
+        {
+            return ScreenshotFailure("png_truncated_or_oversized", instanceId, endpoint, outcome);
+        }
+
+        if (!outcome.StandardOutputBinaryComplete
+            || outcome.StandardOutputBytesRead != outcome.StandardOutputBytes.Length
+            || outcome.Duration < TimeSpan.Zero)
+        {
+            return ScreenshotFailure("binary_output_incomplete", instanceId, endpoint, outcome);
+        }
+
+        NativeFrame? frame = null;
+        try
+        {
+            frame = AzurPilotNativeBridge.DecodePng(outcome.StandardOutputBytes);
+            NativeFrameInfo info = frame.GetInfo();
+            if (!IsValidRgb8FrameInfo(info))
+            {
+                return ScreenshotFailure("frame_metadata_invalid", instanceId, endpoint, outcome);
+            }
+
+            CapturedAndroidScreenshot screenshot = new(
+                frame,
+                new AndroidScreenshotCaptureInfo(
+                    instanceId,
+                    endpoint,
+                    DateTimeOffset.UtcNow,
+                    outcome.Duration,
+                    outcome.StandardOutputBytes.Length,
+                    outcome.ExitCode,
+                    info));
+            frame = null;
+            return ApplicationResult<CapturedAndroidScreenshot>.Success(screenshot);
+        }
+        catch (AzurPilotNativeBoundaryException exception)
+        {
+            return ScreenshotFailure(
+                exception is NativeFrameDecodeException ? "native_decode_failed" : "native_boundary_failed",
+                instanceId,
+                endpoint,
+                outcome,
+                exception);
+        }
+        finally
+        {
+            // До передачи ownership успешному результату любой выход освобождает созданный frame.
+            frame?.Dispose();
+        }
+    }
 
     /// <inheritdoc />
     public ApplicationResult<AndroidTransportObservation> QueryTransport(AndroidEndpoint endpoint)
@@ -328,6 +431,12 @@ public sealed class AndroidWindowsHost : IAndroidHost
     private ApplicationResult<WindowsProcessOutcome> RunAdb(
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken)
+        => GetAdbClient()
+            .RunAsync(arguments, cancellationToken)
+            .GetAwaiter()
+            .GetResult();
+
+    private AdbClient GetAdbClient()
     {
         AndroidAdbExecutable? discovered = Volatile.Read(ref _adbExecutable);
 
@@ -339,11 +448,28 @@ public sealed class AndroidWindowsHost : IAndroidHost
                 "Команда ADB запрошена до обнаружения bundled ADB: сначала вызывается DiscoverAdbExecutable.");
         }
 
-        return new AdbClient(_processRunner, discovered.Path, _commandTimeout)
-            .RunAsync(arguments, cancellationToken)
-            .GetAwaiter()
-            .GetResult();
+        return new AdbClient(_processRunner, discovered.Path, _commandTimeout);
     }
+
+    private static bool IsValidRgb8FrameInfo(NativeFrameInfo info)
+    {
+        ulong rowBytes = (ulong)info.Width * 3;
+        ulong frameBytes = (ulong)info.StrideBytes * info.Height;
+        return info.Width > 0
+            && info.Height > 0
+            && info.PixelFormat == AzurPilotNativeBridge.PixelFormatRgb8
+            && info.StrideBytes >= rowBytes
+            && info.ByteLength == frameBytes;
+    }
+
+    private static ApplicationResult<CapturedAndroidScreenshot> ScreenshotFailure(
+        string reason,
+        MuMuInstanceId instanceId,
+        AndroidEndpoint endpoint,
+        WindowsProcessOutcome? outcome = null,
+        Exception? exception = null)
+        => ApplicationResult<CapturedAndroidScreenshot>.Failure(
+            AndroidScreenshotFailures.CaptureFailed(reason, instanceId, endpoint, outcome, exception));
 
     private static void ValidatePackage(AndroidPackageId package)
     {

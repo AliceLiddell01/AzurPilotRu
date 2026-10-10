@@ -24,7 +24,9 @@
 - ADB и любой работой с устройствами, портами и соединениями;
 - хранением и изменением образа экземпляра, каталогами `vms`, `.nemu`, ключами VirtualBox;
 - lifecycle игры внутри Android, установкой APK, запуском приложений;
-- вводом (tap/swipe/keymap), screenshot, vision, OCR/ONNX/GPU;
+- вводом (tap/swipe/keymap) и OCR/ONNX/GPU. Read-only screenshot capture использует Android endpoint
+  существующей цепочки, но не входит в MuMu lifecycle; его owner описан в
+  [screenshot-diagnostics.md](screenshot-diagnostics.md);
 - настройками экземпляра и продукта (`setting`, `simulation`, `driver`, `sort`, `log`, `sh`);
 - операциями над составом установки: `create`, `clone`/`copy`, `delete`, `rename`, `import`, `export`,
   `upgrade`, `main`, `uninstall`;

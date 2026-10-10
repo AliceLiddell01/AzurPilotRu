@@ -33,6 +33,8 @@ namespace AzurPilot.AndroidAcceptance;
 /// </remarks>
 internal sealed class AndroidCommandAudit
 {
+    private readonly bool _allowScreenshotCapture;
+
     /// <summary>Аргументы запрещённых действий приёмки: точное совпадение токена.</summary>
     private static readonly string[] ForbiddenTokens =
     [
@@ -90,6 +92,11 @@ internal sealed class AndroidCommandAudit
     ];
 
     private readonly List<AuditEntry> _entries = [];
+
+    internal AndroidCommandAudit(bool allowScreenshotCapture = false)
+    {
+        _allowScreenshotCapture = allowScreenshotCapture;
+    }
 
     /// <summary>Число записанных запусков процессов.</summary>
     internal int Count => _entries.Count;
@@ -162,7 +169,15 @@ internal sealed class AndroidCommandAudit
 
         foreach (AuditEntry entry in _entries)
         {
-            string? forbidden = FindForbiddenArgument(entry.Request.Arguments);
+            bool isApprovedScreenshot = _allowScreenshotCapture
+                && endpoint is AndroidEndpoint screenshotEndpoint
+                && adbExecutablePath is not null
+                && string.Equals(
+                    entry.Request.ExecutablePath, adbExecutablePath, StringComparison.OrdinalIgnoreCase)
+                && Matches(entry.Request.Arguments, AdbCommandBuilder.BuildScreenshotArguments(screenshotEndpoint));
+            string? forbidden = isApprovedScreenshot
+                ? null
+                : FindForbiddenArgument(entry.Request.Arguments);
             if (forbidden is not null)
             {
                 return forbidden;
@@ -184,7 +199,8 @@ internal sealed class AndroidCommandAudit
                 && string.Equals(
                     entry.Request.ExecutablePath, adbExecutablePath, StringComparison.OrdinalIgnoreCase))
             {
-                string? adbViolation = ValidateAdb(entry.Request.Arguments, endpoint, package);
+                string? adbViolation = ValidateAdb(
+                    entry.Request.Arguments, endpoint, package, _allowScreenshotCapture);
                 if (adbViolation is not null)
                 {
                     return adbViolation;
@@ -360,11 +376,13 @@ internal sealed class AndroidCommandAudit
     /// <param name="arguments">Аргументы процесса.</param>
     /// <param name="endpoint">Разрешённый exact ADB endpoint либо <see langword="null"/>.</param>
     /// <param name="package">Идентификатор пакета игры.</param>
+    /// <param name="allowScreenshotCapture">Ограничивает ADB только read-only screenshot acceptance.</param>
     /// <returns>Описание нарушения или <see langword="null"/>, если запуск допустим.</returns>
     private static string? ValidateAdb(
         IReadOnlyList<string> arguments,
         AndroidEndpoint? endpoint,
-        AndroidPackageId package)
+        AndroidPackageId package,
+        bool allowScreenshotCapture)
     {
         if (arguments.Count == 0)
         {
@@ -374,6 +392,33 @@ internal sealed class AndroidCommandAudit
         if (Matches(arguments, AdbCommandBuilder.BuildVersionArguments()))
         {
             return null;
+        }
+
+        if (allowScreenshotCapture
+            && endpoint is AndroidEndpoint screenshotEndpoint
+            && Matches(arguments, AdbCommandBuilder.BuildScreenshotArguments(screenshotEndpoint)))
+        {
+            return null;
+        }
+
+        if (allowScreenshotCapture)
+        {
+            if (endpoint is not AndroidEndpoint readOnlyTarget)
+            {
+                return "screenshot acceptance запустила ADB до разрешения exact endpoint";
+            }
+
+            return Matches(arguments, AdbCommandBuilder.BuildVersionArguments())
+                || Matches(arguments, AdbCommandBuilder.BuildGetStateArguments(readOnlyTarget))
+                || Matches(arguments, AdbCommandBuilder.BuildBootCompletedArguments(readOnlyTarget))
+                || Matches(arguments, AdbCommandBuilder.BuildAndroidReleaseArguments(readOnlyTarget))
+                || Matches(arguments, AdbCommandBuilder.BuildSdkLevelArguments(readOnlyTarget))
+                || Matches(arguments, AdbCommandBuilder.BuildPackagePathArguments(readOnlyTarget, package))
+                || Matches(arguments, AdbCommandBuilder.BuildLauncherQueryArguments(readOnlyTarget, package))
+                || Matches(arguments, AdbCommandBuilder.BuildProcessListArguments(readOnlyTarget))
+                || Matches(arguments, AdbCommandBuilder.BuildWindowDumpArguments(readOnlyTarget))
+                    ? null
+                    : "screenshot acceptance выполнила ADB-команду вне read-only preflight/capture набора";
         }
 
         if (endpoint is not AndroidEndpoint target)
@@ -471,6 +516,13 @@ internal sealed class AndroidCommandAudit
         if (string.Equals(arguments[0], AdbCommandBuilder.VersionSubcommand, StringComparison.Ordinal))
         {
             return AdbCommandBuilder.VersionSubcommand;
+        }
+
+        if (arguments.Count >= 4
+            && string.Equals(arguments[2], AdbCommandBuilder.ExecOutSubcommand, StringComparison.Ordinal)
+            && string.Equals(arguments[3], AdbCommandBuilder.ScreenCaptureSubcommand, StringComparison.Ordinal))
+        {
+            return "exec-out screencap -p";
         }
 
         if (string.Equals(arguments[0], AdbCommandBuilder.ConnectSubcommand, StringComparison.Ordinal))

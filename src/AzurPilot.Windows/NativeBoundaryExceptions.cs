@@ -90,3 +90,29 @@ internal sealed class NativeFrameDecodeException : AzurPilotNativeBoundaryExcept
             + $"{AzurPilotNativeBridge.DescribeStatus(statusCode)}). Кадр не создан.";
     }
 }
+
+/// <summary>Типизированный отказ native анализа прямоугольной области кадра.</summary>
+internal sealed class NativeFrameAnalysisException : AzurPilotNativeBoundaryException
+{
+    /// <summary>Создаёт отказ с кодом, возвращённым native ABI.</summary>
+    /// <param name="statusCode">Ненулевой код native операции.</param>
+    internal NativeFrameAnalysisException(int statusCode)
+        : base(CreateMessage(statusCode))
+    {
+        StatusCode = statusCode;
+    }
+
+    /// <summary>Код отказа native анализа.</summary>
+    internal int StatusCode { get; }
+
+    private static string CreateMessage(int statusCode)
+    {
+        if (statusCode == AzurPilotNativeBridge.StatusOk)
+        {
+            throw new ArgumentOutOfRangeException(nameof(statusCode), statusCode, "Ожидался код отказа native анализа.");
+        }
+
+        return $"DLL отклонила анализ области кадра (код {statusCode}: "
+            + $"{AzurPilotNativeBridge.DescribeStatus(statusCode)}). Результат анализа недоступен.";
+    }
+}

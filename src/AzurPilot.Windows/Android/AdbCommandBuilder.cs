@@ -37,6 +37,15 @@ public static class AdbCommandBuilder
     /// <summary>Подкоманда выполнения команды внутри Android-устройства.</summary>
     public const string ShellSubcommand = "shell";
 
+    /// <summary>Подкоманда сырых байтов stdout без терминального преобразования.</summary>
+    public const string ExecOutSubcommand = "exec-out";
+
+    /// <summary>Программа захвата фактического экрана Android.</summary>
+    public const string ScreenCaptureSubcommand = "screencap";
+
+    /// <summary>Аргумент PNG-формата screenshot.</summary>
+    public const string PngArgument = "-p";
+
     /// <summary>Подкоманда вывода версии клиента ADB.</summary>
     public const string VersionSubcommand = "version";
 
@@ -133,6 +142,12 @@ public static class AdbCommandBuilder
     /// <returns>Список аргументов процесса.</returns>
     public static IReadOnlyList<string> BuildGetStateArguments(AndroidEndpoint endpoint)
         => [TargetArgument, endpoint.ToString(), GetStateSubcommand];
+
+    /// <summary>Строит одну команду PNG screenshot на точном endpoint-е.</summary>
+    /// <param name="endpoint">Уже разрешённый точный endpoint.</param>
+    /// <returns>Список аргументов без shell-wrapper и перенаправлений.</returns>
+    public static IReadOnlyList<string> BuildScreenshotArguments(AndroidEndpoint endpoint)
+        => [TargetArgument, endpoint.ToString(), ExecOutSubcommand, ScreenCaptureSubcommand, PngArgument];
 
     /// <summary>Строит аргументы чтения свойства <c>sys.boot_completed</c>.</summary>
     /// <param name="endpoint">Точный endpoint, свойство которого читается.</param>

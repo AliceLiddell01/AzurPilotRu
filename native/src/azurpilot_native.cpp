@@ -1,5 +1,5 @@
 /* =============================================================================
- * azurpilot_native.cpp — реализация замороженного C ABI v2.
+ * azurpilot_native.cpp — реализация замороженного C ABI v3.
  *
  * Форма ABI (структура, экспорты, коды возврата, семантика required_size) описана
  * и заморожена в native/include/azurpilot_native_abi.h — этот файл только исполняет
@@ -8,7 +8,7 @@
  * OpenCV-типы используются только во внутренних C++ модулях. Наружу передаётся
  * непрозрачный дескриптор; cv::Mat и пиксельные данные остаются внутри DLL.
  *
- * Ни одно исключение не покидает экспорты: все три функции объявлены noexcept, и
+ * Ни одно исключение не покидает экспорты: функции объявлены noexcept, и
  * исключение, вылетевшее из функции, вызвало бы std::terminate в процессе-хосте.
  * Поэтому тело каждой функции обёрнуто в try/catch и любой исход превращается в
  * код возврата.
@@ -61,6 +61,10 @@ uint32_t azurpilot_native_abi_version(void) AZURPILOT_NATIVE_NOEXCEPT {
     } catch (...) {
         return 0u;
     }
+}
+
+uint32_t azurpilot_native_max_png_bytes(void) AZURPILOT_NATIVE_NOEXCEPT {
+    return AZURPILOT_NATIVE_MAX_PNG_BYTES;
 }
 
 int32_t azurpilot_native_query(AzurPilotNativeInfo* out_info) AZURPILOT_NATIVE_NOEXCEPT {
@@ -188,6 +192,27 @@ int32_t azurpilot_native_frame_get_info(
         if (out_info != nullptr) {
             memset(out_info, 0, sizeof(*out_info));
         }
+        return AZURPILOT_NATIVE_ERROR_INTERNAL;
+    }
+}
+
+int32_t azurpilot_native_frame_scan_region(
+    AzurPilotNativeFrameHandle frame,
+    const AzurPilotNativeRegion* region,
+    AzurPilotNativeRegionStatistics* out_statistics) AZURPILOT_NATIVE_NOEXCEPT {
+    if (out_statistics == nullptr) {
+        return AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT;
+    }
+    memset(out_statistics, 0, sizeof(*out_statistics));
+    try {
+        return azurpilot::native::detail::scan_frame_region(frame, region, out_statistics);
+    } catch (const std::bad_alloc&) {
+        return AZURPILOT_NATIVE_ERROR_OUT_OF_MEMORY;
+    } catch (const cv::Exception& exception) {
+        return exception.code == cv::Error::StsNoMem
+            ? AZURPILOT_NATIVE_ERROR_OUT_OF_MEMORY
+            : AZURPILOT_NATIVE_ERROR_OPENCV_FAILURE;
+    } catch (...) {
         return AZURPILOT_NATIVE_ERROR_INTERNAL;
     }
 }

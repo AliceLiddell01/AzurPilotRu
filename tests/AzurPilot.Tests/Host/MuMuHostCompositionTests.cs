@@ -43,6 +43,13 @@ public sealed class MuMuHostCompositionTests
         "AzurPilotNativeDiagnostics",
         "AzurPilotOperation",
         "AzurPilotStartupResult",
+        "ScreenshotAnalysisSource",
+        "ScreenshotAnalysisSourceKind",
+        "ScreenshotDiagnosticRegion",
+        "ScreenshotDiagnosticRegions",
+        "ScreenshotLogicalBounds",
+        "ScreenshotRegionScanResult",
+        "ScreenshotRegionScanner",
     ];
 
     [Fact(DisplayName = "MuMu services резолвятся из DI существующего host-а как singleton-ы")]
@@ -103,7 +110,8 @@ public sealed class MuMuHostCompositionTests
             ExpectedPublicTypes.OrderBy(name => name, StringComparer.Ordinal),
             exported.Select(type => type.Name).OrderBy(name => name, StringComparer.Ordinal));
 
-        // Все публичные типы принадлежат пространству имён приложения: новых boundaries в App не появилось.
-        Assert.All(exported, type => Assert.Equal("AzurPilot.App", type.Namespace));
+        // Новых boundaries в App не появилось; diagnostics выделена в собственное подпространство.
+        Assert.All(exported, type => Assert.True(
+            type.Namespace is "AzurPilot.App" or "AzurPilot.App.Diagnostics"));
     }
 }

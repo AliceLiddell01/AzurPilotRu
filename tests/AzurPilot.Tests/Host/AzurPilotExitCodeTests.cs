@@ -21,7 +21,8 @@ public sealed class AzurPilotExitCodeTests
     /// Префиксы кодов отказа capability в каталоге <see cref="ApplicationFailure"/>: каждый такой код обязан
     /// иметь собственную проекцию, а не общий <see cref="ApplicationFailure.InternalError"/>.
     /// </summary>
-    private static readonly string[] CapabilityFailureCodePrefixes = ["mumu_", "android_", "azurlane_"];
+    private static readonly string[] CapabilityFailureCodePrefixes =
+        ["mumu_", "android_", "azurlane_", "diagnostic_region_", "native_frame_analysis_"];
 
     [Theory(DisplayName = "MuMu-код отказа проецируется в свой явный код выхода")]
     [InlineData(ApplicationFailure.MuMuInstallationNotFound, AzurPilotExitCode.MuMuInstallationNotFound)]
@@ -60,6 +61,17 @@ public sealed class AzurPilotExitCodeTests
         Assert.Equal(expectedExitCode, AzurPilotExitCode.FromFailure(Failure(failureCode)));
     }
 
+    [Theory(DisplayName = "Screenshot и region failure проецируются в явные коды выхода")]
+    [InlineData(ApplicationFailure.AndroidScreenshotCaptureFailed, AzurPilotExitCode.AndroidScreenshotCaptureFailed)]
+    [InlineData(ApplicationFailure.DiagnosticRegionUnsupported, AzurPilotExitCode.DiagnosticRegionUnsupported)]
+    [InlineData(ApplicationFailure.NativeFrameAnalysisFailed, AzurPilotExitCode.NativeFrameAnalysisFailed)]
+    public void ScreenshotFailureCodesHaveExplicitExitCodes(string failureCode, int expectedExitCode)
+    {
+        Assert.NotEqual(AzurPilotExitCode.Success, expectedExitCode);
+        Assert.NotEqual(AzurPilotExitCode.InternalError, expectedExitCode);
+        Assert.Equal(expectedExitCode, AzurPilotExitCode.FromFailure(Failure(failureCode)));
+    }
+
     [Fact(DisplayName = "Новый код выхода получает следующее свободное значение, а опубликованные не меняются")]
     public void NewMuMuExitCodeIsAppendedWithoutRenumbering()
     {
@@ -89,6 +101,9 @@ public sealed class AzurPilotExitCodeTests
         Assert.Equal(21, AzurPilotExitCode.AzurLaneLauncherAmbiguous);
         Assert.Equal(22, AzurPilotExitCode.AzurLaneLifecyclePostconditionNotMet);
         Assert.Equal(23, AzurPilotExitCode.AzurLaneLifecycleTimeout);
+        Assert.Equal(24, AzurPilotExitCode.AndroidScreenshotCaptureFailed);
+        Assert.Equal(25, AzurPilotExitCode.DiagnosticRegionUnsupported);
+        Assert.Equal(26, AzurPilotExitCode.NativeFrameAnalysisFailed);
     }
 
     [Fact(DisplayName = "Каждый код отказа capability имеет проекцию, а не общий internal_error")]

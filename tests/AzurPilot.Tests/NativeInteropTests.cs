@@ -28,6 +28,22 @@ public sealed class NativeInteropTests
 
         Assert.Equal(56, size);
         Assert.Equal(56, AzurPilotNativeBridge.NativeInfoSizeInBytes);
+        Assert.Equal(56, AzurPilotNativeBridge.VerifyRegionStructLayout());
+    }
+
+    [Fact(DisplayName = "Лимит encoded PNG читается из нормативного native ABI export")]
+    public void MaximumPngBytesMatchesNormativeHeader()
+    {
+        string header = File.ReadAllText(Path.Combine(PinnedVersions.RepositoryRoot, "native", "include", "azurpilot_native_abi.h"));
+        System.Text.RegularExpressions.Match value = System.Text.RegularExpressions.Regex.Match(
+            header,
+            @"#define\s+AZURPILOT_NATIVE_MAX_PNG_BYTES\s+UINT32_C\((\d+)\)",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1));
+
+        Assert.True(value.Success, "В нормативном заголовке не найден лимит encoded PNG.");
+        uint expected = uint.Parse(value.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(expected, AzurPilotNativeBridge.GetMaximumPngBytes());
     }
 
     [Fact(DisplayName = "Native библиотека реально загружается и сообщает ожидаемую версию ABI")]
@@ -89,6 +105,7 @@ public sealed class NativeInteropTests
         Assert.Equal(6u, info.StrideBytes);
         Assert.Equal(6u, info.ByteLength);
         Assert.Equal(1u, info.PixelFormat);
+        Assert.Equal(AzurPilotNativeBridge.PixelFormatRgb8, info.PixelFormat);
     }
 
     [Fact(DisplayName = "Декодирование PNG отклоняет повреждённые и неподдерживаемые входы")]
@@ -146,6 +163,7 @@ public sealed class NativeInteropTests
             "Проба: GetInfo после Dispose отклонён до native вызова.",
             output,
             StringComparison.Ordinal);
+        Assert.Contains("Проба: ScanRegion после Dispose отклонён до native вызова.", output, StringComparison.Ordinal);
     }
 
     [Fact(DisplayName = "Освобождённый кадр предсказуемо отклоняет GetInfo и повторный Dispose безопасен")]
@@ -158,6 +176,94 @@ public sealed class NativeInteropTests
         ObjectDisposedException error = Assert.Throws<ObjectDisposedException>(() => frame.GetInfo());
 
         Assert.Equal(typeof(NativeFrame).FullName, error.ObjectName);
+        _ = Assert.Throws<ObjectDisposedException>(() => frame.ScanRegion(new PixelRegion(0, 0, 1, 1)));
+    }
+
+    [Fact(DisplayName = "Native ROI возвращает RGB mean/stddev и точные half-open границы")]
+    public void RegionStatisticsHaveKnownRgbOrderAndBounds()
+    {
+        using NativeFrame frame = AzurPilotNativeBridge.DecodePng(ReadFixture("rgb_regions_3x2.png"));
+
+        RegionRgbStatistics rightColumn = frame.ScanRegion(new PixelRegion(2, 0, 3, 2));
+        Assert.Equal(new RegionRgbStatistics(2, 210, 80, 140, 10, 40, 60), rightColumn);
+
+        RegionRgbStatistics onePixel = frame.ScanRegion(new PixelRegion(2, 1, 3, 2));
+        Assert.Equal(new RegionRgbStatistics(1, 220, 120, 200, 0, 0, 0), onePixel);
+
+        RegionRgbStatistics full = frame.ScanRegion(new PixelRegion(0, 0, 3, 2));
+        Assert.Equal(6ul, full.PixelCount);
+        Assert.Equal(110, full.MeanRed, 10);
+        Assert.Equal(60, full.MeanGreen, 10);
+        Assert.Equal(100, full.MeanBlue, 10);
+        Assert.Equal(Math.Sqrt(20300.0 / 3), full.StandardDeviationRed, 10);
+        Assert.Equal(Math.Sqrt(5600.0 / 3), full.StandardDeviationGreen, 10);
+        Assert.Equal(Math.Sqrt(14000.0 / 3), full.StandardDeviationBlue, 10);
+    }
+
+    [Theory(DisplayName = "Native ROI отвергает некорректную область с типизированным отказом")]
+    [InlineData(-1, 0, 1, 1)]
+    [InlineData(0, -1, 1, 1)]
+    [InlineData(0, 0, 0, 1)]
+    [InlineData(0, 0, 1, 0)]
+    [InlineData(2, 0, 1, 1)]
+    [InlineData(0, 0, 4, 2)]
+    [InlineData(0, 0, 3, 3)]
+    [InlineData(0, 0, int.MaxValue, int.MaxValue)]
+    public void InvalidRegionProducesBoundedTypedFailure(int left, int top, int right, int bottom)
+    {
+        using NativeFrame frame = AzurPilotNativeBridge.DecodePng(ReadFixture("rgb_regions_3x2.png"));
+        AzurPilotNativeBoundaryException exception = Assert.ThrowsAny<AzurPilotNativeBoundaryException>(
+            () => frame.ScanRegion(new PixelRegion(left, top, right, bottom)));
+
+        Assert.Equal("NativeFrameAnalysisException", exception.GetType().Name);
+        ApplicationFailure failure = NativeBoundaryFailureMapper.Map(exception);
+        Assert.Equal(ApplicationFailure.NativeFrameAnalysisFailed, failure.Code);
+        Assert.False(failure.IsRetryable);
+        Assert.Equal("1", failure.Details?[NativeBoundaryFailureMapper.NativeStatusCodeKey]);
+        Assert.Equal(3, failure.Details?.Count);
+    }
+
+    [Fact(DisplayName = "Повторный ROI scan и конкурентный Dispose защищены SafeHandle")]
+    public async Task RegionScanProtectsConcurrentLifetime()
+    {
+        byte[] png = ReadFixture("rgb_regions_3x2.png");
+        for (int iteration = 0; iteration < 128; iteration++)
+        {
+            using NativeFrame frame = AzurPilotNativeBridge.DecodePng(png);
+            Assert.Equal(2ul, frame.ScanRegion(new PixelRegion(2, 0, 3, 2)).PixelCount);
+        }
+
+        using NativeFrame shared = AzurPilotNativeBridge.DecodePng(png);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        Assert.Equal(6ul, shared.ScanRegion(new PixelRegion(0, 0, 3, 2)).PixelCount);
+
+        TaskCompletionSource start = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task[] readers = [.. Enumerable.Range(0, 32).Select(_ => Task.Run(async () =>
+        {
+            await start.Task;
+            for (int iteration = 0; iteration < 16; iteration++)
+            {
+                try
+                {
+                    RegionRgbStatistics statistics = shared.ScanRegion(new PixelRegion(2, 0, 3, 2));
+                    Assert.Equal(new RegionRgbStatistics(2, 210, 80, 140, 10, 40, 60), statistics);
+                }
+                catch (ObjectDisposedException exception)
+                {
+                    Assert.Equal(typeof(NativeFrame).FullName, exception.ObjectName);
+                }
+            }
+        }, TestContext.Current.CancellationToken))];
+        Task disposer = Task.Run(async () =>
+        {
+            await start.Task;
+            shared.Dispose();
+            shared.Dispose();
+        }, TestContext.Current.CancellationToken);
+        start.SetResult();
+        await Task.WhenAll(readers.Append(disposer));
+        _ = Assert.Throws<ObjectDisposedException>(() => shared.ScanRegion(new PixelRegion(0, 0, 1, 1)));
     }
 
     [Fact(DisplayName = "SafeHandle переживает GC, конкурентный GetInfo и Dispose и повторное освобождение")]

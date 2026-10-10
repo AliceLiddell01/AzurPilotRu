@@ -300,9 +300,15 @@ public static class AzurPilotHost
 
         // Реализация выбирается явной фабрикой: AndroidWindowsHost имеет несколько конструкторов, и какой
         // из них использован, должно быть видно в composition root, а не выводиться DI-эвристикой.
-        _ = builder.Services.AddSingleton<IAndroidHost>(
+        _ = builder.Services.AddSingleton<AndroidWindowsHost>(
             static services => new AndroidWindowsHost(
                 services.GetRequiredKeyedService<IWindowsProcessRunner>(AndroidProcessRunnerKey)));
+        // Lifecycle и screenshot capture используют один и тот же host, ADB discovery cache и process
+        // boundary. Отдельная реализация под новым интерфейсом могла бы незаметно завести второй ADB cache.
+        _ = builder.Services.AddSingleton<IAndroidHost>(
+            static services => services.GetRequiredService<AndroidWindowsHost>());
+        _ = builder.Services.AddSingleton<IAndroidScreenshotHost>(
+            static services => services.GetRequiredService<AndroidWindowsHost>());
 
         _ = builder.Services.AddSingleton(AndroidLifecycleTimings.Default);
         _ = builder.Services.AddSingleton<AndroidGameMutationGate>();

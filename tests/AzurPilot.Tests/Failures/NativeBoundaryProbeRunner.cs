@@ -76,11 +76,17 @@ internal static class NativeBoundaryProbeRunner
             {
                 File.WriteAllText(Path.Combine(probeDirectory, NativeLibraryFileName), "не библиотека");
             }
-            else if (mode is ProbeMode.AbiMismatch or ProbeMode.AbiV2MissingRelease)
+            else if (mode is ProbeMode.AbiMismatch or ProbeMode.AbiV3MissingRelease or ProbeMode.AbiV3MissingRoi)
             {
-                string fixtureDirectory = mode == ProbeMode.AbiMismatch
-                    ? "abi-mismatch"
-                    : "abi-v2-missing-release";
+                string fixtureDirectory = mode switch
+                {
+                    ProbeMode.AbiMismatch => "abi-mismatch",
+                    ProbeMode.AbiV3MissingRelease => "abi-v3-missing-release",
+                    ProbeMode.AbiV3MissingRoi => "abi-v3-missing-roi",
+                    ProbeMode.MissingLibrary or ProbeMode.BrokenLibrary or ProbeMode.DisposedFrame
+                        => throw new ArgumentOutOfRangeException(nameof(mode)),
+                    _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+                };
                 string fixture = Path.Combine(
                     AppContext.BaseDirectory,
                     fixtureDirectory,
@@ -109,8 +115,11 @@ internal static class NativeBoundaryProbeRunner
                 case ProbeMode.AbiMismatch:
                     startInfo.ArgumentList.Add("--abi-mismatch");
                     break;
-                case ProbeMode.AbiV2MissingRelease:
-                    startInfo.ArgumentList.Add("--abi-v2-missing-release");
+                case ProbeMode.AbiV3MissingRelease:
+                    startInfo.ArgumentList.Add("--abi-v3-missing-release");
+                    break;
+                case ProbeMode.AbiV3MissingRoi:
+                    startInfo.ArgumentList.Add("--abi-v3-missing-roi");
                     break;
                 case ProbeMode.DisposedFrame:
                     startInfo.ArgumentList.Add("--disposed-frame");
@@ -206,8 +215,11 @@ internal static class NativeBoundaryProbeRunner
         /// <summary>Подложена DLL с несовместимой версией ABI.</summary>
         AbiMismatch,
 
-        /// <summary>Подложена DLL ABI v2 без обязательного экспорта освобождения кадра.</summary>
-        AbiV2MissingRelease,
+        /// <summary>Подложена DLL ABI v3 без обязательного экспорта освобождения кадра.</summary>
+        AbiV3MissingRelease,
+
+        /// <summary>Подложена DLL ABI v3 без обязательного ROI экспорта.</summary>
+        AbiV3MissingRoi,
 
         /// <summary>Проверяется вызов GetInfo после Dispose без native DLL.</summary>
         DisposedFrame,

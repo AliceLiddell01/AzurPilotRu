@@ -34,8 +34,9 @@
 - состав диагностического snapshot, логирование и граница `stdout`/`stderr`
   ([runtime-diagnostics.md](../operations/runtime-diagnostics.md));
 - установка и удаление APK, выдача и сброс runtime-разрешений Android, настройки экземпляра;
-- готовность UI игры (splash, assets, login, главное меню, всплывающие окна), screenshot, vision,
-  OCR/ONNX/GPU и ввод (tap/swipe/keymap);
+- готовность UI игры (splash, assets, login, главное меню, всплывающие окна), OCR/ONNX/GPU и ввод
+  (tap/swipe/keymap). Read-only screenshot capture/region statistics описаны в
+  [screenshot diagnostics](screenshot-diagnostics.md), но не входят в lifecycle игры;
 - работа с другими target-ами, другими пакетами и другими экземплярами: capability адресует ровно
   выбранную identity и ровно пакет игры;
 - продуктовая командная строка, REPL и agent CLI.
@@ -229,7 +230,8 @@ Product identity — единственный владелец значений:
   компонентов postcondition запуска не доказало бы никогда. Наблюдённый компонент — evidence, а не
   identity.
 - Передний план игры не является утверждением о готовности UI: здесь не проверяются splash, assets,
-  login, главное меню и всплывающие окна, и screenshot/vision-проверок в lifecycle нет.
+  login, главное меню и всплывающие окна. Screenshot/region scan описаны отдельно в
+  [screenshot diagnostics](screenshot-diagnostics.md) и не входят в lifecycle игры.
 
 ### Вывод состояния игры
 
@@ -484,7 +486,7 @@ Global/EN, различимость состояний «остановлена�
 
 Не проверялось и не считается доказанным: поведение на других версиях Android и других экземплярах,
 поведение при нескольких установках MuMu в одном процессе, выдача и сброс runtime-разрешений Android,
-любая готовность UI, ввод, screenshot/vision/OCR, установка и удаление APK, работа с другими пакетами и
+любая готовность UI по изображению, ввод, OCR/ONNX/GPU, установка и удаление APK, работа с другими пакетами и
 target-ами, а также любые операции, вынесенные в раздел «вне области».
 
 ## Границы capability
@@ -492,7 +494,7 @@ target-ами, а также любые операции, вынесенные �
 - Второй device framework и второй process framework не вводятся: контракты Android живут в Core,
   Windows-адаптер — в платформенной boundary, а запуск процесса идёт через одну общую границу с
   проекцией отказов своего владельца ([architecture.md](overview.md)).
-- Не вводятся: готовность UI, screenshot, ввод (tap/swipe/keymap), vision, OCR/ONNX/GPU, продуктовая
+- Не вводятся в lifecycle игры: готовность UI, ввод (tap/swipe/keymap), OCR/ONNX/GPU, продуктовая
   командная строка, REPL, agent CLI, установка/удаление APK, выдача и сброс разрешений, настройки
   экземпляра, работа с другими target-ами и пакетами, `adb kill-server`, массовое завершение процессов,
   фиксированный sleep вместо наблюдения и абстракции-заглушки под них.
