@@ -267,6 +267,13 @@ static int RunDisposedFrameProbe()
             Console.WriteLine("Проба: ScanRegion после Dispose отклонён до native вызова.");
             return 0;
         }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Проба: ScanRegion после Dispose завершился неожиданно: "
+                + $"{exception.GetType().Name}: {exception.Message}");
+            return 1;
+        }
     }
     catch (Exception exception)
     {
