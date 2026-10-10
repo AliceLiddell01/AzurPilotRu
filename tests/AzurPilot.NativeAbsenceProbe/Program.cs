@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text;
 using AzurPilot.App;
 using AzurPilot.Core.Failures;
@@ -10,8 +11,11 @@ using AzurPilot.Windows;
 // действительно недоступна: в процессе теста загруженный модуль остаётся доступным до его завершения,
 // поэтому отсутствие файла там доказать нельзя.
 //
-// Режим --abi-mismatch загружает отдельную тестовую DLL с несовместимой версией ABI и доказывает,
-// что Query отвергает её до query, а frame decode — до поиска frame export.
+// Режим --abi-mismatch загружает DLL с несовместимой версией ABI. Её экспорт функции декодирования
+// возвращает INVALID_PNG, поэтому ожидаемый отказ по версии доказывает проверку до вызова этой функции.
+// Режим --abi-v2-missing-release загружает DLL ABI v2 без обязательной функции освобождения и
+// проверяет, что несовместимость обнаруживается до вызова декодирования.
+// Режим --disposed-frame проверяет отказ GetInfo после Dispose в процессе без native DLL.
 //
 // Режим --application-composition <путь> выполняет реальный startup приложения через composition root
 // с явно переданным путём конфигурации. Аргументы здесь допустимы, потому что проба — тестовый
@@ -42,27 +46,47 @@ if (args.Length == 1 && string.Equals(args[0], "--abi-mismatch", StringCompariso
             return 1;
         }
 
+        if (!exception.Message.Contains("Версия ABI", StringComparison.Ordinal)
+            || exception.Message.Contains("azurpilot_native_query", StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine(
+                "Проба: query отклонён не проверкой версии ABI: " + exception.Message);
+            return 1;
+        }
+
         try
         {
-            _ = AzurPilotNativeBridge.DecodePng([]);
+            using NativeFrame frame = AzurPilotNativeBridge.DecodePng([]);
+            Console.Error.WriteLine("Проба: DecodePng неожиданно успешно завершился при несовместимой версии ABI.");
+            return 1;
         }
         catch (NativeAbiMismatchException frameException)
         {
             if (!frameException.Message.Contains(AzurPilotNativeBridge.LibraryName, StringComparison.Ordinal))
             {
                 Console.Error.WriteLine(
-                    "Проба: диагностика frame API несовместимого ABI не называет библиотеку: "
+                "Проба: диагностика API кадра с несовместимым ABI не называет библиотеку: "
+                    + frameException.Message);
+                return 1;
+            }
+
+            if (!frameException.Message.Contains("Версия ABI", StringComparison.Ordinal)
+                || frameException.Message.Contains("azurpilot_native_frame_decode_png", StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine(
+                    "Проба: вызов функции декодирования отклонён не проверкой версии ABI: "
                     + frameException.Message);
                 return 1;
             }
 
             Console.WriteLine(
-                "Проба: несовместимый ABI отклонён до frame API: " + frameException.Message);
+                "Проба: несовместимый ABI отклонён до вызова функции декодирования: "
+                + frameException.Message);
         }
         catch (Exception frameException)
         {
             Console.Error.WriteLine(
-                "Проба: frame API вызван до проверки несовместимого ABI: "
+                "Проба: функция декодирования вызвана до проверки несовместимого ABI: "
                 + $"{frameException.GetType().Name}: {frameException.Message}");
             return 1;
         }
@@ -75,6 +99,16 @@ if (args.Length == 1 && string.Equals(args[0], "--abi-mismatch", StringCompariso
     return 1;
 }
 
+if (args.Length == 1 && string.Equals(args[0], "--abi-v2-missing-release", StringComparison.Ordinal))
+{
+    return RunMissingReleaseProbe();
+}
+
+if (args.Length == 1 && string.Equals(args[0], "--disposed-frame", StringComparison.Ordinal))
+{
+    return RunDisposedFrameProbe();
+}
+
 if (args.Length == 2 && string.Equals(args[0], "--application-composition", StringComparison.Ordinal))
 {
     return await RunApplicationCompositionAsync(args[1]).ConfigureAwait(false);
@@ -83,7 +117,8 @@ if (args.Length == 2 && string.Equals(args[0], "--application-composition", Stri
 if (args.Length != 0)
 {
     Console.Error.WriteLine(
-        "Проба: неизвестные аргументы; допустимы --abi-mismatch и --application-composition <путь>.");
+        "Проба: неизвестные аргументы; допустимы --abi-mismatch, --abi-v2-missing-release, "
+        + "--disposed-frame и --application-composition <путь>.");
     return 1;
 }
 
@@ -108,6 +143,88 @@ catch (NativeBoundaryUnavailableException exception)
 Console.Error.WriteLine(
     $"Проба: отсутствие native библиотеки «{AzurPilotNativeBridge.LibraryName}» не привело к исключению.");
 return 1;
+
+// Проверяет, что DLL ABI v2 без обязательной функции освобождения отвергается до декодирования.
+static int RunMissingReleaseProbe()
+{
+    try
+    {
+        using NativeFrame frame = AzurPilotNativeBridge.DecodePng([]);
+        Console.Error.WriteLine("Проба: DecodePng неожиданно успешно завершился без обязательного экспорта освобождения.");
+        return 1;
+    }
+    catch (NativeAbiMismatchException exception)
+    {
+        if (!exception.Message.Contains(AzurPilotNativeBridge.LibraryName, StringComparison.Ordinal)
+            || !exception.Message.Contains("azurpilot_native_frame_release", StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine(
+                "Проба: диагностика отсутствующей функции освобождения не называет библиотеку и экспорт: "
+                + exception.Message);
+            return 1;
+        }
+
+        Console.WriteLine(
+            "Проба: ABI v2 без обязательной функции освобождения отклонён до декодирования: "
+            + exception.Message);
+        return ReportMappedFailure(exception);
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine(
+            "Проба: вызов декодирования дошёл до неожиданной ошибки: "
+            + $"{exception.GetType().Name}: {exception.Message}");
+        return 1;
+    }
+}
+
+// Создаёт закрытый пустой кадр с помощью отражения: этот тестовый процесс не содержит native DLL.
+static int RunDisposedFrameProbe()
+{
+    try
+    {
+        Type safeHandleType = typeof(NativeFrame).Assembly.GetType(
+            "AzurPilot.Windows.NativeFrameSafeHandle",
+            throwOnError: true)!;
+        object safeHandle = Activator.CreateInstance(safeHandleType, nonPublic: true)
+            ?? throw new InvalidOperationException("Не удалось создать пустой SafeHandle для пробы.");
+        ConstructorInfo frameConstructor = typeof(NativeFrame).GetConstructor(
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: [safeHandleType],
+            modifiers: null)
+            ?? throw new InvalidOperationException("Не найден внутренний конструктор NativeFrame.");
+
+        using NativeFrame frame = (NativeFrame)frameConstructor.Invoke([safeHandle]);
+        frame.Dispose();
+        try
+        {
+            _ = frame.GetInfo();
+        }
+        catch (ObjectDisposedException)
+        {
+            Console.WriteLine("Проба: GetInfo после Dispose отклонён до native вызова.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Проба: GetInfo после Dispose завершился неожиданно: "
+                + $"{exception.GetType().Name}: {exception.Message}");
+            return 1;
+        }
+
+        Console.Error.WriteLine("Проба: GetInfo после Dispose неожиданно завершился успешно.");
+        return 1;
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine(
+            "Проба: не удалось подготовить закрытый кадр: "
+            + $"{exception.GetType().Name}: {exception.Message}");
+        return 1;
+    }
+}
 
 // Выполняет startup приложения с явно переданным путём конфигурации и сообщает полученный код выхода
 // и стабильный application-level код отказа. Код выхода самой пробы описывает корректность прогона,

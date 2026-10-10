@@ -54,7 +54,7 @@ public sealed class NativeInteropNegativeTests
         Assert.Equal(ApplicationFailure.NativeUnavailable, result.FailureCode);
     }
 
-    [Fact(DisplayName = "Несовместимый ABI отвергается до query и frame API")]
+    [Fact(DisplayName = "Несовместимый ABI отвергается до query и вызова функции декодирования")]
     public void IncompatibleNativeAbiThrowsBeforeQueryAndFrameApi()
     {
         NativeBoundaryProbeRunner.ProbeRun result = NativeBoundaryProbeRunner.Run(
@@ -62,8 +62,20 @@ public sealed class NativeInteropNegativeTests
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("Проба: получено ожидаемое исключение несовместимого ABI", result.StandardOutput, StringComparison.Ordinal);
-        Assert.Contains("Проба: несовместимый ABI отклонён до frame API", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("Проба: несовместимый ABI отклонён до вызова функции декодирования", result.StandardOutput, StringComparison.Ordinal);
         Assert.Contains(AzurPilotNativeBridge.LibraryName, result.StandardOutput, StringComparison.Ordinal);
+        Assert.Equal(ApplicationFailure.NativeIncompatible, result.FailureCode);
+    }
+
+    [Fact(DisplayName = "ABI v2 без функции освобождения кадра отвергается до декодирования")]
+    public void AbiV2WithoutFrameReleaseIsRejectedBeforeDecode()
+    {
+        NativeBoundaryProbeRunner.ProbeRun result = NativeBoundaryProbeRunner.Run(
+            NativeBoundaryProbeRunner.ProbeMode.AbiV2MissingRelease);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("Проба: ABI v2 без обязательной функции освобождения отклонён до декодирования", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("azurpilot_native_frame_release", result.StandardOutput, StringComparison.Ordinal);
         Assert.Equal(ApplicationFailure.NativeIncompatible, result.FailureCode);
     }
 }

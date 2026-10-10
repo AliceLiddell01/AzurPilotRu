@@ -95,6 +95,13 @@ public sealed class NativeBoundaryFailureMapperTests
             new AzurPilotNativeBoundaryException(message));
 
         Assert.Equal(ApplicationFailure.InternalError, failure.Code);
+        Assert.Equal(3, failure.Details?.Count);
+        Assert.Equal(
+            nameof(AzurPilotNativeBoundaryException),
+            failure.Details?[NativeBoundaryFailureMapper.ExceptionTypeKey]);
+        Assert.Equal(
+            AzurPilotNativeBridge.LibraryName,
+            failure.Details?[NativeBoundaryFailureMapper.NativeLibraryKey]);
         Assert.Equal(
             AzurPilotNativeBridge.StatusOpencvFailure.ToString(System.Globalization.CultureInfo.InvariantCulture),
             failure.Details?[NativeBoundaryFailureMapper.NativeStatusCodeKey]);

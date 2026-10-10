@@ -216,12 +216,13 @@ public static partial class AzurPilotNativeBridge
     /// <param name="pngBytes">Полный PNG, передаваемый native стороне только на время вызова.</param>
     /// <returns>Frame с native-owned пикселями; управляемая сторона не копирует RGB-буфер.</returns>
     /// <exception cref="NativeBoundaryUnavailableException">Native библиотека не загрузилась.</exception>
-    /// <exception cref="NativeAbiMismatchException">Версия ABI не совпадает с ожидаемой.</exception>
+    /// <exception cref="NativeAbiMismatchException">Версия или обязательная поверхность ABI несовместима.</exception>
     /// <exception cref="NativeFrameDecodeException">PNG некорректен, не поддерживается или превышает лимит.</exception>
     /// <exception cref="AzurPilotNativeBoundaryException">Нарушен контракт native boundary.</exception>
     public static unsafe NativeFrame DecodePng(ReadOnlySpan<byte> pngBytes)
     {
         EnsureFrameAbiVersion();
+        EnsureFrameReleaseApi();
 
         NativeFrameSafeHandle frame;
         int status;
@@ -408,6 +409,37 @@ public static partial class AzurPilotNativeBridge
     private static void EnsureFrameAbiVersion()
     {
         EnsureExpectedAbiVersion(NativeAbiVersion());
+    }
+
+    private static void EnsureFrameReleaseApi()
+    {
+        // ABI требует INVALID_ARGUMENT для NULL: этот вызов проверяет парный экспорт освобождения через
+        // тот же LibraryImport, что и SafeHandle, до создания ресурса и без выделения памяти.
+        int status;
+        try
+        {
+            status = ReleaseFrameNative(IntPtr.Zero);
+        }
+        catch (DllNotFoundException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (BadImageFormatException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            throw MissingFrameApi("azurpilot_native_frame_release");
+        }
+
+        if (status != StatusInvalidArgument)
+        {
+            throw new NativeAbiMismatchException(
+                $"Native функция azurpilot_native_frame_release для NULL завершилась с кодом {status}: "
+                + $"{DescribeStatus(status)}; ABI {NativeBoundaryContract.ExpectedAbiVersion} требует "
+                + $"код {StatusInvalidArgument}. Контракт API кадра библиотеки «{LibraryName}» несовместим.");
+        }
     }
 
     /// <summary>

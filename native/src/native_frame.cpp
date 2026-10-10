@@ -1,4 +1,4 @@
-/* Внутренняя PNG-specific реализация frame decode и lifetime. */
+/* Внутренняя реализация декодирования PNG-кадра и управления его временем жизни. */
 
 #include "native_frame.h"
 
@@ -304,7 +304,7 @@ std::int32_t decode_png_frame(
         return AZURPILOT_NATIVE_ERROR_IMAGE_TOO_LARGE;
     }
 
-    // imdecode читает синхронно из caller memory и не сохраняет этот временный Mat header.
+    // imdecode синхронно читает память вызывающей стороны и не сохраняет этот временный заголовок Mat.
     cv::Mat encoded(
         1,
         static_cast<int>(png_size),
@@ -340,7 +340,7 @@ std::int32_t decode_png_frame(
             }
         }
 
-        // OpenCV PNG decode отдаёт RGBA как BGRA; normalize в канонический RGB8.
+        // Декодер PNG в OpenCV отдаёт RGBA как BGRA; преобразуем данные в канонический RGB8.
         cv::cvtColor(decoded, rgb, cv::COLOR_BGRA2RGB);
     }
 

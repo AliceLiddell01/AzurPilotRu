@@ -86,7 +86,7 @@ internal sealed class NativeFrameDecodeException : AzurPilotNativeBoundaryExcept
                 "Ожидался код отказа PNG frame.");
         }
 
-        return $"Native функция azurpilot_native_frame_decode_png завершилась с кодом {statusCode}: "
-            + $"{AzurPilotNativeBridge.DescribeStatus(statusCode)}. Frame не создан.";
+        return $"Декодер DLL отклонил PNG-кадр (код {statusCode}: "
+            + $"{AzurPilotNativeBridge.DescribeStatus(statusCode)}). Кадр не создан.";
     }
 }

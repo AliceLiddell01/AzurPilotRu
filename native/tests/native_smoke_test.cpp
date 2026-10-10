@@ -1,5 +1,5 @@
 /* =============================================================================
- * native_smoke_test.cpp — project-owned native smoke test замороженного C ABI v2.
+ * native_smoke_test.cpp — проверка native-реализации замороженного C ABI v2.
  *
  * Тест линкуется с AzurPilot.Native.dll через import library и вызывает ровно те
  * экспорты, которые объявлены в native/include/azurpilot_native_abi.h. Заголовки
@@ -112,14 +112,14 @@ void check_frame_failure(
         reinterpret_cast<AzurPilotNativeFrameHandle>(static_cast<uintptr_t>(1u));
     const int32_t status = azurpilot_native_frame_decode_png(bytes, size, &frame);
     check_uint32(static_cast<uint32_t>(status), static_cast<uint32_t>(expected_status), description);
-    check(frame == nullptr, "при отказе C ABI очищает frame output в NULL");
+    check(frame == nullptr, "При отказе C ABI обнуляет выходной дескриптор кадра");
     if (frame != nullptr) {
         (void)azurpilot_native_frame_release(frame);
     }
 }
 
 void check_native_frame_exports() {
-    printf("\n[7] PNG frame exports из production DLL\n");
+    printf("\n[7] Экспорты для PNG-кадра из собранной DLL\n");
     check_uint32(static_cast<uint32_t>(sizeof(AzurPilotNativeFrameInfo)), 20u,
                  "sizeof(AzurPilotNativeFrameInfo) == 20");
     check_uint32(static_cast<uint32_t>(alignof(AzurPilotNativeFrameInfo)), 4u,
@@ -128,7 +128,7 @@ void check_native_frame_exports() {
                  "pixel_format имеет ABI v2 offset 16");
 
     const std::vector<uint8_t> png = read_fixture("rgb_red_blue.png");
-    check(!png.empty(), "C ABI smoke загружает настоящий RGB PNG fixture");
+    check(!png.empty(), "Проверка C ABI загружает настоящий тестовый RGB PNG");
     if (png.empty()) {
         return;
     }
@@ -138,64 +138,64 @@ void check_native_frame_exports() {
         static_cast<uint32_t>(azurpilot_native_frame_decode_png(
             png.data(), static_cast<uint32_t>(png.size()), &frame)),
         AZURPILOT_NATIVE_OK,
-        "production DLL декодирует PNG из caller memory");
-    check(frame != nullptr, "успешный decode возвращает ровно один opaque handle");
+        "Собранная DLL декодирует PNG из памяти вызывающей стороны");
+    check(frame != nullptr, "Успешное декодирование возвращает один непрозрачный дескриптор");
     if (frame != nullptr) {
         AzurPilotNativeFrameInfo info{};
         check_uint32(
             static_cast<uint32_t>(azurpilot_native_frame_get_info(frame, &info)),
             AZURPILOT_NATIVE_OK,
-            "production DLL возвращает metadata frame");
-        check_uint32(info.width, 2u, "frame width взят из fixture");
-        check_uint32(info.height, 1u, "frame height взят из fixture");
-        check_uint32(info.stride_bytes, 6u, "contiguous RGB8 stride равен width*3");
-        check_uint32(info.byte_length, 6u, "frame byte_length проверен");
+            "Собранная DLL возвращает метаданные кадра");
+        check_uint32(info.width, 2u, "Ширина кадра взята из тестового PNG");
+        check_uint32(info.height, 1u, "Высота кадра взята из тестового PNG");
+        check_uint32(info.stride_bytes, 6u, "Шаг строки RGB8 равен ширине, умноженной на 3");
+        check_uint32(info.byte_length, 6u, "Длина данных кадра проверена");
         check_uint32(info.pixel_format, AZURPILOT_NATIVE_PIXEL_FORMAT_RGB8,
                      "pixel_format объявлен RGB8");
         check_uint32(
             static_cast<uint32_t>(azurpilot_native_frame_release(frame)),
             AZURPILOT_NATIVE_OK,
-            "release освобождает handle через native DLL");
+            "azurpilot_native_frame_release освобождает дескриптор через native DLL");
     }
 
     check_uint32(
         static_cast<uint32_t>(azurpilot_native_frame_get_info(nullptr, nullptr)),
         AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT,
-        "NULL handle и NULL metadata дают INVALID_ARGUMENT");
+        "NULL-дескриптор и NULL out_info дают INVALID_ARGUMENT");
     AzurPilotNativeFrameInfo cleared_info{};
     memset(&cleared_info, 0xA5, sizeof(cleared_info));
     check_uint32(
         static_cast<uint32_t>(azurpilot_native_frame_get_info(nullptr, &cleared_info)),
         AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT,
-        "NULL handle даёт INVALID_ARGUMENT");
+        "NULL-дескриптор даёт INVALID_ARGUMENT");
     check(
         cleared_info.width == 0u && cleared_info.height == 0u
             && cleared_info.stride_bytes == 0u && cleared_info.byte_length == 0u
             && cleared_info.pixel_format == 0u,
-        "ошибка frame_get_info очищает metadata output");
+        "Ошибка azurpilot_native_frame_get_info обнуляет выходную структуру");
     check_uint32(
         static_cast<uint32_t>(azurpilot_native_frame_release(nullptr)),
         AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT,
-        "release(NULL) даёт INVALID_ARGUMENT");
+        "azurpilot_native_frame_release(NULL) даёт INVALID_ARGUMENT");
 
     check_frame_failure(
         nullptr, static_cast<uint32_t>(png.size()),
-        AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT, "NULL PNG bytes дают INVALID_ARGUMENT");
+        AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT, "NULL-указатель на PNG даёт INVALID_ARGUMENT");
     const uint8_t empty_input_storage = 0u;
     check_frame_failure(
         &empty_input_storage, 0u,
-        AZURPILOT_NATIVE_ERROR_INVALID_PNG, "zero-length PNG даёт INVALID_PNG");
+        AZURPILOT_NATIVE_ERROR_INVALID_PNG, "Пустой PNG даёт INVALID_PNG");
     check_frame_failure(
         png.data(), static_cast<uint32_t>(png.size() - 4u),
-        AZURPILOT_NATIVE_ERROR_INVALID_PNG, "truncated PNG даёт INVALID_PNG");
+        AZURPILOT_NATIVE_ERROR_INVALID_PNG, "Усечённый PNG даёт INVALID_PNG");
 
     const std::vector<uint8_t> invalid_chunk_type = read_fixture("invalid_chunk_type.png");
-    check(!invalid_chunk_type.empty(), "C ABI smoke загружает invalid chunk type fixture");
+    check(!invalid_chunk_type.empty(), "Проверка C ABI загружает PNG с некорректным типом блока");
     if (!invalid_chunk_type.empty()) {
         check_frame_failure(
             invalid_chunk_type.data(), static_cast<uint32_t>(invalid_chunk_type.size()),
             AZURPILOT_NATIVE_ERROR_INVALID_PNG,
-            "invalid PNG chunk type отклоняется реальными ABI exports");
+            "Экспорты C ABI отклоняют PNG с некорректным типом блока");
     }
 
     std::vector<uint8_t> corrupted = png;
@@ -205,25 +205,25 @@ void check_native_frame_exports() {
         AZURPILOT_NATIVE_ERROR_INVALID_PNG, "повреждённый PNG CRC даёт INVALID_PNG");
 
     const std::vector<uint8_t> corrupt_idat = read_fixture("corrupt_idat_checksum.png");
-    check(!corrupt_idat.empty(), "C ABI smoke загружает повреждённый IDAT fixture");
+    check(!corrupt_idat.empty(), "Проверка C ABI загружает PNG с повреждённым IDAT");
     if (!corrupt_idat.empty()) {
         check_frame_failure(
             corrupt_idat.data(), static_cast<uint32_t>(corrupt_idat.size()),
             AZURPILOT_NATIVE_ERROR_INVALID_PNG,
-            "валидная PNG framing с повреждённым IDAT даёт INVALID_PNG");
+            "PNG с корректной структурой и повреждённым IDAT даёт INVALID_PNG");
     }
 
     const std::vector<uint8_t> unsupported = read_fixture("rgba_nonopaque.png");
-    check(!unsupported.empty(), "C ABI smoke загружает RGBA policy fixture");
+    check(!unsupported.empty(), "Проверка C ABI загружает PNG для проверки политики RGBA");
     if (!unsupported.empty()) {
         check_frame_failure(
             unsupported.data(), static_cast<uint32_t>(unsupported.size()),
             AZURPILOT_NATIVE_ERROR_UNSUPPORTED_PNG,
-            "non-opaque RGBA даёт контролируемый UNSUPPORTED_PNG");
+            "Не полностью непрозрачный RGBA даёт UNSUPPORTED_PNG");
     }
 
     const std::vector<uint8_t> apng = read_fixture("unsupported_apng.png");
-    check(!apng.empty(), "C ABI smoke загружает APNG policy fixture");
+    check(!apng.empty(), "Проверка C ABI загружает APNG для проверки политики формата");
     if (!apng.empty()) {
         check_frame_failure(
             apng.data(), static_cast<uint32_t>(apng.size()),
@@ -232,12 +232,12 @@ void check_native_frame_exports() {
     }
 
     const std::vector<uint8_t> oversized_dimensions = read_fixture("oversized_dimensions.png");
-    check(!oversized_dimensions.empty(), "C ABI smoke загружает over-limit IHDR fixture");
+    check(!oversized_dimensions.empty(), "Проверка C ABI загружает PNG с превышающими пределы размерами IHDR");
     if (!oversized_dimensions.empty()) {
         check_frame_failure(
             oversized_dimensions.data(), static_cast<uint32_t>(oversized_dimensions.size()),
             AZURPILOT_NATIVE_ERROR_IMAGE_TOO_LARGE,
-            "over-limit IHDR отклоняется до decode allocation");
+            "Превышение пределов IHDR отклоняется до выделения памяти для декодирования");
     }
 
     std::vector<uint8_t> oversized_encoded(
@@ -245,7 +245,7 @@ void check_native_frame_exports() {
     check_frame_failure(
         oversized_encoded.data(), static_cast<uint32_t>(oversized_encoded.size()),
         AZURPILOT_NATIVE_ERROR_IMAGE_TOO_LARGE,
-        "encoded limit отклоняется до PNG parser");
+        "Превышение предела размера PNG отклоняется до разбора файла");
 
     for (int iteration = 0; iteration < 128; ++iteration) {
         frame = nullptr;
@@ -253,7 +253,7 @@ void check_native_frame_exports() {
             png.data(), static_cast<uint32_t>(png.size()), &frame);
         check(
             status == AZURPILOT_NATIVE_OK && frame != nullptr,
-            "повторный frame create успешен");
+            "Повторное создание кадра успешно");
         if (frame != nullptr) {
             (void)azurpilot_native_frame_release(frame);
         }
@@ -269,7 +269,7 @@ int main() {
     (void)SetConsoleOutputCP(CP_UTF8);
 #endif
 
-    printf("native smoke test: C ABI v%d, ожидаемая версия OpenCV %s\n",
+    printf("Проверка native C ABI v%d, ожидаемая версия OpenCV %s\n",
            static_cast<int>(AZURPILOT_NATIVE_ABI_VERSION), kExpectedOpencvVersion);
 
     // --- 1. Раскладка структуры -------------------------------------------------
@@ -407,9 +407,9 @@ int main() {
     // --- Итог -------------------------------------------------------------------
     printf("\nИтог: проверок %d, провалено %d\n", g_checks, g_failures);
     if (g_failures != 0) {
-        printf("native smoke test: ПРОВАЛ\n");
+        printf("Проверка native C ABI: ПРОВАЛ\n");
         return 1;
     }
-    printf("native smoke test: УСПЕХ — project-owned native код исполнен через C ABI, OpenCV реально работал\n");
+    printf("Проверка native C ABI: УСПЕХ — код проекта исполнен через C ABI, OpenCV реально работал\n");
     return 0;
 }

@@ -1,4 +1,4 @@
-/* Внутренняя реализация native-owned PNG frame. Этот заголовок не входит в публичный ABI. */
+/* Внутренняя реализация PNG-кадра, которым владеет native DLL. Этот заголовок не входит в публичный ABI. */
 #ifndef AZURPILOT_NATIVE_FRAME_H
 #define AZURPILOT_NATIVE_FRAME_H
 
@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-/* Единственная concrete реализация opaque C handle; наружу виден только incomplete type. */
+/* Единственная конкретная реализация непрозрачного C-дескриптора; снаружи виден только неполный тип. */
 struct AzurPilotNativeFrameOpaque final {
     AzurPilotNativeFrameOpaque(
         cv::Mat rgb_pixels,
@@ -32,15 +32,15 @@ struct AzurPilotNativeFrameOpaque final {
 
 namespace azurpilot::native::detail {
 
-/* Фабрика общая для export boundary и внутренних ownership tests.
- * При ожидаемой ошибке возвращает status и оставляет *out_frame == nullptr.
- * Не перехватывает C++ исключения: это делает C ABI export boundary. */
+/* Фабрика используется границей C ABI и внутренними проверками владения.
+ * При ожидаемой ошибке возвращает код состояния и оставляет *out_frame == nullptr.
+ * Не перехватывает исключения C++: это делает граница C ABI. */
 std::int32_t decode_png_frame(
     const std::uint8_t* png_bytes,
     std::uint32_t png_size,
     AzurPilotNativeFrameOpaque** out_frame);
 
-/* Возвращает OK только при согласованности pixels и immutable metadata. */
+/* Возвращает OK только при согласованности пикселей и неизменяемых метаданных. */
 std::int32_t get_frame_info(
     AzurPilotNativeFrameHandle frame,
     AzurPilotNativeFrameInfo* out_info) noexcept;

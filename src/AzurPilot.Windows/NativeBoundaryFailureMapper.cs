@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using AzurPilot.Core.Failures;
 
@@ -40,9 +41,10 @@ public static class NativeBoundaryFailureMapper
     /// Извлекает код возврата native стороны из диагностического сообщения исключения границы.
     /// </summary>
     /// <remarks>
-    /// Форма сообщения принадлежит <see cref="AzurPilotNativeBridge"/>: она заморожена и содержит код
-    /// возврата. Регулярное выражение только читает это значение; при несовпадении код возврата в
-    /// details не попадает, а не подменяется догадкой.
+    /// Это совместимый fallback для общих исключений boundary. Типизированный отказ PNG передаёт код
+    /// непосредственно из <see cref="NativeFrameDecodeException.StatusCode"/>. Регулярное выражение
+    /// только читает значение; при несовпадении код возврата в details не попадает, а не подменяется
+    /// догадкой.
     /// </remarks>
     private static readonly Regex NativeStatusCodePattern = new(
         @"завершилась с кодом (?<code>-?\d+)",
@@ -79,12 +81,16 @@ public static class NativeBoundaryFailureMapper
             },
 
             // Ошибка содержимого или поддерживаемого формата frame не является сбоем boundary.
-            NativeFrameDecodeException => new ApplicationFailure
+            NativeFrameDecodeException decodeException => new ApplicationFailure
             {
                 Code = ApplicationFailure.NativeFrameInvalid,
                 Message = exception.Message,
                 IsRetryable = false,
-                Details = BuildDetails(exception, includeLibrary: true, includeStatusCode: true),
+                Details = BuildDetails(
+                    exception,
+                    includeLibrary: true,
+                    includeStatusCode: false,
+                    nativeStatusCode: decodeException.StatusCode),
             },
 
             // Отмена — ожидаемый исход операции, а не ошибка. Признак повторяемости не выставляется:
@@ -147,11 +153,13 @@ public static class NativeBoundaryFailureMapper
     /// <param name="exception">Исходное исключение границы.</param>
     /// <param name="includeLibrary">Добавлять ли имя native библиотеки.</param>
     /// <param name="includeStatusCode">Пытаться ли извлечь код возврата native стороны.</param>
+    /// <param name="nativeStatusCode">Явный код native ABI, который не зависит от текста сообщения.</param>
     /// <returns>Details с CLR-именем типа исключения и, при необходимости, данными границы.</returns>
     private static FrozenDictionary<string, string> BuildDetails(
         Exception exception,
         bool includeLibrary,
-        bool includeStatusCode)
+        bool includeStatusCode,
+        int? nativeStatusCode = null)
     {
         Dictionary<string, string> details = new(StringComparer.Ordinal)
         {
@@ -163,7 +171,11 @@ public static class NativeBoundaryFailureMapper
             details[NativeLibraryKey] = AzurPilotNativeBridge.LibraryName;
         }
 
-        if (includeStatusCode
+        if (nativeStatusCode is int statusCode)
+        {
+            details[NativeStatusCodeKey] = statusCode.ToString(CultureInfo.InvariantCulture);
+        }
+        else if (includeStatusCode
             && NativeStatusCodePattern.Match(exception.Message) is { Success: true } match)
         {
             details[NativeStatusCodeKey] = match.Groups["code"].Value;

@@ -8,28 +8,28 @@
  *   и согласованного обновления обеих сторон; обратная совместимость формой не гарантируется.
  *
  * АРТЕФАКТ
- *   Native часть собирается в shared library `AzurPilot.Native.dll` (Windows, x64). Managed сторона
+ *   Native часть собирается в динамическую библиотеку `AzurPilot.Native.dll` (Windows, x64). Managed сторона
  *   загружает её по имени `AzurPilot.Native` через source-generated LibraryImport. Имя артефакта
  *   заморожено этим контрактом: native build обязан выпускать ровно такой файл, managed сторона
  *   не имеет права подставлять другое имя.
  *
  * ГРАНИЦЫ
- *   - Через границу проходят только C-совместимые типы: uint32_t, int32_t, char, opaque handle.
- *   - Запрещено: cv::Mat, любые STL-типы (std::string, std::vector, ...), C++-классы кроме opaque
- *     handle, ссылки, C++-исключения и pixel-buffer pointers.
- *   - Буферы-входы и metadata принадлежат вызывающей стороне. Native frame принадлежит DLL и
- *     освобождается только парным export-ом azurpilot_native_frame_release.
+ *   - Через границу проходят только C-совместимые типы: uint32_t, int32_t, char, непрозрачный дескриптор.
+ *   - Запрещено: cv::Mat, любые STL-типы (std::string, std::vector, ...), C++-классы кроме непрозрачного
+ *     дескриптора, ссылки, C++-исключения и указатели на пиксельные буферы.
+ *   - Входные буферы и метаданные принадлежат вызывающей стороне. Native-кадр принадлежит DLL и
+ *     освобождается только парным экспортом azurpilot_native_frame_release.
  *   - Соглашение вызова — по умолчанию. На x64 Windows существует одно соглашение вызова, поэтому
  *     явные __cdecl/__stdcall не указываются; extern "C" исключает декорацию имён.
  *   - Ни одна функция не выпускает C++-исключения через границу: любое исключение перехватывается
- *     внутри native стороны и превращается в int32-код возврата. Наружу идёт только код.
+ *     внутри native-стороны и превращается в int32-код возврата. Наружу идёт только код.
  *   - Функции не бросают исключений C++ (см. AZURPILOT_NATIVE_NOEXCEPT), не требуют инициализации
- *     и не имеют разделяемого изменяемого глобального состояния; ownership задаётся каждым handle.
+ *     и не имеют разделяемого изменяемого глобального состояния; владение задаётся каждым дескриптором.
  *
  * ИСПОЛЬЗОВАНИЕ ИЗ NATIVE-КОДА
  *   - Реализация DLL включает этот заголовок без дополнительных макросов: объявления разворачиваются
  *     в __declspec(dllexport).
- *   - Native-потребитель, линкующийся с DLL через import library (например native smoke test),
+ *   - Native-потребитель, линкующийся с DLL через import library (например проверка C ABI),
  *     обязан определить AZURPILOT_NATIVE_IMPORT до включения заголовка
  *     (например target_compile_definitions(<target> PRIVATE AZURPILOT_NATIVE_IMPORT)).
  * =============================================================================
@@ -60,14 +60,17 @@
 #define AZURPILOT_NATIVE_ERROR_INTERNAL 4
 /* Вход не является целым PNG либо его структура/сжатые данные повреждены. */
 #define AZURPILOT_NATIVE_ERROR_INVALID_PNG 5
-/* PNG корректен, но его вариант/alpha policy не поддерживается этим boundary. */
+/* PNG корректен, но его вариант или политика обработки прозрачности не поддерживается этой границей. */
 #define AZURPILOT_NATIVE_ERROR_UNSUPPORTED_PNG 6
 /* Закодированный вход или декодированные размеры превышают фиксированные безопасные пределы. */
 #define AZURPILOT_NATIVE_ERROR_IMAGE_TOO_LARGE 7
-/* Не удалось выделить память для декодирования или native frame. */
+/* Не удалось выделить память для декодирования или native-кадра. */
 #define AZURPILOT_NATIVE_ERROR_OUT_OF_MEMORY 8
 
-/* Защитные пределы PNG-frame. Нормативный владелец чисел — этот ABI header. */
+/* Защитные пределы PNG-кадра. Единственный нормативный владелец значений — этот ABI-заголовок.
+ * Предел входного PNG ограничивает размер данных для разбора; предел стороны — габариты кадра;
+ * предел пикселей — объём декодирования; предел RGB8 — размер выходного буфера. Это отдельные
+ * границы ресурсов: проверяй каждую напрямую и не выводи её значение из другой. */
 #define AZURPILOT_NATIVE_MAX_PNG_BYTES UINT32_C(16777216)
 #define AZURPILOT_NATIVE_MAX_FRAME_DIMENSION UINT32_C(8192)
 #define AZURPILOT_NATIVE_MAX_FRAME_PIXELS UINT32_C(16777216)
@@ -108,7 +111,7 @@
 #define AZURPILOT_NATIVE_NOEXCEPT
 #endif
 
-/* Сведения о native boundary. Раскладка заморожена: смещения 0, 4, 8, 12, 16, 20 и 24..55,
+/* Сведения о native-границе. Раскладка заморожена: смещения 0, 4, 8, 12, 16, 20 и 24..55,
  * выравнивание 4, полный размер 56 байт. Managed сторона обязана объявлять структуру
  * с последовательной раскладкой и проверять её размер. */
 typedef struct AzurPilotNativeInfo {
@@ -128,12 +131,12 @@ typedef struct AzurPilotNativeInfo {
     char opencv_version_string[32];
 } AzurPilotNativeInfo;
 
-/* Opaque handle: его содержимое и allocator принадлежат DLL. Нельзя разыменовывать,
- * сохранять после release или освобождать через CLR/CRT allocator. */
+/* Непрозрачный дескриптор: его содержимое и выделение памяти принадлежат DLL. Нельзя разыменовывать,
+ * сохранять после вызова azurpilot_native_frame_release или освобождать средствами CLR/CRT. */
 typedef struct AzurPilotNativeFrameOpaque* AzurPilotNativeFrameHandle;
 
-/* Неизменяемые metadata конкретного contiguous native-owned RGB8 frame.
- * Раскладка ABI v2: пять uint32_t, смещения 0, 4, 8, 12, 16; alignment 4; size 20. */
+/* Неизменяемые метаданные конкретного непрерывного кадра RGB8, которым владеет DLL.
+ * Раскладка ABI v2: пять uint32_t, смещения 0, 4, 8, 12, 16; выравнивание 4; размер 20. */
 typedef struct AzurPilotNativeFrameInfo {
     uint32_t width;
     uint32_t height;
@@ -177,7 +180,7 @@ extern "C" {
  * совместимости, а не повод продолжать. */
 AZURPILOT_NATIVE_API uint32_t azurpilot_native_abi_version(void) AZURPILOT_NATIVE_NOEXCEPT;
 
-/* Заполняет структуру сведениями о native boundary.
+/* Заполняет структуру сведениями о native-границе.
  * out_info — память вызывающей стороны; владение остаётся у вызывающей стороны.
  *
  * Возврат:
@@ -228,8 +231,9 @@ AZURPILOT_NATIVE_API int32_t azurpilot_native_build_info(char* buffer, uint32_t 
                                                          uint32_t* required_size)
     AZURPILOT_NATIVE_NOEXCEPT;
 
-/* Декодирует PNG непосредственно из памяти вызывающей стороны и создаёт один native-owned RGB8
- * frame. Успех передаёт handle, который обязан быть освобождён azurpilot_native_frame_release.
+/* Декодирует PNG непосредственно из памяти вызывающей стороны и создаёт один кадр RGB8,
+ * которым владеет DLL. При успехе возвращается дескриптор, который нужно освободить вызовом
+ * azurpilot_native_frame_release.
  * Входные байты не сохраняются и не используются после возврата.
  *
  * При ненулевом out_frame он сначала устанавливается в NULL. Любой отказ оставляет его NULL.
@@ -240,16 +244,16 @@ AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_decode_png(
     const uint8_t* png_bytes, uint32_t png_size, AzurPilotNativeFrameHandle* out_frame)
     AZURPILOT_NATIVE_NOEXCEPT;
 
-/* Возвращает проверенные width/height/stride/byte_length и RGB8 format.
- * out_info обнуляется до проверки handle. При любом отказе metadata не содержит частичных данных.
- * NULL handle или out_info — INVALID_ARGUMENT; недостоверное внутреннее состояние — INTERNAL. */
+/* Возвращает проверенные width/height/stride/byte_length и формат RGB8.
+ * out_info обнуляется до проверки дескриптора. При любом отказе метаданные не содержат частичных
+ * данных. NULL-дескриптор или NULL out_info — INVALID_ARGUMENT; недостоверное внутреннее состояние — INTERNAL. */
 AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_get_info(
     AzurPilotNativeFrameHandle frame, AzurPilotNativeFrameInfo* out_info)
     AZURPILOT_NATIVE_NOEXCEPT;
 
-/* Освобождает handle через allocator native DLL. NULL handle возвращает INVALID_ARGUMENT.
- * Произвольный stale/чужой handle недействителен и не обязан безопасно обнаруживаться; managed
- * consumer исключает повторный release посредством SafeHandle. */
+/* Освобождает дескриптор через механизм выделения памяти native DLL. NULL-дескриптор возвращает INVALID_ARGUMENT.
+ * Произвольный устаревший или чужой дескриптор недействителен и не обязан безопасно обнаруживаться;
+ * managed-потребитель исключает повторное освобождение посредством SafeHandle. */
 AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_release(AzurPilotNativeFrameHandle frame)
     AZURPILOT_NATIVE_NOEXCEPT;
 

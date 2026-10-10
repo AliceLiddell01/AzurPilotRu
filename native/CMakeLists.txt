@@ -138,3 +138,14 @@ set_target_properties(AzurPilot.Native.AbiMismatchFixture PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-mismatch/$<CONFIG>"
   ARCHIVE_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-mismatch/$<CONFIG>"
   PDB_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-mismatch/$<CONFIG>")
+
+# ABI v2 без функции освобождения нужен для проверки ранней валидации API кадра.
+# DLL не создаёт native-кадр и никогда не попадает в production runtime.
+add_library(AzurPilot.Native.AbiV2MissingReleaseFixture SHARED tests/abi_v2_missing_release_fixture.cpp)
+target_include_directories(AzurPilot.Native.AbiV2MissingReleaseFixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+azurpilot_native_apply_compile_options(AzurPilot.Native.AbiV2MissingReleaseFixture)
+set_target_properties(AzurPilot.Native.AbiV2MissingReleaseFixture PROPERTIES
+  OUTPUT_NAME "AzurPilot.Native"
+  RUNTIME_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v2-missing-release/$<CONFIG>"
+  ARCHIVE_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v2-missing-release/$<CONFIG>"
+  PDB_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v2-missing-release/$<CONFIG>")
