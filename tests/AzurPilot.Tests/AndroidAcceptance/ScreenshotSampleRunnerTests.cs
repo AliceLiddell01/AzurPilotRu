@@ -45,8 +45,9 @@ public sealed class ScreenshotSampleRunnerTests
             Assert.Equal(0, report.CenterScansPassed);
             Assert.Empty(report.SelectedDimensions);
             Assert.Empty(report.DecodedDimensions);
-            Assert.Single(report.FailureCounts);
-            Assert.Equal(1, report.FailureCounts["directory_enumeration_capped"]);
+            KeyValuePair<string, int> failure = Assert.Single(report.FailureCounts);
+            Assert.Equal("directory_enumeration_capped", failure.Key);
+            Assert.Equal(1, failure.Value);
             string json = ScreenshotAcceptanceJson.Serialize(report);
             Assert.DoesNotContain(directory, json, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(".png", json, StringComparison.OrdinalIgnoreCase);

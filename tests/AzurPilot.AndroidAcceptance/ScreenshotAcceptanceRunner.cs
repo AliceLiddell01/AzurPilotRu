@@ -384,10 +384,12 @@ internal sealed class ScreenshotAcceptanceRunner
                 : null;
 
     internal static string GetSafeExceptionType(Exception exception)
-        => new(exception.GetType().Name
+    {
+        char[] safeCharacters = [.. exception.GetType().Name
             .Where(static character => char.IsAsciiLetterOrDigit(character) || character == '_')
-            .Take(64)
-            .ToArray());
+            .Take(64)];
+        return new string(safeCharacters);
+    }
 
     private static bool IsReady(AndroidReadinessFacts facts)
         => facts.Transport.State == AndroidTransportState.Device
