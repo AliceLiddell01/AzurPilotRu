@@ -8,9 +8,10 @@ namespace AzurPilot.Core.Failures;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Контракт фиксирован: допустимы ровно двадцать три кода — <see cref="ConfigurationInvalid"/>,
+/// Контракт фиксирован: допустимы ровно двадцать четыре кода — <see cref="ConfigurationInvalid"/>,
 /// <see cref="ConfigurationSchemaUnsupported"/>, <see cref="NativeUnavailable"/>,
-/// <see cref="NativeIncompatible"/>, <see cref="OperationCancelled"/>, <see cref="InternalError"/>, семь
+/// <see cref="NativeIncompatible"/>, <see cref="NativeFrameInvalid"/>, <see cref="OperationCancelled"/>,
+/// <see cref="InternalError"/>, семь
 /// кодов MuMu-отказов: <see cref="MuMuInstallationNotFound"/>,
 /// <see cref="MuMuInstallationAmbiguous"/>, <see cref="MuMuInstanceNotFound"/>,
 /// <see cref="MuMuInstanceAmbiguous"/>, <see cref="MuMuControlSurfaceUnsupported"/>,
@@ -54,6 +55,9 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
 
     /// <summary>Код отказа: native библиотека загружена, но несовместима с ожидаемым ABI.</summary>
     public const string NativeIncompatible = "native_incompatible";
+
+    /// <summary>Код отказа: PNG frame не поддерживается или не прошёл ограниченную проверку входа.</summary>
+    public const string NativeFrameInvalid = "native_frame_invalid";
 
     /// <summary>Код отказа: операция отменена запросом отмены.</summary>
     public const string OperationCancelled = "operation_cancelled";
@@ -119,6 +123,7 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
             ConfigurationSchemaUnsupported,
             NativeUnavailable,
             NativeIncompatible,
+            NativeFrameInvalid,
             OperationCancelled,
             InternalError,
             MuMuInstallationNotFound,
@@ -145,7 +150,8 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <summary>Стабильный machine-readable код отказа из фиксированного набора кодов.</summary>
     /// <value>
     /// Одно из значений: <see cref="ConfigurationInvalid"/>, <see cref="ConfigurationSchemaUnsupported"/>,
-    /// <see cref="NativeUnavailable"/>, <see cref="NativeIncompatible"/>, <see cref="OperationCancelled"/>,
+    /// <see cref="NativeUnavailable"/>, <see cref="NativeIncompatible"/>, <see cref="NativeFrameInvalid"/>,
+    /// <see cref="OperationCancelled"/>,
     /// <see cref="InternalError"/>, <see cref="MuMuInstallationNotFound"/>,
     /// <see cref="MuMuInstallationAmbiguous"/>, <see cref="MuMuInstanceNotFound"/>,
     /// <see cref="MuMuInstanceAmbiguous"/>, <see cref="MuMuControlSurfaceUnsupported"/>,

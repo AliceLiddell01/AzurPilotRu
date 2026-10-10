@@ -139,11 +139,12 @@ Authoritative review с нулём findings либо review, в котором �
 
 Такая итерация получает отдельный marker commit:
 
-```bash
-git commit --allow-empty -m "<содержательное сообщение о чистом CodeRabbit review>"
+```powershell
+git commit --allow-empty -m $reviewMessage
 ```
 
-Пустой commit разрешён только как доказуемый маркер реально завершённого
+Заранее сформируй непустой `$reviewMessage` по фактически завершённой
+итерации. Пустой commit разрешён только как доказуемый маркер реально завершённого
 CodeRabbit review. Он запрещён для rate limit, provider failure, review_skipped,
 слишком большого scope и любого другого незавершённого состояния.
 
@@ -206,6 +207,9 @@ polling и не запускай несколько review параллельн�
 ## Инварианты
 
 - Cycle работает с текущим checkout и его опубликованной рабочей веткой.
+- Для Windows checkout CodeRabbit запускается нативным Windows CLI в той же
+  среде; самостоятельный переход в WSL2 запрещён. Preflight среды определён в
+  [`references/review-workflow.md`](references/review-workflow.md).
 - Candidate перед review должен быть committed и pushed.
 - Base определяется по фактическому PR либо remote default branch; не хардкодится.
 - Не публикуй неизвестные пользовательские изменения.

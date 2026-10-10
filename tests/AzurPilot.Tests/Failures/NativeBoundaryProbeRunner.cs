@@ -27,13 +27,42 @@ internal static class NativeBoundaryProbeRunner
     /// <summary>Строка вывода пробы с полученным application-level кодом отказа.</summary>
     internal const string FailureCodePrefix = "Проба: application failure code=";
 
+    /// <summary>Строка вывода пробы, подтверждающая отказ после Dispose до native-вызова.</summary>
+    internal const string DisposedFrameProbeMarker = "Проба: GetInfo после Dispose отклонён до native вызова.";
+
     private const string NativeLibraryFileName = AzurPilotNativeBridge.LibraryName + ".dll";
     private const string ProbeAssemblyFileName = "AzurPilot.NativeAbsenceProbe.dll";
 
-    /// <summary>Запускает пробу в отдельном процессе с заданной негативной fixture.</summary>
-    /// <param name="mode">Отсутствующая DLL, повреждённая DLL или DLL с несовместимым ABI.</param>
+    /// <summary>Запускает пробу в отдельном процессе с заданной тестовой DLL.</summary>
+    /// <param name="mode">Отсутствующая DLL, повреждённая DLL или тестовая ABI DLL.</param>
     /// <returns>Код выхода, объединённый вывод пробы и прочитанный код отказа.</returns>
     internal static ProbeRun Run(ProbeMode mode)
+    {
+        if (mode == ProbeMode.DisposedFrame)
+        {
+            throw new ArgumentException(
+                "Для проверки Dispose используйте AssertDisposedFrameRejectsBeforeNativeCall().",
+                nameof(mode));
+        }
+
+        ProcessRun process = RunProcess(mode);
+        return new ProbeRun(
+            process.ExitCode,
+            process.StandardOutput,
+            ReadFailureCode(process.StandardOutput));
+    }
+
+    /// <summary>Проверяет отказ закрытого кадра без native DLL и возвращает вывод пробы.</summary>
+    /// <returns>Объединённый вывод отдельного процесса.</returns>
+    internal static string AssertDisposedFrameRejectsBeforeNativeCall()
+    {
+        ProcessRun process = RunProcess(ProbeMode.DisposedFrame);
+        Assert.Equal(0, process.ExitCode);
+        Assert.Contains(DisposedFrameProbeMarker, process.StandardOutput, StringComparison.Ordinal);
+        return process.StandardOutput;
+    }
+
+    private static ProcessRun RunProcess(ProbeMode mode)
     {
         string probeDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -47,10 +76,16 @@ internal static class NativeBoundaryProbeRunner
             {
                 File.WriteAllText(Path.Combine(probeDirectory, NativeLibraryFileName), "не библиотека");
             }
-            else if (mode == ProbeMode.AbiMismatch)
+            else if (mode is ProbeMode.AbiMismatch or ProbeMode.AbiV2MissingRelease)
             {
-                string fixture = Path.Combine(AppContext.BaseDirectory, "abi-mismatch", NativeLibraryFileName);
-                Assert.True(File.Exists(fixture), $"Не собрана негативная ABI fixture: {fixture}");
+                string fixtureDirectory = mode == ProbeMode.AbiMismatch
+                    ? "abi-mismatch"
+                    : "abi-v2-missing-release";
+                string fixture = Path.Combine(
+                    AppContext.BaseDirectory,
+                    fixtureDirectory,
+                    NativeLibraryFileName);
+                Assert.True(File.Exists(fixture), $"Не собрана негативная ABI DLL: {fixture}");
                 File.Copy(fixture, Path.Combine(probeDirectory, NativeLibraryFileName));
             }
 
@@ -66,9 +101,22 @@ internal static class NativeBoundaryProbeRunner
             };
             startInfo.ArgumentList.Add("exec");
             startInfo.ArgumentList.Add(Path.Combine(probeDirectory, ProbeAssemblyFileName));
-            if (mode == ProbeMode.AbiMismatch)
+            switch (mode)
             {
-                startInfo.ArgumentList.Add("--abi-mismatch");
+                case ProbeMode.MissingLibrary:
+                case ProbeMode.BrokenLibrary:
+                    break;
+                case ProbeMode.AbiMismatch:
+                    startInfo.ArgumentList.Add("--abi-mismatch");
+                    break;
+                case ProbeMode.AbiV2MissingRelease:
+                    startInfo.ArgumentList.Add("--abi-v2-missing-release");
+                    break;
+                case ProbeMode.DisposedFrame:
+                    startInfo.ArgumentList.Add("--disposed-frame");
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(mode), mode, "Неизвестный режим пробы.");
             }
 
             using Process process = Process.Start(startInfo)
@@ -83,7 +131,7 @@ internal static class NativeBoundaryProbeRunner
             }
 
             string combined = output.GetAwaiter().GetResult() + error.GetAwaiter().GetResult();
-            return new ProbeRun(process.ExitCode, combined, ReadFailureCode(combined));
+            return new ProcessRun(process.ExitCode, combined);
         }
         finally
         {
@@ -118,6 +166,7 @@ internal static class NativeBoundaryProbeRunner
             or ApplicationFailure.ConfigurationSchemaUnsupported
             or ApplicationFailure.NativeUnavailable
             or ApplicationFailure.NativeIncompatible
+            or ApplicationFailure.NativeFrameInvalid
             or ApplicationFailure.OperationCancelled
             or ApplicationFailure.InternalError;
 
@@ -143,6 +192,8 @@ internal static class NativeBoundaryProbeRunner
     /// <param name="FailureCode">Стабильный application-level код отказа, сообщённый пробой.</param>
     internal sealed record ProbeRun(int ExitCode, string StandardOutput, string FailureCode);
 
+    private sealed record ProcessRun(int ExitCode, string StandardOutput);
+
     /// <summary>Негативная fixture, с которой запускается проба.</summary>
     internal enum ProbeMode
     {
@@ -154,5 +205,11 @@ internal static class NativeBoundaryProbeRunner
 
         /// <summary>Подложена DLL с несовместимой версией ABI.</summary>
         AbiMismatch,
+
+        /// <summary>Подложена DLL ABI v2 без обязательного экспорта освобождения кадра.</summary>
+        AbiV2MissingRelease,
+
+        /// <summary>Проверяется вызов GetInfo после Dispose без native DLL.</summary>
+        DisposedFrame,
     }
 }

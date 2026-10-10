@@ -8,7 +8,7 @@ Git/GitHub lifecycle принадлежит `azurpilot-git-workflow`, а общ�
 
 Перед первой итерацией установи фактом:
 
-```bash
+```powershell
 git rev-parse --show-toplevel
 git remote -v
 git rev-parse --abbrev-ref HEAD
@@ -41,7 +41,8 @@ SHA должен совпасть с ожидаемым локальным HEAD.
 2. Если PR нет — используй удалённую ветку по умолчанию репозитория по правилам
    `azurpilot-git-workflow`.
 
-Номер PR, branch, SHA и base не хардкодятся в skill.
+Номер PR, branch, SHA и base не хардкодятся в skill. Перед запуском CLI
+задай в PowerShell `$base` из фактически подтверждённого base.
 
 ## 2. Политика рабочего дерева
 
@@ -58,12 +59,34 @@ SHA должен совпасть с ожидаемым локальным HEAD.
 
 ## 3. Discovery фактического CodeRabbit CLI
 
+### Выбор среды выполнения
+
+Для checkout, открытого из Windows, выполняй Git preflight и CodeRabbit review в
+той же Windows-среде. До запуска CLI в PowerShell определи его разрешение:
+
+```powershell
+Get-Command coderabbit -All | Select-Object Name, CommandType, Source
+```
+
+Проверь, что выбран нативный исполняемый Windows-файл (`Application`, `.exe`);
+запускай именно его из Windows-каталога текущего checkout. Наличие WSL2 и
+установленного там CodeRabbit не является основанием переключать среду.
+Не запускай `wsl.exe`, Linux `coderabbit` или переход через `/mnt/...` к тому
+же checkout, в том числе посредством PowerShell. Примеры с Git/CLI ниже
+не предписывают использовать Bash или Linux.
+
+Если нативный Windows CLI отсутствует, не запускается или его разрешение
+неоднозначно, зафиксируй конкретный блокер; автоматический fallback в WSL2
+запрещён. Исключение — отдельное явное поручение пользователя использовать
+другую среду, с повторной проверкой repository/branch/HEAD и без смешивания
+результатов разных checkout.
+
 Не полагайся на сохранённую версию или память о flags. В начале каждого
 запрошенного cycle проверь фактический интерфейс установленного CLI. Используй
 команды, которые реально поддерживает текущая версия; в референсном workflow
 проверяются, в частности:
 
-```bash
+```powershell
 coderabbit --version
 coderabbit --help
 coderabbit doctor
@@ -99,8 +122,8 @@ Guided setup/config apply не входят в review cycle и не должны
 Для обычного agent-oriented review committed diff используется фактическая форма
 команды текущей версии. Референсный интерфейс использует:
 
-```bash
-coderabbit review --agent --committed --base <base>
+```powershell
+coderabbit review --agent --committed --base $base
 ```
 
 Если текущая версия предлагает `--base-commit`, можно использовать явный
@@ -238,10 +261,11 @@ Commit содержит только подтверждённые исправл
 Если authoritative review завершён и actionable fixes не требуются, создай
 отдельный marker commit:
 
-```bash
-git commit --allow-empty -m "<сообщение о чистом CodeRabbit review>"
+```powershell
+git commit --allow-empty -m $reviewMessage
 ```
 
+До запуска сформируй непустой `$reviewMessage` по завершённому review.
 Marker commit запрещён для provider/auth/network/rate-limit failure, skipped
 review, слишком большого scope, неуспешной verification и другого
 незавершённого состояния.
@@ -319,7 +343,9 @@ Rate limit до terminal completion оставляет текущую итера
 - remote divergence требует опасного history rewrite;
 - неизвестные пользовательские изменения мешают безопасной работе.
 
-Blocker не маскируется marker commit.
+Blocker не маскируется marker commit. Эти условия останавливают текущую итерацию
+CodeRabbit и не являются запретом на обычную публикацию Draft PR; для обычных
+задач действует `azurpilot-git-workflow/references/publication.md`.
 
 ## 14. Итоговый отчёт
 
