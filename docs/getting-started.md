@@ -47,8 +47,8 @@ dotnet test tests/AzurPilot.Tests/AzurPilot.Tests.csproj --configuration Release
    `artifacts/native/runtime/<Configuration>`.
 4. `dotnet restore --locked-mode` восстанавливает закреплённый lock-файлами граф NuGet.
 5. `dotnet build` собирает solution и передаёт warnings как ошибки.
-6. `dotnet test` запускает interop, application и capability tests (MuMu, Android/ADB readiness и
-   lifecycle игры) вместе с repository contract tests без повторной сборки.
+6. `dotnet test` запускает interop, application и capability tests (MuMu, Android/ADB readiness,
+   screenshot diagnostics и lifecycle игры) вместе с repository contract tests без повторной сборки.
 
 MSBuild берёт runtime из `artifacts/native/runtime/<Configuration>` и добавляет DLL в managed outputs.
 Если там нет `AzurPilot.Native.dll` или runtime DLL OpenCV, MSBuild останавливает managed build с

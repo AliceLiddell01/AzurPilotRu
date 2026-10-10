@@ -11,7 +11,7 @@
   Azur Lane Global/EN (`com.YoStarEN.AzurLane`).
 - MuMu discovery/identity/host lifecycle принадлежат `mumu-lifecycle.md`; Android-слой не создаёт
   параллельного владельца этих решений.
-- UI readiness, input, screenshot, vision, OCR/ONNX/GPU, APK install/uninstall, permissions и настройки
+- UI readiness, input, vision, OCR/ONNX/GPU, APK install/uninstall, permissions и настройки
   эмулятора в эту capability не входят.
 - Product identity, ADB endpoint и lifecycle timings не становятся пользовательскими настройками только
   ради удобства реализации.
@@ -24,6 +24,7 @@
   `adb devices`, поиск «похожего» target-а.
 - Неразрешённый или непригодный endpoint — явный отказ; неизвестное значение не подменяется default.
 - Все операции наблюдения и mutation после разрешения endpoint адресуются тому же exact target.
+- Read-only screenshot и region scan — отдельная диагностическая capability; см. `screenshot-diagnostics.md`.
 
 ## ADB executable и команды
 

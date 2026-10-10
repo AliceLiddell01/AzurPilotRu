@@ -267,9 +267,8 @@ application host, MuMu-capability и Android/ADB readiness вместе с lifec
 
 Она не доказывает и не должна имитировать в hosted CI работу реальной установки MuMu, реального ADB,
 готовности реального устройства и lifecycle игры внутри Android: hosted CI ничего из этого не запускает.
-Не доказываются также готовность UI игры, реальный screenshot, корректность будущих vision algorithms,
-OCR/ONNX/GPU inference, ввод и real-device acceptance за пределами двух инструментов приёмки. Ввод,
-screenshot/vision, OCR/ONNX/GPU и готовность UI в текущем приложении отсутствуют; фиктивные шаги для них
-в CI запрещены. Поведение реальной установки доказывается только real Windows acceptance (см. выше) и не
-подменяется моками: управляемые границы доказывают корректность production-кода относительно контракта
-границ, а не установку.
+Не доказываются готовность UI игры по изображению, OCR/ONNX/GPU inference, ввод и live-device состояние.
+Hosted CI проверяет screenshot pipeline только на небольших
+контролируемых PNG fixtures; фактический MuMu capture и пользовательские samples проверяются локально
+режимами [screenshot acceptance](screenshot-acceptance.md). Управляемые границы доказывают корректность
+production-кода относительно контракта, а не установленную машину или устройство.

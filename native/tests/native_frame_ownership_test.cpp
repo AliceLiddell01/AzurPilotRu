@@ -10,6 +10,7 @@
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -280,6 +281,66 @@ void test_argument_and_repeated_ownership() {
     check(snapshot_matches(baseline), "1000 циклов создания и освобождения не оставляют активных кадров и байтов RGB");
 }
 
+void test_region_scan_ownership() {
+    std::vector<std::uint8_t> png;
+    if (!read_fixture("rgb_regions_3x2.png", png)) {
+        return;
+    }
+    const auto baseline = azurpilot::native::detail::frame_ownership_snapshot_for_test();
+    AzurPilotNativeFrameOpaque* frame = nullptr;
+    check(azurpilot::native::detail::decode_png_frame(
+              png.data(), static_cast<std::uint32_t>(png.size()), &frame) == AZURPILOT_NATIVE_OK
+              && frame != nullptr,
+          "Асимметричный кадр создан для проверки владения при сканировании");
+    if (frame == nullptr) {
+        return;
+    }
+    const auto decoded = azurpilot::native::detail::frame_ownership_snapshot_for_test();
+    const std::uint8_t* original_pixels = frame->rgb.data;
+    const std::vector<std::uint8_t> original_content(
+        original_pixels, original_pixels + frame->byte_length);
+    const AzurPilotNativeRegion column{2, 0, 3, 2};
+    AzurPilotNativeRegionStatistics statistics{};
+    bool scans_valid = true;
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        const auto status = azurpilot::native::detail::scan_frame_region(frame, &column, &statistics);
+        const bool scan_valid = status == AZURPILOT_NATIVE_OK
+            && statistics.pixel_count == 2u && statistics.mean_red == 210.0
+            && statistics.mean_green == 80.0 && statistics.mean_blue == 140.0
+            && statistics.stddev_red == 10.0 && statistics.stddev_green == 40.0
+            && statistics.stddev_blue == 60.0;
+        scans_valid = scans_valid && scan_valid;
+    }
+    check(scans_valid, "1000 сканирований читают один native-кадр с одинаковой RGB-статистикой");
+    check(snapshot_matches(decoded), "Сканирование не создаёт новые владельцы кадров и RGB-буферов");
+    check(frame->rgb.data == original_pixels
+              && std::equal(original_content.begin(), original_content.end(), frame->rgb.data),
+          "ROI оставляет исходный пиксельный буфер и его содержимое неизменными");
+
+    const AzurPilotNativeRegionStatistics zero{};
+    std::memset(&statistics, 0xA5, sizeof(statistics));
+    ++frame->stride_bytes;
+    check(azurpilot::native::detail::scan_frame_region(frame, &column, &statistics)
+              == AZURPILOT_NATIVE_ERROR_INTERNAL
+              && std::memcmp(&statistics, &zero, sizeof(statistics)) == 0,
+          "Несогласованные метаданные кадра отвергаются до чтения ROI без частичного результата");
+    --frame->stride_bytes;
+    delete frame;
+    check(snapshot_matches(baseline), "После освобождения просканированного кадра счётчики восстановлены");
+
+    cv::Mat solid(2, 3, CV_8UC3, cv::Scalar(17, 89, 203));
+    auto* solid_frame = new AzurPilotNativeFrameOpaque(std::move(solid), 3u, 2u, 9u, 18u);
+    const AzurPilotNativeRegion full{0, 0, 3, 2};
+    check(azurpilot::native::detail::scan_frame_region(solid_frame, &full, &statistics)
+              == AZURPILOT_NATIVE_OK && statistics.pixel_count == 6u
+              && statistics.mean_red == 17.0 && statistics.mean_green == 89.0
+              && statistics.mean_blue == 203.0 && statistics.stddev_red == 0.0
+              && statistics.stddev_green == 0.0 && statistics.stddev_blue == 0.0,
+          "Однотонная ROI имеет исходные RGB-значения и нулевое отклонение");
+    delete solid_frame;
+    check(snapshot_matches(baseline), "Однотонный тестовый кадр освобождён без активных владельцев");
+}
+
 }  // namespace
 
 int main() {
@@ -287,6 +348,7 @@ int main() {
     test_rgb_and_opaque_rgba();
     test_rejected_inputs();
     test_argument_and_repeated_ownership();
+    test_region_scan_ownership();
 
     const auto final_snapshot = azurpilot::native::detail::frame_ownership_snapshot_for_test();
     check(final_snapshot.live_frames == 0u && final_snapshot.live_rgb_bytes == 0u,

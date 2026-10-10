@@ -51,6 +51,9 @@ public static partial class AzurPilotNativeBridge
     /// <summary>Код возврата: native стороне не хватило памяти.</summary>
     public const int StatusOutOfMemory = 8;
 
+    /// <summary>Идентификатор непрерывного RGB8 из нормативного заголовка native ABI.</summary>
+    public const uint PixelFormatRgb8 = 1;
+
     /// <summary>
     /// Бит признака того, что код OpenCV реально исполнился при заполнении сведений.
     /// </summary>
@@ -223,6 +226,7 @@ public static partial class AzurPilotNativeBridge
     {
         EnsureFrameAbiVersion();
         EnsureFrameReleaseApi();
+        EnsureFrameScanApi();
 
         NativeFrameSafeHandle frame;
         int status;
@@ -273,6 +277,40 @@ public static partial class AzurPilotNativeBridge
         }
 
         return new NativeFrame(frame);
+    }
+
+    /// <summary>Читает нормативный предел encoded PNG из совместимой native DLL.</summary>
+    /// <returns>Максимальное число байтов encoded PNG, принимаемых native decoder.</returns>
+    /// <exception cref="NativeAbiMismatchException">Версия или обязательный экспорт ABI несовместимы.</exception>
+    /// <exception cref="NativeBoundaryUnavailableException">Native DLL не загрузилась.</exception>
+    /// <exception cref="AzurPilotNativeBoundaryException">DLL сообщила недействительный предел.</exception>
+    public static uint GetMaximumPngBytes()
+    {
+        EnsureFrameAbiVersion();
+        uint maximum;
+        try
+        {
+            maximum = MaximumPngBytesNative();
+        }
+        catch (DllNotFoundException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (BadImageFormatException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            throw MissingFrameApi("azurpilot_native_max_png_bytes");
+        }
+
+        if (maximum == 0)
+        {
+            throw new AzurPilotNativeBoundaryException("Native DLL сообщила нулевой предел encoded PNG: контракт ABI нарушен.");
+        }
+
+        return maximum;
     }
 
     /// <summary>Преобразует код возврата native стороны в диагностический текст.</summary>
@@ -350,6 +388,63 @@ public static partial class AzurPilotNativeBridge
         }
     }
 
+    internal static RegionRgbStatistics ScanFrameRegion(NativeFrameSafeHandle frame, PixelRegion region)
+    {
+        EnsureFrameAbiVersion();
+        NativeRegion nativeRegion = new()
+        {
+            Left = region.Left,
+            Top = region.Top,
+            Right = region.Right,
+            Bottom = region.Bottom,
+        };
+        int status;
+        NativeRegionStatistics statistics;
+        try
+        {
+            status = ScanRegionNative(frame, in nativeRegion, out statistics);
+        }
+        catch (DllNotFoundException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (BadImageFormatException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            throw MissingFrameApi("azurpilot_native_frame_scan_region");
+        }
+
+        if (status != StatusOk)
+        {
+            throw new NativeFrameAnalysisException(status);
+        }
+
+        long width = (long)region.Right - region.Left;
+        long height = (long)region.Bottom - region.Top;
+        if (width <= 0 || height <= 0
+            || statistics.PixelCount != (ulong)width * (ulong)height
+            || !ValidRgbValue(statistics.MeanRed) || !ValidRgbValue(statistics.MeanGreen)
+            || !ValidRgbValue(statistics.MeanBlue) || !ValidRgbValue(statistics.StandardDeviationRed)
+            || !ValidRgbValue(statistics.StandardDeviationGreen) || !ValidRgbValue(statistics.StandardDeviationBlue))
+        {
+            throw new NativeFrameAnalysisException(StatusInternal);
+        }
+
+        return new RegionRgbStatistics(
+            statistics.PixelCount,
+            statistics.MeanRed,
+            statistics.MeanGreen,
+            statistics.MeanBlue,
+            statistics.StandardDeviationRed,
+            statistics.StandardDeviationGreen,
+            statistics.StandardDeviationBlue);
+    }
+
+    private static bool ValidRgbValue(double value) => double.IsFinite(value) && value >= 0 && value <= byte.MaxValue;
+
     /// <summary>
     /// Проверяет, что managed объявление структуры совпадает с раскладкой из заголовка ABI,
     /// и возвращает фактический размер managed структуры в байтах.
@@ -409,6 +504,59 @@ public static partial class AzurPilotNativeBridge
     private static void EnsureFrameAbiVersion()
     {
         EnsureExpectedAbiVersion(NativeAbiVersion());
+    }
+
+    private static void EnsureFrameScanApi()
+    {
+        _ = VerifyRegionStructLayout();
+        int status;
+        try
+        {
+            status = ProbeScanRegionNative(IntPtr.Zero, IntPtr.Zero, out _);
+        }
+        catch (DllNotFoundException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (BadImageFormatException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            throw MissingFrameApi("azurpilot_native_frame_scan_region");
+        }
+
+        if (status != StatusInvalidArgument)
+        {
+            throw new NativeAbiMismatchException(
+                $"Native функция azurpilot_native_frame_scan_region для NULL завершилась с кодом {status}; "
+                + $"ABI {NativeBoundaryContract.ExpectedAbiVersion} требует код {StatusInvalidArgument}.");
+        }
+    }
+
+    /// <summary>Проверяет размер и смещения POD-структур ROI из нормативного заголовка ABI.</summary>
+    /// <returns>Фактический размер структуры RGB-статистики.</returns>
+    /// <exception cref="AzurPilotNativeBoundaryException">Раскладка не совпадает с ABI.</exception>
+    public static unsafe int VerifyRegionStructLayout()
+    {
+        NativeRegion region = default;
+        NativeRegionStatistics statistics = default;
+        if (sizeof(NativeRegion) != 16 || sizeof(NativeRegionStatistics) != 56
+            || (byte*)&region.Top - (byte*)&region != 4
+            || (byte*)&region.Right - (byte*)&region != 8
+            || (byte*)&region.Bottom - (byte*)&region != 12
+            || (byte*)&statistics.MeanRed - (byte*)&statistics != 8
+            || (byte*)&statistics.MeanGreen - (byte*)&statistics != 16
+            || (byte*)&statistics.MeanBlue - (byte*)&statistics != 24
+            || (byte*)&statistics.StandardDeviationRed - (byte*)&statistics != 32
+            || (byte*)&statistics.StandardDeviationGreen - (byte*)&statistics != 40
+            || (byte*)&statistics.StandardDeviationBlue - (byte*)&statistics != 48)
+        {
+            throw new AzurPilotNativeBoundaryException("Раскладка managed структур ROI не совпадает с заголовком ABI.");
+        }
+
+        return sizeof(NativeRegionStatistics);
     }
 
     private static void EnsureFrameReleaseApi()
@@ -550,6 +698,42 @@ public static partial class AzurPilotNativeBridge
 
     [LibraryImport(LibraryName, EntryPoint = "azurpilot_native_frame_release")]
     private static partial int ReleaseFrameNative(IntPtr frame);
+
+    [LibraryImport(LibraryName, EntryPoint = "azurpilot_native_max_png_bytes")]
+    private static partial uint MaximumPngBytesNative();
+
+    [LibraryImport(LibraryName, EntryPoint = "azurpilot_native_frame_scan_region")]
+    private static partial int ScanRegionNative(
+        NativeFrameSafeHandle frame,
+        in NativeRegion region,
+        out NativeRegionStatistics outStatistics);
+
+    [LibraryImport(LibraryName, EntryPoint = "azurpilot_native_frame_scan_region")]
+    private static partial int ProbeScanRegionNative(
+        IntPtr frame,
+        IntPtr region,
+        out NativeRegionStatistics outStatistics);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRegion
+    {
+        internal int Left;
+        internal int Top;
+        internal int Right;
+        internal int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRegionStatistics
+    {
+        internal ulong PixelCount;
+        internal double MeanRed;
+        internal double MeanGreen;
+        internal double MeanBlue;
+        internal double StandardDeviationRed;
+        internal double StandardDeviationGreen;
+        internal double StandardDeviationBlue;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct NativeFrameNativeInfo

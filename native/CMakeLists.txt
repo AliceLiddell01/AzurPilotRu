@@ -139,13 +139,23 @@ set_target_properties(AzurPilot.Native.AbiMismatchFixture PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-mismatch/$<CONFIG>"
   PDB_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-mismatch/$<CONFIG>")
 
-# ABI v2 без функции освобождения нужен для проверки ранней валидации API кадра.
+# ABI v3 без функции освобождения нужен для проверки ранней валидации API кадра.
 # DLL не создаёт native-кадр и никогда не попадает в production runtime.
-add_library(AzurPilot.Native.AbiV2MissingReleaseFixture SHARED tests/abi_v2_missing_release_fixture.cpp)
-target_include_directories(AzurPilot.Native.AbiV2MissingReleaseFixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-azurpilot_native_apply_compile_options(AzurPilot.Native.AbiV2MissingReleaseFixture)
-set_target_properties(AzurPilot.Native.AbiV2MissingReleaseFixture PROPERTIES
+add_library(AzurPilot.Native.AbiV3MissingReleaseFixture SHARED tests/abi_v3_missing_release_fixture.cpp)
+target_include_directories(AzurPilot.Native.AbiV3MissingReleaseFixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+azurpilot_native_apply_compile_options(AzurPilot.Native.AbiV3MissingReleaseFixture)
+set_target_properties(AzurPilot.Native.AbiV3MissingReleaseFixture PROPERTIES
   OUTPUT_NAME "AzurPilot.Native"
-  RUNTIME_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v2-missing-release/$<CONFIG>"
-  ARCHIVE_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v2-missing-release/$<CONFIG>"
-  PDB_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v2-missing-release/$<CONFIG>")
+  RUNTIME_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v3-missing-release/$<CONFIG>"
+  ARCHIVE_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v3-missing-release/$<CONFIG>"
+  PDB_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v3-missing-release/$<CONFIG>")
+
+# Неполная DLL текущего ABI проверяет обязательный ROI-экспорт до создания кадра.
+add_library(AzurPilot.Native.AbiV3MissingRoiFixture SHARED tests/abi_v3_missing_roi_fixture.cpp)
+target_include_directories(AzurPilot.Native.AbiV3MissingRoiFixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+azurpilot_native_apply_compile_options(AzurPilot.Native.AbiV3MissingRoiFixture)
+set_target_properties(AzurPilot.Native.AbiV3MissingRoiFixture PROPERTIES
+  OUTPUT_NAME "AzurPilot.Native"
+  RUNTIME_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v3-missing-roi/$<CONFIG>"
+  ARCHIVE_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v3-missing-roi/$<CONFIG>"
+  PDB_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v3-missing-roi/$<CONFIG>")

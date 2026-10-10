@@ -7,12 +7,11 @@
 замороженный C ABI между ними, стандартный путь сборки и тестирования средствами CMake и .NET,
 Windows CI и автоматизация обновления зависимостей. Приложение уже является application host:
 строгая пользовательская конфигурация, application-level отказы, structured logging в `stderr` с
-correlation identity, runtime-диагностика и две реальные Windows-возможности: MuMu (обнаружение
-установки MuMuPlayer, выбор Android-экземпляра и host-side запуск, остановка и перезапуск с доказуемым
-postcondition) и Android-слой (bundled ADB обнаруженной установки, точный ADB endpoint выбранного
-экземпляра, готовность Android и lifecycle игры Azur Lane Global/EN с доказуемым postcondition). Ввод,
-vision-пайплайн, OCR/ONNX, готовность UI игры, продуктовые CLI/REPL и agent CLI — будущие возможности: в
-текущее приложение они не входят.
+correlation identity, runtime-диагностика и три реальные Windows-возможности: MuMu (обнаружение установки,
+выбор Android-экземпляра и host-side lifecycle с доказуемым postcondition), Android/ADB (точный endpoint,
+readiness и lifecycle Azur Lane Global/EN) и отдельная диагностика PNG capture с named region scan через
+существующий native RGB8 frame. Capture не запускается автоматически при старте приложения. Ввод,
+распознавание UI, OCR/ONNX, продуктовые CLI/REPL и agent CLI — будущие возможности.
 
 ## Платформа
 
@@ -77,7 +76,10 @@ CI использует эти стандартные команды напря�
 [runtime-diagnostics.md](docs/operations/runtime-diagnostics.md), правила MuMu-capability —
 [mumu-lifecycle.md](docs/architecture/mumu-lifecycle.md), правила Android-слоя и lifecycle игры —
 [android-game-lifecycle.md](docs/architecture/android-game-lifecycle.md), проверяемые свойства —
-[verification.md](docs/testing/verification.md) и тесты `tests/AzurPilot.Tests/`.
+[verification.md](docs/testing/verification.md), устройство screenshot diagnostics —
+[screenshot-diagnostics.md](docs/architecture/screenshot-diagnostics.md), локальная приёмка —
+[screenshot-acceptance.md](docs/testing/screenshot-acceptance.md), а managed tests —
+`tests/AzurPilot.Tests/`.
 
 ## Структура репозитория
 
@@ -97,6 +99,7 @@ CI использует эти стандартные команды напря�
 - [docs/README.md](docs/README.md) — карта развёрнутой документации проекта.
 - [docs/getting-started.md](docs/getting-started.md) — prerequisites, сборка, запуск и диагностика.
 - [docs/architecture/android-game-lifecycle.md](docs/architecture/android-game-lifecycle.md) — подробная архитектура Android/ADB и lifecycle игры.
+- [docs/architecture/screenshot-diagnostics.md](docs/architecture/screenshot-diagnostics.md) — read-only PNG capture, geometry и native region scan.
 - [AGENTS.md](AGENTS.md) — минимальный глобальный контракт для coding-agent.
 - [.codex/context/INDEX.md](.codex/context/INDEX.md) — маршрутизация короткого agent-critical контекста.
 

@@ -67,15 +67,27 @@ public sealed class NativeInteropNegativeTests
         Assert.Equal(ApplicationFailure.NativeIncompatible, result.FailureCode);
     }
 
-    [Fact(DisplayName = "ABI v2 без функции освобождения кадра отвергается до декодирования")]
-    public void AbiV2WithoutFrameReleaseIsRejectedBeforeDecode()
+    [Fact(DisplayName = "ABI v3 без функции освобождения кадра отвергается до декодирования")]
+    public void AbiV3WithoutFrameReleaseIsRejectedBeforeDecode()
     {
         NativeBoundaryProbeRunner.ProbeRun result = NativeBoundaryProbeRunner.Run(
-            NativeBoundaryProbeRunner.ProbeMode.AbiV2MissingRelease);
+            NativeBoundaryProbeRunner.ProbeMode.AbiV3MissingRelease);
 
         Assert.Equal(0, result.ExitCode);
-        Assert.Contains("Проба: ABI v2 без обязательной функции освобождения отклонён до декодирования", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("Проба: ABI v3 без обязательной функции освобождения отклонён до декодирования", result.StandardOutput, StringComparison.Ordinal);
         Assert.Contains("azurpilot_native_frame_release", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Equal(ApplicationFailure.NativeIncompatible, result.FailureCode);
+    }
+
+    [Fact(DisplayName = "ABI v3 без ROI экспорта отвергается до декодирования кадра")]
+    public void AbiV3WithoutRoiIsRejectedBeforeDecode()
+    {
+        NativeBoundaryProbeRunner.ProbeRun result = NativeBoundaryProbeRunner.Run(
+            NativeBoundaryProbeRunner.ProbeMode.AbiV3MissingRoi);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("Проба: ABI v3 без обязательного ROI экспорта отклонён до декодирования", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("azurpilot_native_frame_scan_region", result.StandardOutput, StringComparison.Ordinal);
         Assert.Equal(ApplicationFailure.NativeIncompatible, result.FailureCode);
     }
 }

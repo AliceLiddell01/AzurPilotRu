@@ -64,10 +64,14 @@ Acceptance использует production Android surface и проверяет
 - устанавливать/удалять APK;
 - очищать данные/кэш;
 - менять permissions или настройки эмулятора;
-- выполнять input, screenshot, vision/OCR;
+- выполнять input, vision/OCR;
 - оставлять изменённое состояние игры после штатного завершения.
 
 Если restoration не доказан, прогон не считается чистым успешным evidence.
+
+Отдельный read-only screenshot acceptance не выполняет lifecycle-операций и допускает ровно
+`adb -s <endpoint> exec-out screencap -p` на заранее проверенном foreground target-е. Его предусловия,
+повторная серия и доказательства описаны в [screenshot acceptance](screenshot-acceptance.md).
 
 ## Что считать evidence
 

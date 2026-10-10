@@ -37,6 +37,8 @@ public sealed class AndroidHostCompositionTests
         IAndroidHost androidHost = services.GetRequiredService<IAndroidHost>();
         _ = Assert.IsType<AndroidWindowsHost>(androidHost);
         Assert.Same(androidHost, services.GetRequiredService<IAndroidHost>());
+        Assert.Same(androidHost, services.GetRequiredService<AndroidWindowsHost>());
+        Assert.Same(androidHost, services.GetRequiredService<IAndroidScreenshotHost>());
 
         // Граница запуска процесса остаётся одной реализацией, но у Android-возможности она подключена со
         // своей проекцией отказов: смысл отказов принадлежит владельцу возможности.
@@ -104,8 +106,9 @@ public sealed class AndroidHostCompositionTests
         Assert.DoesNotContain(exported, type => type.Name == "AzurPilotAndroidProbe");
         Assert.DoesNotContain(exported, type => type.Name == "AzurPilotAndroidTarget");
 
-        // Новых boundaries в App не появилось: все публичные типы принадлежат пространству имён приложения.
-        Assert.All(exported, type => Assert.Equal("AzurPilot.App", type.Namespace));
+        // Новых boundaries в App не появилось: диагностические операции могут жить в выделенном подпространстве.
+        Assert.All(exported, type => Assert.True(
+            type.Namespace is "AzurPilot.App" or "AzurPilot.App.Diagnostics"));
     }
 
     private static IHost BuildHost()

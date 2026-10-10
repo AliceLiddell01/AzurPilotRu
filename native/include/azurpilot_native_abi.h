@@ -2,7 +2,7 @@
  * azurpilot_native_abi.h — замороженный C ABI между managed (C#) и native (C++) частями AzurPilot.
  *
  * НАЗНАЧЕНИЕ
- *   Единственный владелец формы C ABI версии 2. Managed сторона и native реализация обязаны
+ *   Единственный владелец формы C ABI версии 3. Managed сторона и native реализация обязаны
  *   совпадать побайтово: любое расхождение — ошибка совместимости, а не повод продолжать работу.
  *   Изменение формы (поля, порядок, типы, коды возврата, смысл битов) требует нового номера ABI
  *   и согласованного обновления обеих сторон; обратная совместимость формой не гарантируется.
@@ -14,7 +14,8 @@
  *   не имеет права подставлять другое имя.
  *
  * ГРАНИЦЫ
- *   - Через границу проходят только C-совместимые типы: uint32_t, int32_t, char, непрозрачный дескриптор.
+ *   - Через границу проходят только C-совместимые типы: uint32_t, uint64_t, int32_t, double,
+ *     char, POD-структуры и непрозрачный дескриптор.
  *   - Запрещено: cv::Mat, любые STL-типы (std::string, std::vector, ...), C++-классы кроме непрозрачного
  *     дескриптора, ссылки, C++-исключения и указатели на пиксельные буферы.
  *   - Входные буферы и метаданные принадлежат вызывающей стороне. Native-кадр принадлежит DLL и
@@ -43,8 +44,8 @@
 
 /* Версия ABI. Единственный нормативный владелец значения — этот заголовок.
  * Managed и native стороны проверяют совместимость границы до использования данных. */
-#define AZURPILOT_NATIVE_ABI_VERSION 2
-#define AZURPILOT_NATIVE_ABI_VERSION_STRING "2"
+#define AZURPILOT_NATIVE_ABI_VERSION 3
+#define AZURPILOT_NATIVE_ABI_VERSION_STRING "3"
 
 /* Коды возврата. 0 — единственный успешный код; любой ненулевой код означает, что результат
  * недействителен и использовать его нельзя. */
@@ -145,6 +146,28 @@ typedef struct AzurPilotNativeFrameInfo {
     uint32_t pixel_format;
 } AzurPilotNativeFrameInfo;
 
+/* Физические координаты полуоткрытой области [left, right) × [top, bottom).
+ * Размер 16, выравнивание 4, смещения 0, 4, 8, 12. Область не обрезается границей. */
+typedef struct AzurPilotNativeRegion {
+    int32_t left;
+    int32_t top;
+    int32_t right;
+    int32_t bottom;
+} AzurPilotNativeRegion;
+
+/* Статистика RGB8 в исходном диапазоне 0..255. stddev — стандартное отклонение
+ * генеральной совокупности (делитель N); для одного пикселя равно нулю.
+ * Размер 56, выравнивание 8; смещения 0, 8, 16, 24, 32, 40, 48. */
+typedef struct AzurPilotNativeRegionStatistics {
+    uint64_t pixel_count;
+    double mean_red;
+    double mean_green;
+    double mean_blue;
+    double stddev_red;
+    double stddev_green;
+    double stddev_blue;
+} AzurPilotNativeRegionStatistics;
+
 #if defined(__cplusplus)
 static_assert(sizeof(AzurPilotNativeInfo) == 56,
               "AzurPilotNativeInfo: раскладка ABI изменена — это ломает managed/native совместимость");
@@ -156,6 +179,22 @@ static_assert(offsetof(AzurPilotNativeFrameInfo, width) == 0 &&
                   offsetof(AzurPilotNativeFrameInfo, byte_length) == 12 &&
                   offsetof(AzurPilotNativeFrameInfo, pixel_format) == 16,
               "AzurPilotNativeFrameInfo: поля ABI v2 перемещены");
+static_assert(sizeof(AzurPilotNativeRegion) == 16 && alignof(AzurPilotNativeRegion) == 4 &&
+                  offsetof(AzurPilotNativeRegion, left) == 0 &&
+                  offsetof(AzurPilotNativeRegion, top) == 4 &&
+                  offsetof(AzurPilotNativeRegion, right) == 8 &&
+                  offsetof(AzurPilotNativeRegion, bottom) == 12,
+              "AzurPilotNativeRegion: требуется раскладка ABI v3 size=16 alignment=4");
+static_assert(sizeof(AzurPilotNativeRegionStatistics) == 56 &&
+                  alignof(AzurPilotNativeRegionStatistics) == 8 &&
+                  offsetof(AzurPilotNativeRegionStatistics, pixel_count) == 0 &&
+                  offsetof(AzurPilotNativeRegionStatistics, mean_red) == 8 &&
+                  offsetof(AzurPilotNativeRegionStatistics, mean_green) == 16 &&
+                  offsetof(AzurPilotNativeRegionStatistics, mean_blue) == 24 &&
+                  offsetof(AzurPilotNativeRegionStatistics, stddev_red) == 32 &&
+                  offsetof(AzurPilotNativeRegionStatistics, stddev_green) == 40 &&
+                  offsetof(AzurPilotNativeRegionStatistics, stddev_blue) == 48,
+              "AzurPilotNativeRegionStatistics: требуется раскладка ABI v3 size=56 alignment=8");
 #endif
 
 #if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
@@ -168,6 +207,22 @@ _Static_assert(offsetof(AzurPilotNativeFrameInfo, width) == 0 &&
                    offsetof(AzurPilotNativeFrameInfo, byte_length) == 12 &&
                    offsetof(AzurPilotNativeFrameInfo, pixel_format) == 16,
                "AzurPilotNativeFrameInfo: поля ABI v2 перемещены");
+_Static_assert(sizeof(AzurPilotNativeRegion) == 16 && _Alignof(AzurPilotNativeRegion) == 4 &&
+                   offsetof(AzurPilotNativeRegion, left) == 0 &&
+                   offsetof(AzurPilotNativeRegion, top) == 4 &&
+                   offsetof(AzurPilotNativeRegion, right) == 8 &&
+                   offsetof(AzurPilotNativeRegion, bottom) == 12,
+               "AzurPilotNativeRegion: требуется раскладка ABI v3 size=16 alignment=4");
+_Static_assert(sizeof(AzurPilotNativeRegionStatistics) == 56 &&
+                   _Alignof(AzurPilotNativeRegionStatistics) == 8 &&
+                   offsetof(AzurPilotNativeRegionStatistics, pixel_count) == 0 &&
+                   offsetof(AzurPilotNativeRegionStatistics, mean_red) == 8 &&
+                   offsetof(AzurPilotNativeRegionStatistics, mean_green) == 16 &&
+                   offsetof(AzurPilotNativeRegionStatistics, mean_blue) == 24 &&
+                   offsetof(AzurPilotNativeRegionStatistics, stddev_red) == 32 &&
+                   offsetof(AzurPilotNativeRegionStatistics, stddev_green) == 40 &&
+                   offsetof(AzurPilotNativeRegionStatistics, stddev_blue) == 48,
+               "AzurPilotNativeRegionStatistics: требуется раскладка ABI v3 size=56 alignment=8");
 #endif
 
 #if defined(__cplusplus)
@@ -179,6 +234,10 @@ extern "C" {
  * сравнить результат с ожидаемой версией ABI до любого другого вызова; несовпадение — ошибка
  * совместимости, а не повод продолжать. */
 AZURPILOT_NATIVE_API uint32_t azurpilot_native_abi_version(void) AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Возвращает нормативный лимит закодированного PNG из этого заголовка без OpenCV
+ * и выделения памяти. Managed capture использует его для ограничения входного потока. */
+AZURPILOT_NATIVE_API uint32_t azurpilot_native_max_png_bytes(void) AZURPILOT_NATIVE_NOEXCEPT;
 
 /* Заполняет структуру сведениями о native-границе.
  * out_info — память вызывающей стороны; владение остаётся у вызывающей стороны.
@@ -249,6 +308,20 @@ AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_decode_png(
  * данных. NULL-дескриптор или NULL out_info — INVALID_ARGUMENT; недостоверное внутреннее состояние — INTERNAL. */
 AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_get_info(
     AzurPilotNativeFrameHandle frame, AzurPilotNativeFrameInfo* out_info)
+    AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Вычисляет число пикселей, среднее и population stddev RGB по physical ROI.
+ * Требуется 0 <= left < right <= width и 0 <= top < bottom <= height;
+ * отрицательная, пустая, перевёрнутая или выходящая за кадр область — INVALID_ARGUMENT.
+ * NULL frame/region/out_statistics — INVALID_ARGUMENT. Ненулевой out_statistics полностью
+ * обнуляется при любом отказе. Внутренне недостоверный кадр — INTERNAL; ошибка OpenCV —
+ * OPENCV_FAILURE; нехватка памяти — OUT_OF_MEMORY. Пиксели не копируются через ABI,
+ * кадр не изменяется. Вызывающая сторона удерживает живой frame до возврата и исключает
+ * конкурентный frame_release; чужой или освобождённый дескриптор недопустим. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_scan_region(
+    AzurPilotNativeFrameHandle frame,
+    const AzurPilotNativeRegion* region,
+    AzurPilotNativeRegionStatistics* out_statistics)
     AZURPILOT_NATIVE_NOEXCEPT;
 
 /* Освобождает дескриптор через механизм выделения памяти native DLL. NULL-дескриптор возвращает INVALID_ARGUMENT.

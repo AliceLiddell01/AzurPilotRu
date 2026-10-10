@@ -13,9 +13,11 @@ using AzurPilot.Windows;
 //
 // Режим --abi-mismatch загружает DLL с несовместимой версией ABI. Её экспорт функции декодирования
 // возвращает INVALID_PNG, поэтому ожидаемый отказ по версии доказывает проверку до вызова этой функции.
-// Режим --abi-v2-missing-release загружает DLL ABI v2 без обязательной функции освобождения и
+// Режим --abi-v3-missing-release загружает DLL ABI v3 без обязательной функции освобождения и
 // проверяет, что несовместимость обнаруживается до вызова декодирования.
-// Режим --disposed-frame проверяет отказ GetInfo после Dispose в процессе без native DLL.
+// Режим --abi-v3-missing-roi проверяет обязательный ROI экспорт до создания native frame.
+// Режим --disposed-frame проверяет отказ GetInfo/ScanRegion после Dispose в процессе без native DLL.
+// Режим --process-output выдаёт детерминированный бинарный stdout и конкурентный stderr для runner tests.
 //
 // Режим --application-composition <путь> выполняет реальный startup приложения через composition root
 // с явно переданным путём конфигурации. Аргументы здесь допустимы, потому что проба — тестовый
@@ -30,6 +32,11 @@ using AzurPilot.Windows;
 // Коды выхода: 0 — ожидаемый результат получен; 1 — результат не соответствует ожидаемому.
 
 Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
+if (args.Length == 4 && string.Equals(args[0], "--process-output", StringComparison.Ordinal))
+{
+    return await RunProcessOutputAsync(args[1], args[2], args[3]).ConfigureAwait(false);
+}
 
 if (args.Length == 1 && string.Equals(args[0], "--abi-mismatch", StringComparison.Ordinal))
 {
@@ -99,9 +106,14 @@ if (args.Length == 1 && string.Equals(args[0], "--abi-mismatch", StringCompariso
     return 1;
 }
 
-if (args.Length == 1 && string.Equals(args[0], "--abi-v2-missing-release", StringComparison.Ordinal))
+if (args.Length == 1 && string.Equals(args[0], "--abi-v3-missing-release", StringComparison.Ordinal))
 {
     return RunMissingReleaseProbe();
+}
+
+if (args.Length == 1 && string.Equals(args[0], "--abi-v3-missing-roi", StringComparison.Ordinal))
+{
+    return RunMissingRoiProbe();
 }
 
 if (args.Length == 1 && string.Equals(args[0], "--disposed-frame", StringComparison.Ordinal))
@@ -117,8 +129,9 @@ if (args.Length == 2 && string.Equals(args[0], "--application-composition", Stri
 if (args.Length != 0)
 {
     Console.Error.WriteLine(
-        "Проба: неизвестные аргументы; допустимы --abi-mismatch, --abi-v2-missing-release, "
-        + "--disposed-frame и --application-composition <путь>.");
+        "Проба: неизвестные аргументы; допустимы --abi-mismatch, --abi-v3-missing-release, "
+        + "--abi-v3-missing-roi, --disposed-frame, --process-output <stdout> <stderr> <delay> "
+        + "и --application-composition <путь>.");
     return 1;
 }
 
@@ -144,7 +157,7 @@ Console.Error.WriteLine(
     $"Проба: отсутствие native библиотеки «{AzurPilotNativeBridge.LibraryName}» не привело к исключению.");
 return 1;
 
-// Проверяет, что DLL ABI v2 без обязательной функции освобождения отвергается до декодирования.
+// Проверяет, что DLL ABI v3 без обязательной функции освобождения отвергается до декодирования.
 static int RunMissingReleaseProbe()
 {
     try
@@ -165,7 +178,7 @@ static int RunMissingReleaseProbe()
         }
 
         Console.WriteLine(
-            "Проба: ABI v2 без обязательной функции освобождения отклонён до декодирования: "
+            "Проба: ABI v3 без обязательной функции освобождения отклонён до декодирования: "
             + exception.Message);
         return ReportMappedFailure(exception);
     }
@@ -174,6 +187,34 @@ static int RunMissingReleaseProbe()
         Console.Error.WriteLine(
             "Проба: вызов декодирования дошёл до неожиданной ошибки: "
             + $"{exception.GetType().Name}: {exception.Message}");
+        return 1;
+    }
+}
+
+// Доказывает preflight обязательного ROI-экспорта до создания native frame.
+static int RunMissingRoiProbe()
+{
+    try
+    {
+        using NativeFrame frame = AzurPilotNativeBridge.DecodePng([]);
+        Console.Error.WriteLine("Проба: DecodePng неожиданно успешно завершился без обязательного ROI экспорта.");
+        return 1;
+    }
+    catch (NativeAbiMismatchException exception)
+    {
+        if (!exception.Message.Contains(AzurPilotNativeBridge.LibraryName, StringComparison.Ordinal)
+            || !exception.Message.Contains("azurpilot_native_frame_scan_region", StringComparison.Ordinal))
+        {
+            Console.Error.WriteLine("Проба: диагностика отсутствующего ROI экспорта не называет библиотеку и экспорт.");
+            return 1;
+        }
+
+        Console.WriteLine("Проба: ABI v3 без обязательного ROI экспорта отклонён до декодирования: " + exception.Message);
+        return ReportMappedFailure(exception);
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"Проба: ROI preflight завершился неожиданно: {exception.GetType().Name}: {exception.Message}");
         return 1;
     }
 }
@@ -200,11 +241,12 @@ static int RunDisposedFrameProbe()
         try
         {
             _ = frame.GetInfo();
+            Console.Error.WriteLine("Проба: GetInfo после Dispose неожиданно завершился успешно.");
+            return 1;
         }
         catch (ObjectDisposedException)
         {
             Console.WriteLine("Проба: GetInfo после Dispose отклонён до native вызова.");
-            return 0;
         }
         catch (Exception exception)
         {
@@ -214,8 +256,24 @@ static int RunDisposedFrameProbe()
             return 1;
         }
 
-        Console.Error.WriteLine("Проба: GetInfo после Dispose неожиданно завершился успешно.");
-        return 1;
+        try
+        {
+            _ = frame.ScanRegion(new PixelRegion(0, 0, 1, 1));
+            Console.Error.WriteLine("Проба: ScanRegion после Dispose неожиданно завершился успешно.");
+            return 1;
+        }
+        catch (ObjectDisposedException)
+        {
+            Console.WriteLine("Проба: ScanRegion после Dispose отклонён до native вызова.");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(
+                "Проба: ScanRegion после Dispose завершился неожиданно: "
+                + $"{exception.GetType().Name}: {exception.Message}");
+            return 1;
+        }
     }
     catch (Exception exception)
     {
@@ -224,6 +282,54 @@ static int RunDisposedFrameProbe()
             + $"{exception.GetType().Name}: {exception.Message}");
         return 1;
     }
+}
+
+// Изолированный child process для побайтового доказательства общей process boundary.
+static async Task<int> RunProcessOutputAsync(string outputCount, string errorCount, string delayValue)
+{
+    if (!int.TryParse(outputCount, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out int stdoutBytes)
+        || !int.TryParse(errorCount, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out int stderrBytes)
+        || !int.TryParse(delayValue, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out int delayMilliseconds))
+    {
+        Console.Error.WriteLine("Проба: количества байтов и задержка должны быть неотрицательными Int32.");
+        return 1;
+    }
+
+    Task writeError = Task.Run(async () =>
+    {
+        const int chunkSize = 4096;
+        string chunk = new('e', chunkSize);
+        for (int remaining = stderrBytes; remaining > 0;)
+        {
+            int count = Math.Min(remaining, chunkSize);
+            await Console.Error.WriteAsync(chunk.AsMemory(0, count)).ConfigureAwait(false);
+            remaining -= count;
+        }
+
+        await Console.Error.FlushAsync().ConfigureAwait(false);
+    });
+
+    using Stream output = Console.OpenStandardOutput();
+    byte[] bytes = new byte[4096];
+    for (int index = 0; index < bytes.Length; index++)
+    {
+        bytes[index] = (byte)(index % 256);
+    }
+
+    for (int remaining = stdoutBytes; remaining > 0;)
+    {
+        int count = Math.Min(remaining, bytes.Length);
+        await output.WriteAsync(bytes.AsMemory(0, count)).ConfigureAwait(false);
+        remaining -= count;
+    }
+
+    await output.FlushAsync().ConfigureAwait(false);
+    await writeError.ConfigureAwait(false);
+    await Task.Delay(delayMilliseconds).ConfigureAwait(false);
+    return 0;
 }
 
 // Выполняет startup приложения с явно переданным путём конфигурации и сообщает полученный код выхода

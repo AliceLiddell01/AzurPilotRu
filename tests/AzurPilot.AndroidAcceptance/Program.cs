@@ -10,29 +10,112 @@ using AcceptanceSanitizer = AzurPilot.MuMuAcceptance.AcceptanceSanitizer;
 
 // Инструмент реальной приёмки Android-слоя на Windows.
 //
-// Это тестовый инструмент, а не продукт: аргументы разбирает только он, в AzurPilot.App ничего не
-// добавляется. Прогон выполняет production-код (IMuMuHost и MuMuLifecycleService из AzurPilot.Core и
-// AzurPilot.Windows для предусловия, AndroidReadinessService, AzurLaneGameStateService и
-// AzurLaneGameLifecycleService для readiness и lifecycle игры) и доказывает переходы независимым
-// наблюдением состояния.
-//
-// Коды выхода: 0 — цепочка и восстановление начального состояния игры доказаны; 1 — приёмка не доказана;
-// 2 — прогон отклонён до начала работы (не задан exact instance или неизвестный аргумент).
-//
-// Эксплуатационное замечание для вызывающей стороны: прогон запускает игру внутри уже работающего
-// экземпляра эмулятора, поэтому эмулятор наследует дескрипторы вывода инструмента. Оболочка, которая ждёт
-// всё дерево процессов вместе с перенаправлением потоков, не завершится, пока работает эмулятор: вывод
-// нужно собирать способом, который ждёт только сам инструмент (например, через cmd с перенаправлением в
-// файл).
+// Существующий `--instance` режим проверяет lifecycle игры и восстанавливает исходное состояние.
+// `--screenshot-live` отдельно проверяет read-only exact-target screenshot на уже готовом foreground
+// target-е; `--prepare-transport` — отдельная явная подготовка transport; `--screenshot-samples`
+// декодирует локальный набор PNG без доступа к устройству. Все режимы остаются тестовым инструментом:
+// продуктовый CLI в AzurPilot.App не добавляется.
 
 Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
-AcceptanceArguments arguments = AndroidAcceptanceArgumentParser.Parse(args);
-if (arguments.Options is not AcceptanceOptions options)
+ScreenshotLiveOptions? screenshotLiveOptions = null;
+AndroidTransportPreparationOptions? transportPreparationOptions = null;
+if (AndroidTransportPreparationArgumentParser.IsMode(args))
 {
-    Console.Error.WriteLine("AzurPilot Android acceptance: " + arguments.Error);
-    Console.Error.WriteLine(AndroidAcceptanceArgumentParser.Usage);
-    return AndroidAcceptanceExitCode.UsageRejected;
+    AndroidTransportPreparationArguments preparationArguments =
+        AndroidTransportPreparationArgumentParser.Parse(args);
+    if (preparationArguments.Options is null)
+    {
+        Console.Error.WriteLine("Приёмка Android AzurPilot: " + preparationArguments.Error);
+        Console.Error.WriteLine(AndroidTransportPreparationArgumentParser.Usage);
+        return AndroidAcceptanceExitCode.UsageRejected;
+    }
+
+    transportPreparationOptions = preparationArguments.Options;
+}
+
+if (ScreenshotAcceptanceArgumentParser.IsScreenshotMode(args))
+{
+    ScreenshotAcceptanceArguments screenshotArguments = ScreenshotAcceptanceArgumentParser.Parse(args);
+    if (screenshotArguments.Options is null)
+    {
+        Console.Error.WriteLine("Приёмка screenshot AzurPilot: " + screenshotArguments.Error);
+        Console.Error.WriteLine(ScreenshotAcceptanceArgumentParser.Usage);
+        return AndroidAcceptanceExitCode.UsageRejected;
+    }
+
+    if (screenshotArguments.Options is ScreenshotSamplesOptions samplesOptions)
+    {
+        ScreenshotSampleRunReport sampleReport;
+        try
+        {
+            sampleReport = ScreenshotSampleRunner.Run(samplesOptions.DirectoryPath);
+        }
+        catch (Exception exception)
+        {
+            object failureEvidence = new
+            {
+                mode = "local_samples",
+                isProven = false,
+                failureCode = "screenshot_sample_runner_failed",
+                exceptionType = ScreenshotAcceptanceRunner.GetSafeExceptionType(exception),
+            };
+            string failureJson = ScreenshotAcceptanceJson.Serialize(failureEvidence);
+            bool artifactWritten = ScreenshotAcceptanceArtifactWriter.TryWriteReport(
+                samplesOptions.ArtifactName, failureJson, out string artifactReason);
+            ScreenshotAcceptanceOutput<object> failureOutput = new(
+                "local_samples",
+                false,
+                "screenshot_sample_runner_failed",
+                samplesOptions.ArtifactName is not null,
+                samplesOptions.ArtifactName is not null && artifactWritten,
+                artifactWritten ? null : artifactReason,
+                failureEvidence);
+            Console.Out.WriteLine(ScreenshotAcceptanceJson.Serialize(failureOutput));
+            if (!artifactWritten)
+            {
+                Console.Error.WriteLine("Приёмка screenshot AzurPilot: не удалось сохранить отчёт (" + artifactReason + ").");
+            }
+
+            return failureOutput.ExitCode;
+        }
+
+        string sampleEvidenceJson = ScreenshotAcceptanceJson.Serialize(sampleReport);
+        bool sampleArtifactWritten = ScreenshotAcceptanceArtifactWriter.TryWriteReport(
+            samplesOptions.ArtifactName, sampleEvidenceJson, out string sampleArtifactReason);
+        ScreenshotAcceptanceOutput<ScreenshotSampleRunReport> sampleOutput = new(
+            "local_samples",
+            sampleReport.IsProven,
+            sampleReport.IsProven ? null : "screenshot_sample_scan_not_proven",
+            samplesOptions.ArtifactName is not null,
+            samplesOptions.ArtifactName is not null && sampleArtifactWritten,
+            sampleArtifactWritten ? null : sampleArtifactReason,
+            sampleReport);
+        Console.Out.WriteLine(ScreenshotAcceptanceJson.Serialize(sampleOutput));
+        if (!sampleArtifactWritten)
+        {
+            Console.Error.WriteLine(
+                "Приёмка screenshot AzurPilot: не удалось сохранить отчёт (" + sampleArtifactReason + ").");
+        }
+
+        return sampleOutput.ExitCode;
+    }
+
+    screenshotLiveOptions = screenshotArguments.Options as ScreenshotLiveOptions;
+}
+
+AcceptanceOptions? options = null;
+if (screenshotLiveOptions is null && transportPreparationOptions is null)
+{
+    AcceptanceArguments arguments = AndroidAcceptanceArgumentParser.Parse(args);
+    if (arguments.Options is not AcceptanceOptions acceptedOptions)
+    {
+        Console.Error.WriteLine("Приёмка Android AzurPilot: " + arguments.Error);
+        Console.Error.WriteLine(AndroidAcceptanceArgumentParser.Usage);
+        return AndroidAcceptanceExitCode.UsageRejected;
+    }
+
+    options = acceptedOptions;
 }
 
 // Прерывание не завершает процесс мгновенно: восстановление начального состояния выполняется в finally,
@@ -60,7 +143,12 @@ using StderrLoggerFactory loggerFactory = new();
 // Аудит общий для обеих возможностей, а проекция отказа — своя у каждой: смысл отказа запуска процесса
 // принадлежит владельцу возможности, поэтому MuMu-команды и ADB-команды идут через один и тот же
 // WindowsProcessRunner со своей проекцией. Второй реализации запуска процесса при этом не заводится.
-AndroidCommandAudit audit = new();
+AndroidCommandAuditMode auditMode = transportPreparationOptions is not null
+    ? AndroidCommandAuditMode.TransportPreparation
+    : screenshotLiveOptions is not null
+        ? AndroidCommandAuditMode.ScreenshotReadOnly
+        : AndroidCommandAuditMode.LifecycleAcceptance;
+AndroidCommandAudit audit = new(auditMode);
 IWindowsProcessRunner muMuProcessRunner =
     new AuditingProcessRunner(new WindowsProcessRunner(new MuMuProcessFailureProjection()), audit);
 IWindowsProcessRunner adbProcessRunner =
@@ -105,27 +193,144 @@ AzurLaneGameLifecycleService lifecycle = new(
     timings,
     loggerFactory.CreateLogger<AzurLaneGameLifecycleService>());
 
+if (screenshotLiveOptions is not null)
+{
+    ScreenshotAcceptanceRunner screenshotRunner = new(
+        muMuHost,
+        muMuLifecycle,
+        androidHost,
+        androidHost,
+        readiness,
+        stateService,
+        audit);
+
+    ScreenshotLiveAcceptanceReport screenshotReport;
+    try
+    {
+        screenshotReport = await screenshotRunner.RunAsync(
+            screenshotLiveOptions, cancellation.Token).ConfigureAwait(false);
+    }
+    catch (Exception exception)
+    {
+        bool cancelled = exception is OperationCanceledException;
+        string failureCode = cancelled
+            ? "screenshot_capture_cancelled"
+            : "screenshot_acceptance_unexpected_failure";
+        screenshotReport = new ScreenshotLiveAcceptanceReport(
+            AcceptanceBuildIdentity.For(typeof(ScreenshotAcceptanceRunner)).Describe(),
+            screenshotLiveOptions.InstanceValue,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            screenshotLiveOptions.CaptureCount,
+            0,
+            [],
+            null,
+            null,
+            "audit_preflight_incomplete",
+            cancelled ? "недоступно: отмена" : "недоступно: непредвиденный сбой",
+            cancelled ? "недоступно: отмена" : "недоступно: непредвиденный сбой",
+            failureCode,
+            null,
+            false,
+            failureCode,
+            null,
+            cancelled ? null : "exception_type:" + ScreenshotAcceptanceRunner.GetSafeExceptionType(exception));
+    }
+
+    string liveEvidenceJson = ScreenshotAcceptanceJson.Serialize(screenshotReport);
+    bool liveArtifactWritten = ScreenshotAcceptanceArtifactWriter.TryWriteReport(
+        screenshotLiveOptions.ArtifactName, liveEvidenceJson, out string liveArtifactReason);
+    ScreenshotAcceptanceOutput<ScreenshotLiveAcceptanceReport> liveOutput = new(
+        "live_capture",
+        screenshotReport.IsProven,
+        screenshotReport.FailureCode,
+        screenshotLiveOptions.ArtifactName is not null,
+        screenshotLiveOptions.ArtifactName is not null && liveArtifactWritten,
+        liveArtifactWritten ? null : liveArtifactReason,
+        screenshotReport);
+    Console.Out.WriteLine(ScreenshotAcceptanceJson.Serialize(liveOutput));
+    if (!liveArtifactWritten)
+    {
+        Console.Error.WriteLine(
+            "Приёмка screenshot AzurPilot: не удалось сохранить отчёт (" + liveArtifactReason + ").");
+    }
+
+    return liveOutput.ExitCode;
+}
+
+if (transportPreparationOptions is not null)
+{
+    AndroidTransportPreparationRunner preparationRunner = new(
+        muMuHost,
+        muMuLifecycle,
+        androidHost,
+        readiness,
+        audit);
+
+    AndroidTransportPreparationReport preparationReport;
+    try
+    {
+        preparationReport = await preparationRunner.RunAsync(
+            transportPreparationOptions, cancellation.Token).ConfigureAwait(false);
+    }
+    catch (Exception exception)
+    {
+        preparationReport = new AndroidTransportPreparationReport(
+            AcceptanceBuildIdentity.For(typeof(AndroidTransportPreparationRunner)).Describe(),
+            transportPreparationOptions.InstanceValue,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            false,
+            null,
+            "непредвиденный сбой: " + exception.GetType().Name,
+            "недоступно: preflight не завершён",
+            "недоступно: preflight не завершён",
+            "BLOCKED",
+            false,
+            "android_transport_preparation_unexpected_failure",
+            "preparation_runner_failed");
+    }
+
+    Console.Out.WriteLine(ScreenshotAcceptanceJson.Serialize(preparationReport));
+    return preparationReport.IsProven
+        ? AndroidAcceptanceExitCode.Success
+        : AndroidAcceptanceExitCode.NotProven;
+}
+
 AndroidAcceptanceRunner runner = new(
     muMuHost, muMuLifecycle, androidHost, readiness, stateService, lifecycle, audit, report);
 
 AcceptanceResult result;
 try
 {
-    result = await runner.RunAsync(options, cancellation.Token).ConfigureAwait(false);
+    result = await runner.RunAsync(options!, cancellation.Token).ConfigureAwait(false);
 }
 catch (Exception exception)
 {
     // Непредвиденный сбой инструмента не должен выглядеть как доказанная приёмка: отчёт получает
     // локальный отказ, а полная диагностика уходит в stderr в санитизированном виде.
     string diagnostics = report.Sanitizer.Sanitize(exception.ToString());
-    Console.Error.WriteLine("AzurPilot Android acceptance: непредвиденный сбой — " + diagnostics);
+    Console.Error.WriteLine("Приёмка Android AzurPilot: непредвиденный сбой — " + diagnostics);
     result = AcceptanceResult.NotProven(
         "acceptance_unexpected_failure",
         "acceptance_unexpected_failure: " + exception.GetType().Name + ": "
         + report.Sanitizer.Sanitize(exception.Message));
 }
 
-AcceptanceReportText rendered = report.Render(options, result);
+AcceptanceReportText rendered = report.Render(options!, result);
 Console.Out.WriteLine(rendered.Text);
 
 return result.IsProven && rendered.IsSanitized

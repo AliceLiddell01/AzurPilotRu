@@ -1,12 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Тестовый инструмент реальной приёмки Android-слоя (ADB readiness и lifecycle игры Azur Lane
+  <!-- Тестовый инструмент реальной приёмки Android-слоя (ADB readiness, screenshot и lifecycle игры Azur Lane
        Global/EN) на установленной Windows-машине. Это не тестовый проект (тестовой платформы и xunit
-       здесь нет) и не boundary приложения: он подключает production-контракты AzurPilot.Core и
-       платформенные реализации AzurPilot.Windows, но ничего не добавляет в AzurPilot.App и не зависит от
-       него. Продуктовый CLI, REPL и doctor-команда по-прежнему отсутствуют: аргументы разбирает только
-       этот инструмент. Направление зависимостей: AzurPilot.AndroidAcceptance → AzurPilot.Windows →
-       AzurPilot.Core. -->
+       здесь нет) и не boundary приложения: он подключает production geometry/scan, Core-контракты и
+       Windows-реализации, но не запускает composition root приложения. Продуктовый CLI, REPL и
+       doctor-команда по-прежнему отсутствуют: аргументы разбирает только этот инструмент. Направление
+       зависимостей: AzurPilot.AndroidAcceptance → AzurPilot.App → AzurPilot.Windows → AzurPilot.Core. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>AzurPilot.AndroidAcceptance</RootNamespace>
@@ -17,10 +16,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Производственные контракты и платформенные реализации. Ссылок на AzurPilot.App нет: приёмка не
-         является частью приложения и не переиспользует его composition root. -->
+    <!-- Геометрия/scan, платформенные контракты и реализации из production. Инструмент не запускает
+         composition root приложения. -->
+    <ProjectReference Include="..\..\src\AzurPilot.App\AzurPilot.App.csproj" />
     <ProjectReference Include="..\..\src\AzurPilot.Core\AzurPilot.Core.csproj" />
     <ProjectReference Include="..\..\src\AzurPilot.Windows\AzurPilot.Windows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AzurPilot.Tests" />
   </ItemGroup>
 
   <ItemGroup>

@@ -97,6 +97,14 @@ public sealed class AdbCommandBuilderTests
         Assert.Equal(expected, AdbCommandBuilder.BuildVersionArguments().ToArray());
     }
 
+    [Fact(DisplayName = "Screenshot выполняет exact-target exec-out screencap в PNG без shell")]
+    public void ScreenshotUsesExactTargetBinaryCommand()
+    {
+        string[] expected = ["-s", Endpoint.ToString(), "exec-out", "screencap", "-p"];
+
+        Assert.Equal(expected, AdbCommandBuilder.BuildScreenshotArguments(Endpoint).ToArray());
+    }
+
     [Fact(DisplayName = "Команды чтения свойств читают точные свойства Android")]
     public void PropertyCommandsReadExactProperties()
     {
@@ -179,6 +187,7 @@ public sealed class AdbCommandBuilderTests
         =>
         [
             AdbCommandBuilder.BuildGetStateArguments(endpoint),
+            AdbCommandBuilder.BuildScreenshotArguments(endpoint),
             AdbCommandBuilder.BuildBootCompletedArguments(endpoint),
             AdbCommandBuilder.BuildAndroidReleaseArguments(endpoint),
             AdbCommandBuilder.BuildSdkLevelArguments(endpoint),

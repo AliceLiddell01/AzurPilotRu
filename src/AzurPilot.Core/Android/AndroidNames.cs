@@ -34,6 +34,9 @@ internal static class AndroidNames
     /// <summary>Имя операции: достижение готовности ADB.</summary>
     internal const string ReadyOperation = "ready";
 
+    /// <summary>Имя операции: явная подготовка ADB transport.</summary>
+    internal const string PrepareTransportOperation = "prepare_transport";
+
     /// <summary>Имя операции: запуск игры.</summary>
     internal const string StartOperation = "start";
 

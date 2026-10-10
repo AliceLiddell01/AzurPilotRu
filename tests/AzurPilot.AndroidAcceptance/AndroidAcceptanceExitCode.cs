@@ -19,4 +19,7 @@ internal static class AndroidAcceptanceExitCode
 
     /// <summary>Прогон отклонён до начала работы: не задан exact instance или неизвестный аргумент.</summary>
     internal const int UsageRejected = 2;
+
+    /// <summary>Capture/scan доказан, но явно запрошенный артефакт отчёта не сохранён.</summary>
+    internal const int ReportArtifactNotWritten = 3;
 }

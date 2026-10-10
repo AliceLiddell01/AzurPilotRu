@@ -402,6 +402,44 @@ std::int32_t get_frame_info(
     return AZURPILOT_NATIVE_OK;
 }
 
+std::int32_t scan_frame_region(
+    AzurPilotNativeFrameHandle frame,
+    const AzurPilotNativeRegion* region,
+    AzurPilotNativeRegionStatistics* out_statistics) {
+    if (out_statistics == nullptr) {
+        return AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT;
+    }
+    std::memset(out_statistics, 0, sizeof(*out_statistics));
+    if (frame == nullptr || region == nullptr) {
+        return AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT;
+    }
+
+    AzurPilotNativeFrameInfo info{};
+    const std::int32_t info_status = get_frame_info(frame, &info);
+    if (info_status != AZURPILOT_NATIVE_OK) {
+        return info_status;
+    }
+    if (region->left < 0 || region->top < 0
+        || region->right <= region->left || region->bottom <= region->top
+        || static_cast<std::uint32_t>(region->right) > info.width
+        || static_cast<std::uint32_t>(region->bottom) > info.height) {
+        return AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT;
+    }
+
+    // Заголовок Mat удерживает только native-представление ROI, без копирования пикселей.
+    const int roi_width = region->right - region->left;
+    const int roi_height = region->bottom - region->top;
+    const cv::Mat roi = frame->rgb(cv::Rect(region->left, region->top, roi_width, roi_height));
+    cv::Scalar mean;
+    cv::Scalar stddev;
+    cv::meanStdDev(roi, mean, stddev);
+    const AzurPilotNativeRegionStatistics statistics{
+        static_cast<std::uint64_t>(roi_width) * static_cast<std::uint64_t>(roi_height),
+        mean[0], mean[1], mean[2], stddev[0], stddev[1], stddev[2]};
+    *out_statistics = statistics;
+    return AZURPILOT_NATIVE_OK;
+}
+
 #if defined(AZURPILOT_NATIVE_TESTING)
 FrameOwnershipSnapshot frame_ownership_snapshot_for_test() noexcept {
     return {

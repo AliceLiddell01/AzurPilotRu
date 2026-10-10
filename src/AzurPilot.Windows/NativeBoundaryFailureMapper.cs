@@ -93,6 +93,18 @@ public static class NativeBoundaryFailureMapper
                     nativeStatusCode: decodeException.StatusCode),
             },
 
+            NativeFrameAnalysisException analysisException => new ApplicationFailure
+            {
+                Code = ApplicationFailure.NativeFrameAnalysisFailed,
+                Message = exception.Message,
+                IsRetryable = false,
+                Details = BuildDetails(
+                    exception,
+                    includeLibrary: true,
+                    includeStatusCode: false,
+                    nativeStatusCode: analysisException.StatusCode),
+            },
+
             // Отмена — ожидаемый исход операции, а не ошибка. Признак повторяемости не выставляется:
             // повтор той же операции сам по себе исхода не меняет, а решение о повторе принимает
             // вызывающая сторона (владелец кода отказа).

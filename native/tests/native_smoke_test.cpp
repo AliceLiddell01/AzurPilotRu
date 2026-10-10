@@ -1,5 +1,5 @@
 /* =============================================================================
- * native_smoke_test.cpp — проверка native-реализации замороженного C ABI v2.
+ * native_smoke_test.cpp — проверка native-реализации замороженного C ABI v3.
  *
  * Тест линкуется с AzurPilot.Native.dll через import library и вызывает ровно те
  * экспорты, которые объявлены в native/include/azurpilot_native_abi.h. Заголовки
@@ -32,8 +32,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <array>
+#include <cmath>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -260,6 +263,92 @@ void check_native_frame_exports() {
     }
 }
 
+void check_region_exports() {
+    printf("\n[8] RGB-статистика physical ROI через C ABI\n");
+    check_uint32(azurpilot_native_max_png_bytes(), AZURPILOT_NATIVE_MAX_PNG_BYTES,
+                 "Экспорт лимита PNG возвращает нормативное значение заголовка");
+    check(sizeof(AzurPilotNativeRegion) == 16u && alignof(AzurPilotNativeRegion) == 4u,
+          "Раскладка области: size=16 alignment=4");
+    check(sizeof(AzurPilotNativeRegionStatistics) == 56u
+              && alignof(AzurPilotNativeRegionStatistics) == 8u,
+          "Раскладка статистики: size=56 alignment=8");
+
+    const std::vector<uint8_t> png = read_fixture("rgb_regions_3x2.png");
+    check(!png.empty(), "Асимметричный RGB PNG доступен для проверки областей");
+    if (png.empty()) {
+        return;
+    }
+    AzurPilotNativeFrameHandle frame = nullptr;
+    check(azurpilot_native_frame_decode_png(png.data(), static_cast<uint32_t>(png.size()), &frame)
+              == AZURPILOT_NATIVE_OK && frame != nullptr,
+          "Кадр 3×2 создаётся через production C ABI");
+    if (frame == nullptr) {
+        return;
+    }
+
+    AzurPilotNativeRegionStatistics statistics{};
+    const AzurPilotNativeRegion full{0, 0, 3, 2};
+    check(azurpilot_native_frame_scan_region(frame, &full, &statistics) == AZURPILOT_NATIVE_OK,
+          "Полная область кадра даёт успешную статистику");
+    check(statistics.pixel_count == 6u && statistics.mean_red == 110.0
+              && statistics.mean_green == 60.0 && statistics.mean_blue == 100.0,
+          "Число пикселей и среднее всех каналов рассчитаны в порядке RGB");
+    check(std::abs(statistics.stddev_red - std::sqrt(20300.0 / 3.0)) < 1e-9
+              && std::abs(statistics.stddev_green - std::sqrt(5600.0 / 3.0)) < 1e-9
+              && std::abs(statistics.stddev_blue - std::sqrt(14000.0 / 3.0)) < 1e-9,
+          "Стандартное отклонение использует делитель N генеральной совокупности");
+
+    const AzurPilotNativeRegion column{2, 0, 3, 2};
+    check(azurpilot_native_frame_scan_region(frame, &column, &statistics) == AZURPILOT_NATIVE_OK
+              && statistics.pixel_count == 2u
+              && statistics.mean_red == 210.0 && statistics.mean_green == 80.0
+              && statistics.mean_blue == 140.0 && statistics.stddev_red == 10.0
+              && statistics.stddev_green == 40.0 && statistics.stddev_blue == 60.0,
+          "Узкая ROI соблюдает шаг строк, RGB и правую/нижнюю полуоткрытые границы");
+    const AzurPilotNativeRegion single{2, 1, 3, 2};
+    check(azurpilot_native_frame_scan_region(frame, &single, &statistics) == AZURPILOT_NATIVE_OK
+              && statistics.pixel_count == 1u
+              && statistics.mean_red == 220.0 && statistics.mean_green == 120.0
+              && statistics.mean_blue == 200.0 && statistics.stddev_red == 0.0
+              && statistics.stddev_green == 0.0 && statistics.stddev_blue == 0.0,
+          "Один крайний пиксель имеет исходный RGB и нулевое отклонение");
+
+    const std::array<AzurPilotNativeRegion, 11> invalid_regions{{
+        {-1, 0, 1, 1}, {0, -1, 1, 1}, {0, 0, -1, 1}, {0, 0, 1, -1},
+        {1, 0, 1, 1}, {0, 1, 1, 1}, {2, 0, 1, 1}, {0, 2, 1, 1},
+        {0, 0, 4, 2}, {0, 0, 3, 3},
+        {0, 0, std::numeric_limits<int32_t>::max(), std::numeric_limits<int32_t>::max()}}};
+    const AzurPilotNativeRegionStatistics zero{};
+    for (const auto& region : invalid_regions) {
+        memset(&statistics, 0xA5, sizeof(statistics));
+        check(azurpilot_native_frame_scan_region(frame, &region, &statistics)
+                  == AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT,
+              "Некорректная ROI отвергается без clipping");
+        check(memcmp(&statistics, &zero, sizeof(statistics)) == 0,
+              "Отказ обнуляет все байты выходной статистики");
+    }
+    memset(&statistics, 0xA5, sizeof(statistics));
+    check(azurpilot_native_frame_scan_region(nullptr, &full, &statistics)
+              == AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT
+              && memcmp(&statistics, &zero, sizeof(statistics)) == 0,
+          "NULL кадр отвергается и обнуляет статистику");
+    memset(&statistics, 0xA5, sizeof(statistics));
+    check(azurpilot_native_frame_scan_region(frame, nullptr, &statistics)
+              == AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT
+              && memcmp(&statistics, &zero, sizeof(statistics)) == 0,
+          "NULL область отвергается и обнуляет статистику");
+    check(azurpilot_native_frame_scan_region(frame, &full, nullptr)
+              == AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT,
+          "NULL выход статистики даёт INVALID_ARGUMENT");
+    memset(&statistics, 0xA5, sizeof(statistics));
+    check(azurpilot_native_frame_scan_region(nullptr, nullptr, &statistics)
+              == AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT
+              && memcmp(&statistics, &zero, sizeof(statistics)) == 0,
+          "Безресурсная проверка ROI-экспорта возвращает INVALID_ARGUMENT и нулевой результат");
+    check(azurpilot_native_frame_release(frame) == AZURPILOT_NATIVE_OK,
+          "После сканирования кадр освобождается парным экспортом DLL");
+}
+
 }  // namespace
 
 int main() {
@@ -403,6 +492,7 @@ int main() {
                           "при INVALID_ARGUMENT буфер не изменён");
 
     check_native_frame_exports();
+    check_region_exports();
 
     // --- Итог -------------------------------------------------------------------
     printf("\nИтог: проверок %d, провалено %d\n", g_checks, g_failures);

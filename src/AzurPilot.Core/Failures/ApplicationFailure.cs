@@ -8,7 +8,7 @@ namespace AzurPilot.Core.Failures;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Контракт фиксирован: допустимы ровно двадцать четыре кода — <see cref="ConfigurationInvalid"/>,
+/// Контракт фиксирован: допустимы ровно двадцать семь кодов — <see cref="ConfigurationInvalid"/>,
 /// <see cref="ConfigurationSchemaUnsupported"/>, <see cref="NativeUnavailable"/>,
 /// <see cref="NativeIncompatible"/>, <see cref="NativeFrameInvalid"/>, <see cref="OperationCancelled"/>,
 /// <see cref="InternalError"/>, семь
@@ -20,9 +20,11 @@ namespace AzurPilot.Core.Failures;
 /// <see cref="AndroidEndpointUnavailable"/>, <see cref="AndroidTransportNotReady"/>,
 /// <see cref="AndroidNotReady"/>, <see cref="AzurLanePackageMissing"/>, <see cref="AzurLaneStateUnknown"/>,
 /// <see cref="AzurLaneLauncherUnresolved"/>, <see cref="AzurLaneLauncherAmbiguous"/>,
-/// <see cref="AzurLaneLifecyclePostconditionNotMet"/> и <see cref="AzurLaneLifecycleTimeout"/>. Каталог
-/// кодов под отсутствующие capability (screenshot, vision, OCR, ввод, gameplay, REPL и подобные)
-/// намеренно не заводится: код появляется вместе с реальной capability.
+/// <see cref="AzurLaneLifecyclePostconditionNotMet"/> и <see cref="AzurLaneLifecycleTimeout"/>, а также
+/// три отказа screenshot/region diagnostics: <see cref="AndroidScreenshotCaptureFailed"/>,
+/// <see cref="DiagnosticRegionUnsupported"/> и <see cref="NativeFrameAnalysisFailed"/>. Каталог кодов
+/// под отсутствующие capability (OCR, ввод, gameplay, REPL и подобные) намеренно не заводится: код
+/// появляется вместе с реальной capability.
 /// </para>
 /// <para>
 /// Ожидаемые MuMu- и Android-отказы не подменяются <see cref="InternalError"/>: <see cref="InternalError"/>
@@ -58,6 +60,15 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
 
     /// <summary>Код отказа: PNG frame не поддерживается или не прошёл ограниченную проверку входа.</summary>
     public const string NativeFrameInvalid = "native_frame_invalid";
+
+    /// <summary>Код отказа: exact-target screenshot не получен как полный допустимый PNG.</summary>
+    public const string AndroidScreenshotCaptureFailed = "android_screenshot_capture_failed";
+
+    /// <summary>Код отказа: геометрию кадра нельзя отобразить для именованного региона.</summary>
+    public const string DiagnosticRegionUnsupported = "diagnostic_region_unsupported";
+
+    /// <summary>Код отказа: native-анализ области кадра не вернул допустимую статистику.</summary>
+    public const string NativeFrameAnalysisFailed = "native_frame_analysis_failed";
 
     /// <summary>Код отказа: операция отменена запросом отмены.</summary>
     public const string OperationCancelled = "operation_cancelled";
@@ -124,6 +135,9 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
             NativeUnavailable,
             NativeIncompatible,
             NativeFrameInvalid,
+            AndroidScreenshotCaptureFailed,
+            DiagnosticRegionUnsupported,
+            NativeFrameAnalysisFailed,
             OperationCancelled,
             InternalError,
             MuMuInstallationNotFound,
@@ -151,6 +165,8 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <value>
     /// Одно из значений: <see cref="ConfigurationInvalid"/>, <see cref="ConfigurationSchemaUnsupported"/>,
     /// <see cref="NativeUnavailable"/>, <see cref="NativeIncompatible"/>, <see cref="NativeFrameInvalid"/>,
+    /// <see cref="AndroidScreenshotCaptureFailed"/>, <see cref="DiagnosticRegionUnsupported"/>,
+    /// <see cref="NativeFrameAnalysisFailed"/>,
     /// <see cref="OperationCancelled"/>,
     /// <see cref="InternalError"/>, <see cref="MuMuInstallationNotFound"/>,
     /// <see cref="MuMuInstallationAmbiguous"/>, <see cref="MuMuInstanceNotFound"/>,

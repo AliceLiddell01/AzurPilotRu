@@ -13,7 +13,8 @@ namespace AzurPilot.Windows.Processes;
 /// Реализация намеренно узкая. Процесс запускается с <c>UseShellExecute = false</c>, без командной
 /// строки, без <c>cmd</c> и без PowerShell как слоя оркестрации: оболочка не участвует в запуске,
 /// поэтому аргумент не может быть переинтерпретирован. Захваченный вывод ограничен по длине; полный
-/// stdout/stderr никуда не логируется, а признак усечения сообщается вызывающей стороне.
+/// stdout/stderr никуда не логируется, а признак усечения сообщается вызывающей стороне. Бинарный
+/// stdout читается без декодирования; EOF и превышение бюджета сообщаются независимо от exit code.
 /// </para>
 /// <para>
 /// По истечении дедлайна завершается ровно тот процесс, который создала эта реализация. Массовое
@@ -106,31 +107,65 @@ public sealed class WindowsProcessRunner : IWindowsProcessRunner
                 _failureProjection.StartFailed(request.ExecutablePath, exception));
         }
 
-        Task<BoundedText> standardOutputTask = ReadBoundedAsync(process.StandardOutput);
-        Task<BoundedText> standardErrorTask = ReadBoundedAsync(process.StandardError);
-
         using CancellationTokenSource deadlineSource =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadlineSource.CancelAfter(request.Timeout);
+
+        bool binary = request.StandardOutputMode == WindowsProcessStandardOutputMode.Binary;
+        Task<BoundedBytes> binaryOutputTask = binary
+            ? ReadBytesBoundedAsync(
+                process.StandardOutput.BaseStream, request.MaximumStandardOutputBytes, deadlineSource.Token)
+            : Task.FromResult(new BoundedBytes([], 0, false, false));
+        Task<BoundedText> standardOutputTask = binary
+            ? Task.FromResult(new BoundedText(string.Empty, false, 0))
+            : ReadBoundedAsync(process.StandardOutput, CancellationToken.None);
+        Task<BoundedText> standardErrorTask = ReadBoundedAsync(
+            process.StandardError, binary ? deadlineSource.Token : CancellationToken.None);
 
         bool deadlineExpired = false;
         try
         {
             await process.WaitForExitAsync(deadlineSource.Token).ConfigureAwait(false);
+            if (binary)
+            {
+                await Task.WhenAll(binaryOutputTask, standardErrorTask)
+                    .WaitAsync(deadlineSource.Token).ConfigureAwait(false);
+                deadlineSource.Token.ThrowIfCancellationRequested();
+            }
         }
         catch (OperationCanceledException)
         {
             deadlineExpired = !cancellationToken.IsCancellationRequested;
             TerminateOwnProcess(process);
-            await WaitForExitAfterTerminationAsync(process).ConfigureAwait(false);
+            if (binary)
+            {
+                try
+                {
+                    await WaitForExitAfterTerminationAsync(process)
+                        .WaitAsync(TimeSpan.FromSeconds(1), CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                    // Неудачное завершение собственного процесса не разрешает неограниченное ожидание.
+                }
+
+                process.StandardOutput.Close();
+                process.StandardError.Close();
+            }
+            else
+            {
+                await WaitForExitAfterTerminationAsync(process).ConfigureAwait(false);
+            }
         }
 
         BoundedText standardOutput = await standardOutputTask.ConfigureAwait(false);
         BoundedText standardError = await standardErrorTask.ConfigureAwait(false);
+        BoundedBytes binaryOutput = await binaryOutputTask.ConfigureAwait(false);
         stopwatch.Stop();
 
         if (deadlineExpired)
         {
+            // Проекция принимает символы, а не байты: в бинарном режиме stdout не содержит текста.
             return ApplicationResult<WindowsProcessOutcome>.Failure(
                 _failureProjection.TimedOut(
                     request.ExecutablePath,
@@ -146,6 +181,11 @@ public sealed class WindowsProcessRunner : IWindowsProcessRunner
 
         return ApplicationResult<WindowsProcessOutcome>.Success(new WindowsProcessOutcome
         {
+            Mode = request.StandardOutputMode,
+            StandardOutputBytes = binaryOutput.Bytes,
+            StandardOutputBytesRead = binaryOutput.TotalBytes,
+            StandardOutputByteStreamEnded = binaryOutput.StreamEnded,
+            StandardOutputBytesTruncated = binaryOutput.IsTruncated,
             ExitCode = process.ExitCode,
             StandardOutput = standardOutput.Text,
             StandardError = standardError.Text,
@@ -170,6 +210,13 @@ public sealed class WindowsProcessRunner : IWindowsProcessRunner
 
         ArgumentNullException.ThrowIfNull(request.Arguments);
 
+        if (!Enum.IsDefined(request.StandardOutputMode)
+            || (request.StandardOutputMode == WindowsProcessStandardOutputMode.Binary
+                && request.MaximumStandardOutputBytes <= 0))
+        {
+            throw new ArgumentException("Форма stdout или бюджет бинарного захвата недопустимы.", nameof(request));
+        }
+
         if (request.Timeout <= TimeSpan.Zero)
         {
             throw new ArgumentException("Дедлайн запуска процесса должен быть положительным.", nameof(request));
@@ -181,7 +228,8 @@ public sealed class WindowsProcessRunner : IWindowsProcessRunner
         }
     }
 
-    private static async Task<BoundedText> ReadBoundedAsync(StreamReader reader)
+    private static async Task<BoundedText> ReadBoundedAsync(
+        StreamReader reader, CancellationToken cancellationToken = default)
     {
         StringBuilder builder = new();
         char[] buffer = new char[ReadBufferCharacters];
@@ -193,7 +241,11 @@ public sealed class WindowsProcessRunner : IWindowsProcessRunner
             int read;
             try
             {
-                read = await reader.ReadAsync(buffer.AsMemory(0, buffer.Length)).ConfigureAwait(false);
+                read = await reader.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
             }
             catch (IOException)
             {
@@ -228,6 +280,55 @@ public sealed class WindowsProcessRunner : IWindowsProcessRunner
         }
 
         return new BoundedText(builder.ToString(), isTruncated, totalCharacters);
+    }
+
+    private static async Task<BoundedBytes> ReadBytesBoundedAsync(
+        Stream stream, int maximumBytes, CancellationToken cancellationToken)
+    {
+        using MemoryStream captured = new();
+        byte[] buffer = new byte[ReadBufferCharacters];
+        long totalBytes = 0;
+        bool ended = false;
+
+        while (true)
+        {
+            int read;
+            try
+            {
+                read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            }
+            catch (IOException)
+            {
+                break;
+            }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
+            catch (InvalidOperationException)
+            {
+                break;
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            if (read == 0)
+            {
+                ended = true;
+                break;
+            }
+
+            totalBytes = totalBytes > long.MaxValue - read ? long.MaxValue : totalBytes + read;
+            int remaining = maximumBytes - (int)captured.Length;
+            if (remaining > 0)
+            {
+                captured.Write(buffer, 0, Math.Min(read, remaining));
+            }
+        }
+
+        return new BoundedBytes(captured.ToArray(), totalBytes, ended, totalBytes > maximumBytes);
     }
 
     private static void TerminateOwnProcess(Process process)
@@ -268,4 +369,6 @@ public sealed class WindowsProcessRunner : IWindowsProcessRunner
     }
 
     private readonly record struct BoundedText(string Text, bool IsTruncated, int TotalCharacters);
+
+    private readonly record struct BoundedBytes(byte[] Bytes, long TotalBytes, bool StreamEnded, bool IsTruncated);
 }

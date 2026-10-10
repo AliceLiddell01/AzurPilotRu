@@ -45,6 +45,12 @@ std::int32_t get_frame_info(
     AzurPilotNativeFrameHandle frame,
     AzurPilotNativeFrameInfo* out_info) noexcept;
 
+/* Синхронно читает ROI неизменяемого живого кадра; исключения перехватывает C ABI. */
+std::int32_t scan_frame_region(
+    AzurPilotNativeFrameHandle frame,
+    const AzurPilotNativeRegion* region,
+    AzurPilotNativeRegionStatistics* out_statistics);
+
 #if defined(AZURPILOT_NATIVE_TESTING)
 struct FrameOwnershipSnapshot final {
     std::uint64_t live_frames;

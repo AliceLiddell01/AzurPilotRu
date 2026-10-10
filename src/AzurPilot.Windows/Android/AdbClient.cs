@@ -96,4 +96,29 @@ public sealed class AdbClient
             },
             cancellationToken);
     }
+
+    /// <summary>Выполняет одну команду с ограниченным сырым бинарным stdout.</summary>
+    /// <param name="arguments">Точные аргументы команды.</param>
+    /// <param name="maximumStandardOutputBytes">Положительный бюджет сохранённых байтов.</param>
+    /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <returns>Результат процесса без текстового преобразования stdout либо ожидаемый отказ.</returns>
+    public Task<ApplicationResult<WindowsProcessOutcome>> RunBinaryAsync(
+        IReadOnlyList<string> arguments,
+        int maximumStandardOutputBytes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumStandardOutputBytes);
+
+        return _runner.RunAsync(
+            new WindowsProcessRequest
+            {
+                ExecutablePath = _adbExecutablePath,
+                Arguments = arguments,
+                Timeout = _commandTimeout,
+                StandardOutputMode = WindowsProcessStandardOutputMode.Binary,
+                MaximumStandardOutputBytes = maximumStandardOutputBytes,
+            },
+            cancellationToken);
+    }
 }

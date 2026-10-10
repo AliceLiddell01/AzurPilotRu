@@ -40,6 +40,8 @@ internal static class AndroidFailures
 
     private const string StateDetailKey = "state";
 
+    private const string InitialTransportDetailKey = "initial_transport";
+
     private const string TargetStateDetailKey = "target_state";
 
     private const string PhaseDetailKey = "phase";
@@ -56,11 +58,13 @@ internal static class AndroidFailures
     /// <param name="endpoint">Точный endpoint, состояние которого наблюдалось.</param>
     /// <param name="state">Наблюдённое состояние transport.</param>
     /// <param name="phase">Имя фазы операции, в которой готовность не доказана.</param>
+    /// <param name="initialTransport">Исходное состояние явной подготовки либо <see langword="null"/>.</param>
     /// <returns>Отказ с кодом <see cref="ApplicationFailure.AndroidTransportNotReady"/>.</returns>
     internal static ApplicationFailure TransportNotReady(
         AndroidEndpoint endpoint,
         AndroidTransportState state,
-        string phase)
+        string phase,
+        AndroidTransportState? initialTransport = null)
     {
         Dictionary<string, string> details = new(StringComparer.Ordinal)
         {
@@ -68,6 +72,10 @@ internal static class AndroidFailures
             [StateDetailKey] = AndroidNames.TransportStateName(state),
             [PhaseDetailKey] = phase,
         };
+        if (initialTransport is AndroidTransportState initialState)
+        {
+            details[InitialTransportDetailKey] = AndroidNames.TransportStateName(initialState);
+        }
 
         return new ApplicationFailure
         {
@@ -86,8 +94,13 @@ internal static class AndroidFailures
     /// <param name="endpoint">Точный endpoint, готовность которого не доказана.</param>
     /// <param name="phase">Имя фазы операции, в которой готовность не доказана.</param>
     /// <param name="evidence">Bounded evidence последнего наблюдения.</param>
+    /// <param name="initialTransport">Исходное состояние явной подготовки либо <see langword="null"/>.</param>
     /// <returns>Отказ с кодом <see cref="ApplicationFailure.AndroidNotReady"/>.</returns>
-    internal static ApplicationFailure NotReady(AndroidEndpoint endpoint, string phase, string evidence)
+    internal static ApplicationFailure NotReady(
+        AndroidEndpoint endpoint,
+        string phase,
+        string evidence,
+        AndroidTransportState? initialTransport = null)
     {
         Dictionary<string, string> details = new(StringComparer.Ordinal)
         {
@@ -95,6 +108,10 @@ internal static class AndroidFailures
             [PhaseDetailKey] = phase,
             [EvidenceDetailKey] = AndroidEvidence.Truncate(evidence),
         };
+        if (initialTransport is AndroidTransportState initialState)
+        {
+            details[InitialTransportDetailKey] = AndroidNames.TransportStateName(initialState);
+        }
 
         return new ApplicationFailure
         {
@@ -104,6 +121,23 @@ internal static class AndroidFailures
             IsRetryable = true,
             Details = details,
         };
+    }
+
+    /// <summary>Добавляет bounded исходное состояние transport к отказу явной подготовки.</summary>
+    /// <param name="failure">Ожидаемый отказ host-а или orchestration.</param>
+    /// <param name="initialTransport">Наблюдённое до подготовки состояние transport.</param>
+    /// <returns>Тот же отказ с дополнительным machine-stable фактом.</returns>
+    internal static ApplicationFailure WithInitialTransport(
+        ApplicationFailure failure,
+        AndroidTransportState initialTransport)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+
+        Dictionary<string, string> details = failure.Details is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(failure.Details, StringComparer.Ordinal);
+        details[InitialTransportDetailKey] = AndroidNames.TransportStateName(initialTransport);
+        return failure with { Details = details };
     }
 
     /// <summary>Создаёт отказ «пакет игры не установлен».</summary>
