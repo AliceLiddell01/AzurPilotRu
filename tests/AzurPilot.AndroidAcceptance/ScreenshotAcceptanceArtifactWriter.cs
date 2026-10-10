@@ -5,6 +5,19 @@ namespace AzurPilot.AndroidAcceptance;
 internal static class ScreenshotAcceptanceArtifactWriter
 {
     internal static bool TryWriteReport(string? artifactName, string reportJson, out string reason)
+        => TryWriteReport(
+            artifactName,
+            reportJson,
+            Environment.CurrentDirectory,
+            AppContext.BaseDirectory,
+            out reason);
+
+    internal static bool TryWriteReport(
+        string? artifactName,
+        string reportJson,
+        string currentDirectory,
+        string applicationBaseDirectory,
+        out string reason)
     {
         ArgumentNullException.ThrowIfNull(reportJson);
         if (artifactName is null)
@@ -20,8 +33,8 @@ internal static class ScreenshotAcceptanceArtifactWriter
             return false;
         }
 
-        string? repositoryRoot = FindRepositoryRoot(Environment.CurrentDirectory)
-            ?? FindRepositoryRoot(AppContext.BaseDirectory);
+        string? repositoryRoot = FindRepositoryRoot(currentDirectory)
+            ?? FindRepositoryRoot(applicationBaseDirectory);
         if (repositoryRoot is null)
         {
             reason = "repository_root_not_found";
