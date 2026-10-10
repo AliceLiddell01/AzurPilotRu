@@ -152,7 +152,8 @@ public sealed class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost
         }
         catch (AzurPilotNativeBoundaryException exception)
         {
-            return ScreenshotFailure("native_boundary_failed", instanceId, endpoint, exception: exception);
+            return ApplicationResult<CapturedAndroidScreenshot>.Failure(
+                NativeBoundaryFailureMapper.Map(exception));
         }
 
         ApplicationResult<WindowsProcessOutcome> command = await client.RunBinaryAsync(
@@ -209,12 +210,18 @@ public sealed class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost
         }
         catch (AzurPilotNativeBoundaryException exception)
         {
-            return ScreenshotFailure(
-                exception is NativeFrameDecodeException ? "native_decode_failed" : "native_boundary_failed",
-                instanceId,
-                endpoint,
-                outcome,
-                exception);
+            if (exception is NativeFrameDecodeException)
+            {
+                return ScreenshotFailure(
+                    "native_decode_failed",
+                    instanceId,
+                    endpoint,
+                    outcome,
+                    exception);
+            }
+
+            return ApplicationResult<CapturedAndroidScreenshot>.Failure(
+                NativeBoundaryFailureMapper.Map(exception));
         }
         finally
         {
