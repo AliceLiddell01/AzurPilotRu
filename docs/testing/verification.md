@@ -272,3 +272,11 @@ Hosted CI проверяет screenshot pipeline только на неболь�
 контролируемых PNG fixtures; фактический MuMu capture и пользовательские samples проверяются локально
 режимами [screenshot acceptance](screenshot-acceptance.md). Управляемые границы доказывают корректность
 production-кода относительно контракта, а не установленную машину или устройство.
+
+## Операторский TUI
+
+Headless tests проверяют production operator use cases и переходы ограниченного UI state: exact target
+linkage, запрет повторной mutation, cancellation и bounded history/logs. Одних unit tests view-model
+недостаточно для доказательства resize, клавиатуры и восстановления terminal state; продуктовый renderer
+дополнительно запускается через настоящую Windows terminal boundary. Полный сценарий и evidence scope
+описаны в [operator TUI acceptance](operator-tui-acceptance.md).

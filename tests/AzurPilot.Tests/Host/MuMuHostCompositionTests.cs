@@ -14,7 +14,7 @@ namespace AzurPilot.Tests.Host;
 
 /// <summary>
 /// Проверки MuMu-состава построенного host-а: реальные сервисы приходят из DI, а публичная поверхность
-/// приложения не расширяется командной строкой, REPL, doctor-командой или новыми boundaries.
+/// приложение использует единственную composition root и не вводит новых managed boundaries.
 /// </summary>
 /// <remarks>
 /// Проверки выполняются на реально построенном host-е: они доказывают, что MuMu-capability подключена как
@@ -25,9 +25,8 @@ public sealed class MuMuHostCompositionTests
 {
     /// <summary>Ожидаемое множество публичных типов приложения.</summary>
     /// <remarks>
-    /// Composition root остаётся единственной точкой сборки host-а, а presentation-поверхность — только
-    /// диагностические данные и точка входа. Появление здесь CLI/REPL/doctor-типа или новой boundary
-    /// означает, что состав приложения изменился, и проверка обязана это заметить.
+    /// Composition root остаётся единственной точкой сборки host-а. TUI и operator use cases являются
+    /// публичной surface приложения, но не создают нового managed project boundary или CLI.
     /// </remarks>
     private static readonly string[] ExpectedPublicTypes =
     [
@@ -39,10 +38,26 @@ public sealed class MuMuHostCompositionTests
         "AzurPilotDiagnosticService",
         "AzurPilotExitCode",
         "AzurPilotHost",
+        "AzurPilotInteractiveRunResult",
         "AzurPilotMuMuDiagnostics",
         "AzurPilotNativeDiagnostics",
+        "AzurPilotOperatorLogBuffer",
+        "AzurPilotOperatorLogEntry",
+        "AzurPilotOperatorMuMuInstance",
+        "AzurPilotOperatorMuMuInventory",
+        "AzurPilotOperatorScreenshotAnalysis",
+        "AzurPilotOperatorService",
         "AzurPilotOperation",
         "AzurPilotStartupResult",
+        "IOperatorUiLogSource",
+        "OperatorUiAction",
+        "OperatorUiCommand",
+        "OperatorUiConfirmation",
+        "OperatorUiController",
+        "OperatorUiLogSourceAdapter",
+        "OperatorUiMessage",
+        "OperatorUiSession",
+        "AzurPilotOperatorUi",
         "ScreenshotAnalysisSource",
         "ScreenshotAnalysisSourceKind",
         "ScreenshotDiagnosticRegion",
@@ -100,7 +115,7 @@ public sealed class MuMuHostCompositionTests
         Assert.NotNull(services.GetRequiredService<AzurPilotDiagnosticService>());
     }
 
-    [Fact(DisplayName = "Публичная поверхность App не расширена CLI/REPL/doctor и новыми boundaries")]
+    [Fact(DisplayName = "Operator TUI расширяет product surface без новой managed boundary")]
     public void PublicSurfaceStaysBounded()
     {
         Assembly application = typeof(AzurPilotHost).Assembly;
@@ -110,8 +125,9 @@ public sealed class MuMuHostCompositionTests
             ExpectedPublicTypes.OrderBy(name => name, StringComparer.Ordinal),
             exported.Select(type => type.Name).OrderBy(name => name, StringComparer.Ordinal));
 
-        // Новых boundaries в App не появилось; diagnostics выделена в собственное подпространство.
+        // Presentation и use cases выделены в пространства имён внутри AzurPilot.App.
         Assert.All(exported, type => Assert.True(
-            type.Namespace is "AzurPilot.App" or "AzurPilot.App.Diagnostics"));
+            type.Namespace is "AzurPilot.App" or "AzurPilot.App.Diagnostics"
+                or "AzurPilot.App.OperatorServices" or "AzurPilot.App.OperatorUi"));
     }
 }

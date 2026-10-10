@@ -14,6 +14,8 @@
     <!-- Application host приложения: стандартный generic host (Host.CreateEmptyApplicationBuilder),
          на котором стоит composition root AzurPilot.App. -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <!-- Windows terminal operator surface; только AzurPilot.App владеет интерактивным UI. -->
+    <PackageVersion Include="Terminal.Gui" Version="2.5.0" />
   </ItemGroup>
 
   <ItemGroup>

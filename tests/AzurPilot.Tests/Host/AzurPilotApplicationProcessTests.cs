@@ -49,6 +49,7 @@ public sealed class AzurPilotApplicationProcessTests
         // stdout — поверхность человекочитаемого итога: ни одной записи structured runtime log.
         Assert.NotEmpty(run.StandardOutput.Trim());
         Assert.Empty(StructuredLogRecord.ReadFrom(run.StandardOutput));
+        Assert.DoesNotContain('\u001b', run.StandardOutput + run.StandardError);
 
         // stderr — только project-owned события приложения: чужих категорий логирования на уровне
         // Information и выше здесь нет. С появлением реальной MuMu-capability проект владеет не только

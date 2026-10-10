@@ -1,8 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Composition root: единственная точка входа managed приложения и единственное место, где
-       собирается application host (Host.CreateEmptyApplicationBuilder). Пакетов командной строки
-       здесь нет: интерактивный REPL и продуктовый CLI — будущая capability. -->
+       собирается application host (Host.CreateEmptyApplicationBuilder). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>AzurPilot.App</RootNamespace>
@@ -17,6 +16,7 @@
   <ItemGroup>
     <!-- Версия пакета — владелец Directory.Packages.props. -->
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Terminal.Gui" />
   </ItemGroup>
 
 </Project>

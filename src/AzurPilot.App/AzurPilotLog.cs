@@ -255,4 +255,20 @@ internal static partial class AzurPilotLog
         string product,
         string package,
         string failureCode);
+
+    /// <summary>Application host сообщил ограниченный отказ остановки интерактивной сессии.</summary>
+    /// <param name="logger">Логгер host-а.</param>
+    /// <param name="correlationId">Correlation identifier startup.</param>
+    /// <param name="failureCode">Стабильный application-level код отказа.</param>
+    /// <param name="failureMessage">Человекочитаемое описание отказа.</param>
+    [LoggerMessage(
+        EventId = 1013,
+        Level = LogLevel.Error,
+        Message = "Не удалось штатно остановить application host: код {FailureCode}; "
+            + "сообщение: {FailureMessage}; операция {CorrelationId}")]
+    public static partial void OperatorHostStopFailed(
+        this ILogger logger,
+        string correlationId,
+        string failureCode,
+        string failureMessage);
 }

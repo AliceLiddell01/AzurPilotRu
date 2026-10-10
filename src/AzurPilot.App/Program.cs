@@ -1,5 +1,6 @@
 using System.Text;
 using AzurPilot.App;
+using AzurPilot.App.OperatorUi;
 
 // Точка входа приложения: запускает application host и печатает человекочитаемый итог. Вся
 // runtime-логика (composition, диагностика, логирование) живёт в AzurPilotHost, поэтому здесь нет ни
@@ -10,6 +11,30 @@ using AzurPilot.App;
 // AzurPilotConfigurationPath, а явный путь — код-параметр composition, которым пользуются тесты.
 
 Console.OutputEncoding = Encoding.UTF8;
+
+if (!Console.IsInputRedirected && !Console.IsOutputRedirected)
+{
+    AzurPilotInteractiveRunResult interactive = await AzurPilotHost.RunInteractiveAsync(
+        static (service, initialDiagnostics, logBuffer, cancellationToken) =>
+        {
+            using AzurPilotOperatorUi ui = new(
+                service,
+                initialDiagnostics,
+                new OperatorUiLogSourceAdapter(logBuffer.SnapshotLines));
+            ui.Run(cancellationToken);
+            return Task.CompletedTask;
+        }).ConfigureAwait(false);
+
+    if (!interactive.InteractiveSessionStarted || interactive.Startup.ExitCode != AzurPilotExitCode.Success)
+    {
+        foreach (string line in interactive.Startup.ReportLines)
+        {
+            Console.WriteLine(line);
+        }
+    }
+
+    return interactive.Startup.ExitCode;
+}
 
 AzurPilotStartupResult result = await AzurPilotHost.RunAsync().ConfigureAwait(false);
 

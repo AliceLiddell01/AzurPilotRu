@@ -3,6 +3,7 @@ using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
+using AzurPilot.App.OperatorServices;
 using AzurPilot.Windows;
 using AzurPilot.Windows.Android;
 using AzurPilot.Windows.MuMu;
@@ -54,12 +55,160 @@ public static class AzurPilotHost
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
+        return CreateBuilder(configuration, operatorLogBuffer: null);
+    }
+
+    private static HostApplicationBuilder CreateBuilder(
+        ApplicationResult<AzurPilotConfigurationSnapshot> configuration,
+        AzurPilotOperatorLogBuffer? operatorLogBuffer)
+    {
         HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(
             new HostApplicationBuilderSettings { DisableDefaults = true });
 
-        ConfigureLogging(builder, configuration);
+        ConfigureLogging(builder, configuration, operatorLogBuffer);
         RegisterRuntimeServices(builder, configuration);
         return builder;
+    }
+
+    /// <summary>Запускает долгоживущий application host на время интерактивной операторской сессии.</summary>
+    /// <param name="runSession">UI callback, вызываемый после startup-диагностики при живом host-е.</param>
+    /// <param name="configurationPath">Путь конфигурации или runtime-путь по умолчанию.</param>
+    /// <param name="cancellationToken">Токен отмены запуска и сессии.</param>
+    /// <returns>Startup-итог и признак того, что UI session была запущена.</returns>
+    public static async Task<AzurPilotInteractiveRunResult> RunInteractiveAsync(
+        Func<AzurPilotOperatorService, AzurPilotDiagnosticReport, AzurPilotOperatorLogBuffer,
+            CancellationToken, Task> runSession,
+        string? configurationPath = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(runSession);
+
+        AzurPilotOperation operation = AzurPilotOperation.Start("azurpilot.interactive.startup");
+        AzurPilotOperatorLogBuffer logBuffer = new();
+        IHost? host = null;
+        bool hostStarted = false;
+        bool sessionStarted = false;
+        bool operationDisposed = false;
+        AzurPilotStartupResult? startupResult = null;
+        ILogger? logger = null;
+
+        try
+        {
+            ApplicationResult<AzurPilotConfigurationSnapshot> configuration;
+            try
+            {
+                string path = configurationPath ?? AzurPilotConfigurationPath.GetDefaultRuntimePath();
+                using (operation.StartStep(AzurPilotOperation.ConfigurationActivityName))
+                {
+                    configuration = AzurPilotConfigurationLoader.Load(path);
+                }
+
+                host = CreateBuilder(configuration, logBuffer).Build();
+            }
+            catch (Exception exception)
+            {
+                ApplicationFailure failure = NativeBoundaryFailureMapper.Map(exception);
+                return new AzurPilotInteractiveRunResult(
+                    AzurPilotStartupResult.Failure(operation.CorrelationId, failure),
+                    InteractiveSessionStarted: false);
+            }
+
+            logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(AzurPilotLog.Category);
+            logger.StartupStarted(operation.CorrelationId);
+
+            if (configuration.IsFailure)
+            {
+                ApplicationFailure configurationFailure = configuration.FailureInfo!;
+                logger.ConfigurationRejected(operation.CorrelationId, configurationFailure.Code);
+                return new AzurPilotInteractiveRunResult(
+                    AzurPilotStartupResult.Failure(operation.CorrelationId, configurationFailure),
+                    InteractiveSessionStarted: false);
+            }
+
+            AzurPilotConfigurationSnapshot snapshot = configuration.Value!;
+            string configurationSource = snapshot.Source.ToString();
+            string minimumLevel = snapshot.Configuration.Diagnostics.MinimumLevel.ToString();
+            logger.ConfigurationLoaded(
+                operation.CorrelationId,
+                configurationSource,
+                snapshot.EffectiveSchemaVersion,
+                snapshot.SourceSchemaVersion,
+                minimumLevel);
+
+            await host.StartAsync(cancellationToken).ConfigureAwait(false);
+            hostStarted = true;
+
+            // Снимок и результат startup готовы до UI, но сам host останется запущен до её закрытия.
+            startupResult = await InspectStartedHostAsync(host, logger, operation, cancellationToken)
+                .ConfigureAwait(false);
+            if (startupResult.Diagnostics is null)
+            {
+                return new AzurPilotInteractiveRunResult(startupResult, InteractiveSessionStarted: false);
+            }
+
+            // Startup activity не должна ошибочно коррелировать все последующие фоновые сообщения сессии.
+            operation.Dispose();
+            operationDisposed = true;
+            sessionStarted = true;
+            await runSession(
+                host.Services.GetRequiredService<AzurPilotOperatorService>(),
+                startupResult.Diagnostics,
+                logBuffer,
+                cancellationToken).ConfigureAwait(false);
+
+            hostStarted = false;
+            await host.StopAsync(CancellationToken.None).ConfigureAwait(false);
+            return new AzurPilotInteractiveRunResult(startupResult, InteractiveSessionStarted: true);
+        }
+        catch (Exception exception)
+        {
+            ApplicationFailure failure = NativeBoundaryFailureMapper.Map(exception);
+            logger?.StartupRejected(
+                operation.CorrelationId,
+                failure.Code,
+                failure.IsRetryable,
+                failure.Message);
+            AzurPilotStartupResult failed = AzurPilotStartupResult.Failure(
+                operation.CorrelationId,
+                failure,
+                startupResult?.Diagnostics);
+            return new AzurPilotInteractiveRunResult(failed, sessionStarted);
+        }
+        finally
+        {
+            if (host is not null)
+            {
+                if (hostStarted)
+                {
+                    try
+                    {
+                        hostStarted = false;
+                        await host.StopAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception exception)
+                    {
+                        // StopAsync выполняется ровно один раз; если он не удался, host всё равно будет
+                        // освобождён. Ошибка shutdown уже не может быть безопасно возвращена из finally.
+                        ApplicationFailure failure = NativeBoundaryFailureMapper.Map(exception);
+                        logger?.OperatorHostStopFailed(
+                            operation.CorrelationId,
+                            failure.Code,
+                            failure.Message);
+                    }
+                }
+
+                host.Dispose();
+            }
+            else
+            {
+                logBuffer.Dispose();
+            }
+
+            if (!operationDisposed)
+            {
+                operation.Dispose();
+            }
+        }
     }
 
     /// <summary>Выполняет startup приложения: загрузка конфигурации, host, диагностика, итог.</summary>
@@ -145,22 +294,30 @@ public static class AzurPilotHost
     /// <summary>Настраивает единственный logging provider приложения.</summary>
     /// <param name="builder">Построитель host-а.</param>
     /// <param name="configuration">Результат загрузки конфигурации.</param>
+    /// <param name="operatorLogBuffer">In-memory provider интерактивного режима или <see langword="null"/>.</param>
     private static void ConfigureLogging(
         HostApplicationBuilder builder,
-        ApplicationResult<AzurPilotConfigurationSnapshot> configuration)
+        ApplicationResult<AzurPilotConfigurationSnapshot> configuration,
+        AzurPilotOperatorLogBuffer? operatorLogBuffer)
     {
-        // Единственный logging provider — встроенный JSON console formatter, и весь structured runtime
-        // log направлен в stderr: stdout остаётся поверхностью человекочитаемого application output и
-        // будущего machine-output. Debug/EventSource/EventLog providers не подключаются.
-        _ = builder.Logging.AddJsonConsole(options =>
+        if (operatorLogBuffer is null)
         {
-            options.IncludeScopes = true;
-            options.UseUtcTimestamp = true;
-            options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
-        });
+            // В режиме одноразовой диагностики structured runtime log остаётся JSON в stderr.
+            _ = builder.Logging.AddJsonConsole(options =>
+            {
+                options.IncludeScopes = true;
+                options.UseUtcTimestamp = true;
+                options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
+            });
 
-        _ = builder.Services.Configure<ConsoleLoggerOptions>(
-            options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+            _ = builder.Services.Configure<ConsoleLoggerOptions>(
+                options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+        }
+        else
+        {
+            // Интерактивный экран получает тот же structured logging через bounded in-memory buffer.
+            _ = builder.Logging.AddProvider(operatorLogBuffer);
+        }
 
         // Штатные сообщения lifetime generic host («Application started», «Content root path») описывают
         // долгоживущий интерактивный host и к startup-операции приложения не относятся. Предупреждения и
@@ -206,6 +363,7 @@ public static class AzurPilotHost
 
             RegisterMuMuServices(builder);
             RegisterAndroidServices(builder);
+            _ = builder.Services.AddSingleton<AzurPilotOperatorService>();
         }
     }
 
@@ -332,52 +490,53 @@ public static class AzurPilotHost
         await host.StartAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            AzurPilotDiagnosticReport report;
-            using (operation.StartStep(AzurPilotOperation.NativeDiagnosticsActivityName))
-            {
-                report = host.Services.GetRequiredService<AzurPilotDiagnosticService>().Capture();
-            }
-
-            // MuMu-секция — диагностический результат, а не причина отказа: отсутствие установки,
-            // неподдерживаемая control surface и остановленный экземпляр остаются данными, и startup их
-            // не «исправляет». Запуск эмулятора диагностикой не выполняется никогда.
-            LogMuMuDiagnostics(logger, operation.CorrelationId, report.MuMu);
-
-            // Android-секции и состояние игры — тоже данные: недоступный ADB, неготовый transport и
-            // ненаблюдённое состояние игры не отклоняют запуск. Startup ничего не подключает и не
-            // запускает: ни ADB, ни игру, ни эмулятор.
-            LogAndroidDiagnostics(logger, operation.CorrelationId, report.Android);
-            LogAzurLaneDiagnostics(logger, operation.CorrelationId, report.AzurLane);
-
-            if (report.Native.Failure is not null)
-            {
-                ApplicationFailure nativeFailure = report.Native.Failure;
-                logger.StartupRejected(
-                    operation.CorrelationId,
-                    nativeFailure.Code,
-                    nativeFailure.IsRetryable,
-                    nativeFailure.Message);
-                return AzurPilotStartupResult.Failure(operation.CorrelationId, nativeFailure, report);
-            }
-
-            // Отображаемые значения готовятся до вызова логирования: сообщение остаётся статическим
-            // шаблоном, а его аргументы — уже готовыми строками.
-            string opencvVersion = report.Native.OpencvVersion?.ToString() ?? string.Empty;
-            string capabilities = string.Join(", ", report.Native.Capabilities);
-
-            logger.NativeBoundaryVerified(
-                operation.CorrelationId,
-                report.Native.AbiVersion ?? 0,
-                opencvVersion,
-                capabilities);
-            logger.StartupCompleted(operation.CorrelationId);
-
-            return AzurPilotStartupResult.Success(operation.CorrelationId, report);
+            return await InspectStartedHostAsync(host, logger, operation, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             await host.StopAsync(CancellationToken.None).ConfigureAwait(false);
         }
+    }
+
+    private static Task<AzurPilotStartupResult> InspectStartedHostAsync(
+        IHost host,
+        ILogger logger,
+        AzurPilotOperation operation,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        AzurPilotDiagnosticReport report;
+        using (operation.StartStep(AzurPilotOperation.NativeDiagnosticsActivityName))
+        {
+            report = host.Services.GetRequiredService<AzurPilotDiagnosticService>().Capture();
+        }
+
+        // MuMu, Android и игра собираются существующими read-only diagnostic path-ами. Этот шаг
+        // ничего не запускает и не подключает; при отсутствии устройств host остаётся доступным TUI.
+        LogMuMuDiagnostics(logger, operation.CorrelationId, report.MuMu);
+        LogAndroidDiagnostics(logger, operation.CorrelationId, report.Android);
+        LogAzurLaneDiagnostics(logger, operation.CorrelationId, report.AzurLane);
+
+        if (report.Native.Failure is ApplicationFailure nativeFailure)
+        {
+            logger.StartupRejected(
+                operation.CorrelationId,
+                nativeFailure.Code,
+                nativeFailure.IsRetryable,
+                nativeFailure.Message);
+            return Task.FromResult(AzurPilotStartupResult.Failure(operation.CorrelationId, nativeFailure, report));
+        }
+
+        string opencvVersion = report.Native.OpencvVersion?.ToString() ?? string.Empty;
+        string capabilities = string.Join(", ", report.Native.Capabilities);
+        logger.NativeBoundaryVerified(
+            operation.CorrelationId,
+            report.Native.AbiVersion ?? 0,
+            opencvVersion,
+            capabilities);
+        logger.StartupCompleted(operation.CorrelationId);
+        return Task.FromResult(AzurPilotStartupResult.Success(operation.CorrelationId, report));
     }
 
     /// <summary>Записывает bounded результат MuMu-диагностики в существующий structured log.</summary>
