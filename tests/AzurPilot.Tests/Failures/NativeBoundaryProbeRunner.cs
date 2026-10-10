@@ -118,6 +118,7 @@ internal static class NativeBoundaryProbeRunner
             or ApplicationFailure.ConfigurationSchemaUnsupported
             or ApplicationFailure.NativeUnavailable
             or ApplicationFailure.NativeIncompatible
+            or ApplicationFailure.NativeFrameInvalid
             or ApplicationFailure.OperationCancelled
             or ApplicationFailure.InternalError;
 

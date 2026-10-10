@@ -1,4 +1,5 @@
 using AzurPilot.Core;
+using AzurPilot.Core.Failures;
 using AzurPilot.Windows;
 using Xunit;
 
@@ -73,4 +74,112 @@ public sealed class NativeInteropTests
         Assert.DoesNotContain('\n', buildInfo);
         Assert.DoesNotContain('\r', buildInfo);
     }
+
+    [Fact(DisplayName = "Native PNG decode возвращает размеры RGB8 без managed pixel copy")]
+    public void NativeFrameDecodeReturnsImmutableMetadata()
+    {
+        byte[] png = ReadFixture("rgb_red_blue.png");
+
+        using NativeFrame frame = AzurPilotNativeBridge.DecodePng(png);
+        NativeFrameInfo info = frame.GetInfo();
+
+        Assert.Equal(2u, info.Width);
+        Assert.Equal(1u, info.Height);
+        Assert.Equal(6u, info.StrideBytes);
+        Assert.Equal(6u, info.ByteLength);
+        Assert.Equal(1u, info.PixelFormat);
+    }
+
+    [Fact(DisplayName = "Native PNG decode fail-closed отклоняет повреждённые и неподдерживаемые входы")]
+    public void NativeFrameDecodeRejectsInvalidAndUnsupportedPng()
+    {
+        byte[] empty = [];
+        AzurPilotNativeBoundaryException emptyInput = Assert.ThrowsAny<AzurPilotNativeBoundaryException>(
+            () => AzurPilotNativeBridge.DecodePng(empty));
+        ApplicationFailure emptyFailure = NativeBoundaryFailureMapper.Map(emptyInput);
+        Assert.Equal(ApplicationFailure.NativeFrameInvalid, emptyFailure.Code);
+        Assert.Equal("5", emptyFailure.Details?[NativeBoundaryFailureMapper.NativeStatusCodeKey]);
+
+        byte[] truncated = ReadFixture("rgb_red_blue.png")[..^4];
+        AzurPilotNativeBoundaryException invalid = Assert.ThrowsAny<AzurPilotNativeBoundaryException>(
+            () => AzurPilotNativeBridge.DecodePng(truncated));
+        ApplicationFailure invalidFailure = NativeBoundaryFailureMapper.Map(invalid);
+        Assert.Equal(ApplicationFailure.NativeFrameInvalid, invalidFailure.Code);
+        Assert.False(invalidFailure.IsRetryable);
+        Assert.Equal("5", invalidFailure.Details?[NativeBoundaryFailureMapper.NativeStatusCodeKey]);
+
+        byte[] corruptIdat = ReadFixture("corrupt_idat_checksum.png");
+        AzurPilotNativeBoundaryException corruptIdatError = Assert.ThrowsAny<AzurPilotNativeBoundaryException>(
+            () => AzurPilotNativeBridge.DecodePng(corruptIdat));
+        ApplicationFailure corruptIdatFailure = NativeBoundaryFailureMapper.Map(corruptIdatError);
+        Assert.Equal(ApplicationFailure.NativeFrameInvalid, corruptIdatFailure.Code);
+        Assert.Equal("5", corruptIdatFailure.Details?[NativeBoundaryFailureMapper.NativeStatusCodeKey]);
+
+        byte[] nonOpaqueRgba = ReadFixture("rgba_nonopaque.png");
+        AzurPilotNativeBoundaryException unsupported = Assert.ThrowsAny<AzurPilotNativeBoundaryException>(
+            () => AzurPilotNativeBridge.DecodePng(nonOpaqueRgba));
+        ApplicationFailure unsupportedFailure = NativeBoundaryFailureMapper.Map(unsupported);
+        Assert.Equal(ApplicationFailure.NativeFrameInvalid, unsupportedFailure.Code);
+        Assert.Equal("6", unsupportedFailure.Details?[NativeBoundaryFailureMapper.NativeStatusCodeKey]);
+
+        byte[] oversized = ReadFixture("oversized_dimensions.png");
+        AzurPilotNativeBoundaryException tooLarge = Assert.ThrowsAny<AzurPilotNativeBoundaryException>(
+            () => AzurPilotNativeBridge.DecodePng(oversized));
+        ApplicationFailure oversizedFailure = NativeBoundaryFailureMapper.Map(tooLarge);
+        Assert.Equal(ApplicationFailure.NativeFrameInvalid, oversizedFailure.Code);
+        Assert.Equal("7", oversizedFailure.Details?[NativeBoundaryFailureMapper.NativeStatusCodeKey]);
+    }
+
+    [Fact(DisplayName = "SafeHandle переживает GC, конкурентный GetInfo и Dispose и повторное освобождение")]
+    public async Task NativeFrameSafeHandleProtectsConcurrentMetadataAndRelease()
+    {
+        byte[] png = ReadFixture("rgb_red_blue.png");
+        NativeFrame frame = AzurPilotNativeBridge.DecodePng(png);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        Assert.Equal(2u, frame.GetInfo().Width);
+
+        Task[] readers = [.. Enumerable.Range(0, 64)
+            .Select(_ => Task.Run(() =>
+            {
+                try
+                {
+                    NativeFrameInfo info = frame.GetInfo();
+                    Assert.Equal(6u, info.ByteLength);
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Dispose, начавшийся до SafeHandle.AddRef, корректно закрывает доступ.
+                }
+            }))];
+        Task disposer = Task.Run(frame.Dispose, TestContext.Current.CancellationToken);
+        await Task.WhenAll(readers.Append(disposer));
+
+        frame.Dispose();
+        _ = Assert.Throws<ObjectDisposedException>(() => frame.GetInfo());
+    }
+
+    [Fact(DisplayName = "Повторные managed create/read/dispose циклы не оставляют живых SafeHandle")]
+    public void NativeFrameRepeatedCreateAndDisposeIsIdempotent()
+    {
+        byte[] png = ReadFixture("rgb_red_blue.png");
+
+        for (int iteration = 0; iteration < 512; iteration++)
+        {
+            NativeFrame frame = AzurPilotNativeBridge.DecodePng(png);
+            Assert.Equal(6u, frame.GetInfo().ByteLength);
+            frame.Dispose();
+            frame.Dispose();
+        }
+    }
+
+    private static byte[] ReadFixture(string name)
+        => File.ReadAllBytes(Path.Combine(
+            PinnedVersions.RepositoryRoot,
+            "native",
+            "tests",
+            "fixtures",
+            name));
 }

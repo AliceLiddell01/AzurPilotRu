@@ -58,7 +58,7 @@ public sealed class NativeBoundaryFailureMapperTests
         Assert.Equal(ApplicationFailure.NativeUnavailable, NativeBoundaryFailureMapper
             .Map(new NativeBoundaryUnavailableException("Native библиотека «AzurPilot.Native» не загружена.")).Code);
         Assert.Equal(ApplicationFailure.NativeIncompatible, NativeBoundaryFailureMapper
-            .Map(new NativeAbiMismatchException("Версия ABI native библиотеки «AzurPilot.Native»: 2; ожидается: 1.")).Code);
+            .Map(new NativeAbiMismatchException("Версия ABI native библиотеки «AzurPilot.Native»: 3; ожидается: 2.")).Code);
         Assert.Equal(ApplicationFailure.OperationCancelled, NativeBoundaryFailureMapper
             .Map(new OperationCanceledException("Операция отменена вызывающей стороной.")).Code);
         Assert.Equal(ApplicationFailure.InternalError, NativeBoundaryFailureMapper
@@ -188,7 +188,7 @@ public sealed class NativeBoundaryFailureMapperTests
             $"Native библиотека «{AzurPilotNativeBridge.LibraryName}» не загружена: Не найден указанный модуль. "
             + "Соберите native часть через CMake preset и повторите managed сборку."),
         ExceptionKind.NativeAbiMismatch => new NativeAbiMismatchException(
-            $"Версия ABI native библиотеки «{AzurPilotNativeBridge.LibraryName}»: 2; ожидается: 1. "
+            $"Версия ABI native библиотеки «{AzurPilotNativeBridge.LibraryName}»: 3; ожидается: 2. "
             + "Native библиотека несовместима с managed фундаментом."),
         ExceptionKind.OperationCanceled => new OperationCanceledException("Операция отменена запросом отмены."),
         ExceptionKind.TaskCanceled => new TaskCanceledException("Задача отменена запросом отмены."),

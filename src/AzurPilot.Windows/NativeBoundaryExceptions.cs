@@ -59,3 +59,34 @@ public sealed class NativeAbiMismatchException : AzurPilotNativeBoundaryExceptio
     {
     }
 }
+
+/// <summary>Ожидаемый отказ декодирования входного PNG frame.</summary>
+internal sealed class NativeFrameDecodeException : AzurPilotNativeBoundaryException
+{
+    /// <summary>Создаёт отказ с фиксированным сообщением и кодом native ABI.</summary>
+    /// <param name="statusCode">Код отказа PNG decode из ABI.</param>
+    internal NativeFrameDecodeException(int statusCode)
+        : base(CreateMessage(statusCode))
+    {
+        StatusCode = statusCode;
+    }
+
+    /// <summary>Код отказа, возвращённый native PNG decoder.</summary>
+    internal int StatusCode { get; }
+
+    private static string CreateMessage(int statusCode)
+    {
+        if (statusCode is not AzurPilotNativeBridge.StatusInvalidPng
+            and not AzurPilotNativeBridge.StatusUnsupportedPng
+            and not AzurPilotNativeBridge.StatusImageTooLarge)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(statusCode),
+                statusCode,
+                "Ожидался код отказа PNG frame.");
+        }
+
+        return $"Native функция azurpilot_native_frame_decode_png завершилась с кодом {statusCode}: "
+            + $"{AzurPilotNativeBridge.DescribeStatus(statusCode)}. Frame не создан.";
+    }
+}

@@ -1,13 +1,12 @@
 /* =============================================================================
- * azurpilot_native.cpp — реализация замороженного C ABI v1.
+ * azurpilot_native.cpp — реализация замороженного C ABI v2.
  *
  * Форма ABI (структура, экспорты, коды возврата, семантика required_size) описана
  * и заморожена в native/include/azurpilot_native_abi.h — этот файл только исполняет
  * её и не вводит собственных решений о форме.
  *
- * Этот файл сознательно НЕ включает заголовки OpenCV: OpenCV-код живёт в
- * opencv_probe.cpp за внутренним C++ интерфейсом. Благодаря этому протащить
- * cv::Mat, STL-тип или владеющий указатель в C ABI невозможно даже случайно.
+ * OpenCV-типы используются только во внутренних C++ модулях. Наружу передаётся
+ * opaque handle; cv::Mat и pixel storage остаются внутри DLL.
  *
  * Ни одно исключение не покидает экспорты: все три функции объявлены noexcept, и
  * исключение, вылетевшее из функции, вызвало бы std::terminate в процессе-хосте.
@@ -18,8 +17,12 @@
 
 #include "azurpilot_native_abi.h"
 
+#include "native_frame.h"
 #include "opencv_probe.h"
 
+#include <opencv2/core.hpp>
+
+#include <new>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -134,6 +137,72 @@ int32_t azurpilot_native_build_info(char* buffer, uint32_t buffer_size,
         }
 
         memcpy(buffer, text, static_cast<size_t>(required));
+        return AZURPILOT_NATIVE_OK;
+    } catch (const std::exception&) {
+        return AZURPILOT_NATIVE_ERROR_INTERNAL;
+    } catch (...) {
+        return AZURPILOT_NATIVE_ERROR_INTERNAL;
+    }
+}
+
+int32_t azurpilot_native_frame_decode_png(
+    const uint8_t* png_bytes,
+    uint32_t png_size,
+    AzurPilotNativeFrameHandle* out_frame) AZURPILOT_NATIVE_NOEXCEPT {
+    if (out_frame == nullptr) {
+        return AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT;
+    }
+    *out_frame = nullptr;
+
+    try {
+        return azurpilot::native::detail::decode_png_frame(png_bytes, png_size, out_frame);
+    } catch (const std::bad_alloc&) {
+        *out_frame = nullptr;
+        return AZURPILOT_NATIVE_ERROR_OUT_OF_MEMORY;
+    } catch (const cv::Exception& exception) {
+        *out_frame = nullptr;
+        if (exception.code == cv::Error::StsNoMem) {
+            return AZURPILOT_NATIVE_ERROR_OUT_OF_MEMORY;
+        }
+        if (exception.code == cv::Error::StsBadArg
+            || exception.code == cv::Error::StsOutOfRange
+            || exception.code == cv::Error::StsParseError) {
+            return AZURPILOT_NATIVE_ERROR_INVALID_PNG;
+        }
+        return AZURPILOT_NATIVE_ERROR_OPENCV_FAILURE;
+    } catch (const std::exception&) {
+        *out_frame = nullptr;
+        return AZURPILOT_NATIVE_ERROR_INTERNAL;
+    } catch (...) {
+        *out_frame = nullptr;
+        return AZURPILOT_NATIVE_ERROR_INTERNAL;
+    }
+}
+
+int32_t azurpilot_native_frame_get_info(
+    AzurPilotNativeFrameHandle frame,
+    AzurPilotNativeFrameInfo* out_info) AZURPILOT_NATIVE_NOEXCEPT {
+    try {
+        return azurpilot::native::detail::get_frame_info(frame, out_info);
+    } catch (const std::exception&) {
+        if (out_info != nullptr) {
+            memset(out_info, 0, sizeof(*out_info));
+        }
+        return AZURPILOT_NATIVE_ERROR_INTERNAL;
+    } catch (...) {
+        if (out_info != nullptr) {
+            memset(out_info, 0, sizeof(*out_info));
+        }
+        return AZURPILOT_NATIVE_ERROR_INTERNAL;
+    }
+}
+
+int32_t azurpilot_native_frame_release(AzurPilotNativeFrameHandle frame) AZURPILOT_NATIVE_NOEXCEPT {
+    try {
+        if (frame == nullptr) {
+            return AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT;
+        }
+        delete frame;
         return AZURPILOT_NATIVE_OK;
     } catch (const std::exception&) {
         return AZURPILOT_NATIVE_ERROR_INTERNAL;

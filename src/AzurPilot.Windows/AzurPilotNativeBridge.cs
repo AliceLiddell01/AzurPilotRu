@@ -39,6 +39,18 @@ public static partial class AzurPilotNativeBridge
     /// <summary>Код возврата native стороны «внутренняя ошибка native стороны».</summary>
     public const int StatusInternal = 4;
 
+    /// <summary>Код возврата: вход не является корректным PNG.</summary>
+    public const int StatusInvalidPng = 5;
+
+    /// <summary>Код возврата: PNG корректен, но не входит в поддерживаемое подмножество.</summary>
+    public const int StatusUnsupportedPng = 6;
+
+    /// <summary>Код возврата: вход превышает один из ABI-лимитов frame.</summary>
+    public const int StatusImageTooLarge = 7;
+
+    /// <summary>Код возврата: native стороне не хватило памяти.</summary>
+    public const int StatusOutOfMemory = 8;
+
     /// <summary>
     /// Бит признака того, что код OpenCV реально исполнился при заполнении сведений.
     /// </summary>
@@ -200,6 +212,68 @@ public static partial class AzurPilotNativeBridge
         }
     }
 
+    /// <summary>Декодирует байты PNG в native-owned RGB8 frame.</summary>
+    /// <param name="pngBytes">Полный PNG, передаваемый native стороне только на время вызова.</param>
+    /// <returns>Frame с native-owned пикселями; управляемая сторона не копирует RGB-буфер.</returns>
+    /// <exception cref="NativeBoundaryUnavailableException">Native библиотека не загрузилась.</exception>
+    /// <exception cref="NativeAbiMismatchException">Версия ABI не совпадает с ожидаемой.</exception>
+    /// <exception cref="NativeFrameDecodeException">PNG некорректен, не поддерживается или превышает лимит.</exception>
+    /// <exception cref="AzurPilotNativeBoundaryException">Нарушен контракт native boundary.</exception>
+    public static unsafe NativeFrame DecodePng(ReadOnlySpan<byte> pngBytes)
+    {
+        EnsureFrameAbiVersion();
+
+        NativeFrameSafeHandle frame;
+        int status;
+        byte emptyInputSentinel = 0;
+        try
+        {
+            fixed (byte* pngPointer = pngBytes)
+            {
+                byte* nativePngPointer = pngBytes.IsEmpty ? &emptyInputSentinel : pngPointer;
+                status = DecodeFrameNative(
+                    nativePngPointer,
+                    (uint)pngBytes.Length,
+                    out frame);
+            }
+        }
+        catch (DllNotFoundException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (BadImageFormatException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            throw MissingFrameApi("azurpilot_native_frame_decode_png");
+        }
+
+        if (status != StatusOk)
+        {
+            frame.Dispose();
+            if (status is StatusInvalidPng or StatusUnsupportedPng or StatusImageTooLarge)
+            {
+                throw new NativeFrameDecodeException(status);
+            }
+
+            throw new AzurPilotNativeBoundaryException(
+                $"Native функция azurpilot_native_frame_decode_png завершилась с кодом {status}: "
+                + $"{DescribeStatus(status)}.");
+        }
+
+        if (frame.IsInvalid)
+        {
+            frame.Dispose();
+            throw new AzurPilotNativeBoundaryException(
+                "Native функция azurpilot_native_frame_decode_png вернула успех без frame handle: "
+                + "контракт ABI нарушен.");
+        }
+
+        return new NativeFrame(frame);
+    }
+
     /// <summary>Преобразует код возврата native стороны в диагностический текст.</summary>
     /// <param name="status">Код возврата native функции.</param>
     /// <returns>Текст на русском языке.</returns>
@@ -210,8 +284,70 @@ public static partial class AzurPilotNativeBridge
         StatusBufferTooSmall => "предоставленный буфер меньше требуемого размера",
         StatusOpencvFailure => "код OpenCV выбросил исключение",
         StatusInternal => "внутренняя ошибка native стороны",
+        StatusInvalidPng => "вход не является корректным PNG",
+        StatusUnsupportedPng => "тип или свойства PNG не поддерживаются",
+        StatusImageTooLarge => "PNG превышает допустимый размер frame",
+        StatusOutOfMemory => "native стороне не хватило памяти",
         _ => "неизвестный код возврата",
     };
+
+    internal static NativeFrameInfo GetFrameInfo(NativeFrameSafeHandle frame)
+    {
+        EnsureFrameAbiVersion();
+
+        int status;
+        NativeFrameNativeInfo nativeInfo;
+        try
+        {
+            status = GetFrameInfoNative(frame, out nativeInfo);
+        }
+        catch (DllNotFoundException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (BadImageFormatException exception)
+        {
+            throw Unavailable(exception);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            throw MissingFrameApi("azurpilot_native_frame_get_info");
+        }
+
+        if (status != StatusOk)
+        {
+            throw new AzurPilotNativeBoundaryException(
+                $"Native функция azurpilot_native_frame_get_info завершилась с кодом {status}: "
+                + $"{DescribeStatus(status)}.");
+        }
+
+        return new NativeFrameInfo(
+            nativeInfo.Width,
+            nativeInfo.Height,
+            nativeInfo.StrideBytes,
+            nativeInfo.ByteLength,
+            nativeInfo.PixelFormat);
+    }
+
+    internal static bool ReleaseFrame(IntPtr frame)
+    {
+        try
+        {
+            return ReleaseFrameNative(frame) == StatusOk;
+        }
+        catch (DllNotFoundException)
+        {
+            return false;
+        }
+        catch (BadImageFormatException)
+        {
+            return false;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// Проверяет, что managed объявление структуры совпадает с раскладкой из заголовка ABI,
@@ -250,6 +386,14 @@ public static partial class AzurPilotNativeBridge
             exception);
     }
 
+    private static NativeAbiMismatchException MissingFrameApi(string entryPoint)
+    {
+        return new NativeAbiMismatchException(
+            $"Native библиотека «{LibraryName}» сообщает ABI "
+            + $"{NativeBoundaryContract.ExpectedAbiVersion}, но не экспортирует обязательную функцию "
+            + $"{entryPoint}: контракт frame API несовместим.");
+    }
+
     private static void EnsureExpectedAbiVersion(uint abiVersion)
     {
         if (abiVersion != NativeBoundaryContract.ExpectedAbiVersion)
@@ -259,6 +403,11 @@ public static partial class AzurPilotNativeBridge
                 + $"{NativeBoundaryContract.ExpectedAbiVersion}. Native библиотека несовместима с "
                 + "managed фундаментом: пересоберите native часть или обновите контракт ABI.");
         }
+    }
+
+    private static void EnsureFrameAbiVersion()
+    {
+        EnsureExpectedAbiVersion(NativeAbiVersion());
     }
 
     /// <summary>
@@ -355,6 +504,30 @@ public static partial class AzurPilotNativeBridge
 
     [LibraryImport(LibraryName, EntryPoint = "azurpilot_native_build_info")]
     private static partial int BuildInfoNative(byte[]? buffer, uint bufferSize, out uint requiredSize);
+
+    [LibraryImport(LibraryName, EntryPoint = "azurpilot_native_frame_decode_png")]
+    private static unsafe partial int DecodeFrameNative(
+        byte* pngBytes,
+        uint pngSize,
+        out NativeFrameSafeHandle outFrame);
+
+    [LibraryImport(LibraryName, EntryPoint = "azurpilot_native_frame_get_info")]
+    private static partial int GetFrameInfoNative(
+        NativeFrameSafeHandle frame,
+        out NativeFrameNativeInfo outInfo);
+
+    [LibraryImport(LibraryName, EntryPoint = "azurpilot_native_frame_release")]
+    private static partial int ReleaseFrameNative(IntPtr frame);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct NativeFrameNativeInfo
+    {
+        internal uint Width;
+        internal uint Height;
+        internal uint StrideBytes;
+        internal uint ByteLength;
+        internal uint PixelFormat;
+    }
 
     /// <summary>
     /// Managed объявление <c>AzurPilotNativeInfo</c>. Раскладка заморожена заголовком ABI:

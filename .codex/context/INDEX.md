@@ -24,6 +24,7 @@
 | Build/dependency contracts | `build-contracts.md` | manifests (`global.json`, `Directory.*`, `native/**`) |
 | Пользовательская конфигурация | `application-configuration.md` | `docs/getting-started.md`, `src/AzurPilot.Core/Configuration/**` |
 | Application failures | `application-failures.md` | `src/AzurPilot.Core/Failures/**`, `src/AzurPilot.App/AzurPilotExitCode.cs` |
+| Native PNG frame и ownership | `native-frame.md` | `native/include/azurpilot_native_abi.h`, `docs/architecture/native-frame-ownership.md`, native/managed tests |
 | Runtime logging и diagnostics | `runtime-diagnostics.md` | `src/AzurPilot.App/**`, `docs/getting-started.md` |
 | MuMu lifecycle | `mumu-lifecycle.md` | production code + relevant tests/acceptance |
 | Android/ADB и lifecycle Azur Lane Global/EN | `android-game-lifecycle.md` | `docs/architecture/android-game-lifecycle.md`, production code/tests |
