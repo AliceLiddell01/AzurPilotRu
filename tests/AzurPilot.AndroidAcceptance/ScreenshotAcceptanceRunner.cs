@@ -36,7 +36,9 @@ internal sealed record ScreenshotLiveAcceptanceReport(
     string? PreflightBlocker,
     string? NextStep,
     bool IsProven,
-    string? FailureCode)
+    string? FailureCode,
+    string? CaptureFailureCode,
+    string? CaptureFailureReason)
 {
     public string Status => IsProven ? "PROVEN" : "BLOCKED";
 }
@@ -106,6 +108,8 @@ internal sealed class ScreenshotAcceptanceRunner
         AzurLaneGameObservation observedInitialGame;
         List<ScreenshotCaptureScanEvidence> captures = [];
         string? failureCode = null;
+        string? captureFailureCode = null;
+        string? captureFailureReason = null;
         bool? deviceStatePreserved = null;
         bool? auditPassed = null;
         string? auditFailure;
@@ -238,6 +242,8 @@ internal sealed class ScreenshotAcceptanceRunner
                     .ConfigureAwait(false);
                 if (captured.IsFailure)
                 {
+                    captureFailureCode = captured.FailureInfo!.Code;
+                    captureFailureReason = GetFailureReason(captured.FailureInfo);
                     failureCode = CaptureFailure;
                     break;
                 }
@@ -250,6 +256,8 @@ internal sealed class ScreenshotAcceptanceRunner
                     ScreenshotDiagnosticRegion.Center);
                 if (scan.IsFailure)
                 {
+                    captureFailureCode = scan.FailureInfo!.Code;
+                    captureFailureReason = GetFailureReason(scan.FailureInfo);
                     failureCode = CaptureFailure;
                     break;
                 }
@@ -305,11 +313,11 @@ internal sealed class ScreenshotAcceptanceRunner
 
         if (deviceStatePreserved == false)
         {
-            failureCode = FinalStateFailure;
+            failureCode ??= FinalStateFailure;
         }
         else if (deviceStatePreserved is null)
         {
-            failureCode = "screenshot_final_state_not_observed";
+            failureCode ??= "screenshot_final_state_not_observed";
         }
 
     Complete:
@@ -362,8 +370,16 @@ internal sealed class ScreenshotAcceptanceRunner
             preflightBlocker,
             nextStep,
             proven,
-            proven ? null : failureCode ?? PreflightFailure);
+            proven ? null : failureCode ?? PreflightFailure,
+            captureFailureCode,
+            captureFailureReason);
     }
+
+    private static string? GetFailureReason(ApplicationFailure failure)
+        => failure.Details is not null
+            && failure.Details.TryGetValue("reason", out string? reason)
+                ? reason
+                : null;
 
     private static bool IsReady(AndroidReadinessFacts facts)
         => facts.Transport.State == AndroidTransportState.Device

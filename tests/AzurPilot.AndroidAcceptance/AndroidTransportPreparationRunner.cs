@@ -156,7 +156,10 @@ internal sealed class AndroidTransportPreparationRunner
                     finalTransport = observedState;
                 }
 
-                _ = failure.Details.TryGetValue("evidence", out bootEvidence);
+                if (failure.Code == ApplicationFailure.AndroidNotReady)
+                {
+                    _ = failure.Details.TryGetValue("evidence", out bootEvidence);
+                }
             }
 
             blocker = failure.Code == ApplicationFailure.AndroidTransportNotReady

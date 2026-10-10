@@ -1,6 +1,7 @@
 using AzurPilot.Core.Android;
 using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.Failures;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace AzurPilot.Tests.Android;
@@ -138,5 +139,85 @@ public sealed class AndroidTransportPreparationTests
         Assert.Equal(ApplicationFailure.OperationCancelled, result.FailureInfo!.Code);
         Assert.Equal("absent", result.FailureInfo.Details!["initial_transport"]);
         Assert.Empty(context.Host.ConnectRequests);
+    }
+
+    [Fact(DisplayName = "Отмена подготовки логируется с именем prepare_transport")]
+    public async Task CancellationDuringPrepareLogsPreparationOperation()
+    {
+        AndroidTestContext context = new();
+        using CancellationTokenSource cancellation = new();
+        context.Host.TransportHandler = _ => ApplicationResult<AndroidTransportObservation>.Success(
+            AndroidTestContext.Transport(AndroidTransportState.Absent));
+        context.Host.ConnectHandler = (_, _) =>
+        {
+            cancellation.Cancel();
+            return AndroidTestContext.Command();
+        };
+        RecordingAndroidReadinessLogger logger = new();
+        AndroidReadinessService readiness = new(
+            context.Host,
+            context.Timings,
+            context.TimeProvider,
+            logger);
+
+        ApplicationResult<AndroidTransportPreparationOutcome> result =
+            await readiness.PrepareTransportAsync(AndroidTestContext.Endpoint, cancellation.Token);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ApplicationFailure.OperationCancelled, result.FailureInfo!.Code);
+        Assert.Equal("absent", result.FailureInfo.Details!["initial_transport"]);
+        Assert.Contains(
+            logger.Messages,
+            message => message.Contains("операция prepare_transport", StringComparison.Ordinal));
+    }
+
+    [Fact(DisplayName = "Отмена первичного запроса transport не выдумывает initial_transport")]
+    public async Task CancellationBeforeInitialTransportObservationKeepsTransportUnknown()
+    {
+        AndroidTestContext context = new();
+        context.Host.TransportHandler = _ => ApplicationResult<AndroidTransportObservation>.Failure(
+            new ApplicationFailure
+            {
+                Code = ApplicationFailure.OperationCancelled,
+                Message = "transport-query-cancelled",
+            });
+        RecordingAndroidReadinessLogger logger = new();
+        AndroidReadinessService readiness = new(
+            context.Host,
+            context.Timings,
+            context.TimeProvider,
+            logger);
+
+        ApplicationResult<AndroidTransportPreparationOutcome> result =
+            await readiness.PrepareTransportAsync(AndroidTestContext.Endpoint, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ApplicationFailure.OperationCancelled, result.FailureInfo!.Code);
+        Assert.DoesNotContain("initial_transport", result.FailureInfo.Details!.Keys);
+        Assert.Contains(
+            logger.Messages,
+            message => message.Contains("операция prepare_transport", StringComparison.Ordinal));
+    }
+
+    private sealed class RecordingAndroidReadinessLogger : ILogger<AndroidReadinessService>
+    {
+        internal List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            ArgumentNullException.ThrowIfNull(formatter);
+            Messages.Add(formatter(state, exception));
+        }
     }
 }

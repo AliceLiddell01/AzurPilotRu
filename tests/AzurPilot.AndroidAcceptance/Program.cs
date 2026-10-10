@@ -229,7 +229,9 @@ if (screenshotLiveOptions is not null)
             "screenshot_acceptance_unexpected_failure",
             null,
             false,
-            "screenshot_acceptance_unexpected_failure:" + exception.GetType().Name);
+            "screenshot_acceptance_unexpected_failure:" + exception.GetType().Name,
+            null,
+            null);
     }
 
     string liveEvidenceJson = ScreenshotAcceptanceJson.Serialize(screenshotReport);

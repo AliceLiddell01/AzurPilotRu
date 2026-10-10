@@ -265,7 +265,11 @@ public sealed class AndroidReadinessService
         if (cancellationToken.IsCancellationRequested)
         {
             return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
-                Cancelled(endpoint, started, AndroidNames.TransportPhase));
+                Cancelled(
+                    endpoint,
+                    started,
+                    AndroidNames.TransportPhase,
+                    AndroidNames.PrepareTransportOperation));
         }
 
         ApplicationResult<AndroidTransportObservation> initialResult = _host.QueryTransport(endpoint);
@@ -274,14 +278,22 @@ public sealed class AndroidReadinessService
             ApplicationFailure initialFailure = initialResult.FailureInfo!;
             return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
                 initialFailure.Code == ApplicationFailure.OperationCancelled
-                    ? Cancelled(endpoint, started, AndroidNames.TransportPhase)
+                    ? Cancelled(
+                        endpoint,
+                        started,
+                        AndroidNames.TransportPhase,
+                        AndroidNames.PrepareTransportOperation)
                     : initialFailure);
         }
 
         AndroidTransportObservation initialTransport = initialResult.Value!;
         if (cancellationToken.IsCancellationRequested)
         {
-            ApplicationFailure cancelled = Cancelled(endpoint, started, AndroidNames.TransportPhase);
+            ApplicationFailure cancelled = Cancelled(
+                endpoint,
+                started,
+                AndroidNames.TransportPhase,
+                AndroidNames.PrepareTransportOperation);
             return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
                 AndroidFailures.WithInitialTransport(cancelled, initialTransport.State));
         }
@@ -298,7 +310,11 @@ public sealed class AndroidReadinessService
                 ApplicationFailure connectFailure = connect.FailureInfo!;
                 if (connectFailure.Code == ApplicationFailure.OperationCancelled)
                 {
-                    ApplicationFailure cancelled = Cancelled(endpoint, started, AndroidNames.TransportPhase);
+                    ApplicationFailure cancelled = Cancelled(
+                        endpoint,
+                        started,
+                        AndroidNames.TransportPhase,
+                        AndroidNames.PrepareTransportOperation);
                     return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
                         AndroidFailures.WithInitialTransport(cancelled, initialTransport.State));
                 }
@@ -319,7 +335,8 @@ public sealed class AndroidReadinessService
                 started,
                 readinessDeadline,
                 cancellationToken,
-                initialTransport.State).ConfigureAwait(false);
+                initialTransport.State,
+                AndroidNames.PrepareTransportOperation).ConfigureAwait(false);
             if (transport.IsFailure)
             {
                 return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
@@ -344,7 +361,8 @@ public sealed class AndroidReadinessService
             started,
             readinessDeadline,
             cancellationToken,
-            initialTransport.State).ConfigureAwait(false);
+            initialTransport.State,
+            AndroidNames.PrepareTransportOperation).ConfigureAwait(false);
         if (boot.IsFailure)
         {
             return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
@@ -481,13 +499,15 @@ public sealed class AndroidReadinessService
     /// <param name="deadline">Общий deadline операции, который ожидание transport не продлевает.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
     /// <param name="initialTransport">Исходное состояние явной подготовки либо <see langword="null"/>.</param>
+    /// <param name="operationName">Имя операции для structured cancellation log.</param>
     /// <returns>Наблюдение готового transport либо терминальный отказ.</returns>
     private async Task<ApplicationResult<AndroidTransportObservation>> WaitForTransportAsync(
         AndroidEndpoint endpoint,
         long started,
         TimeSpan deadline,
         CancellationToken cancellationToken,
-        AndroidTransportState? initialTransport = null)
+        AndroidTransportState? initialTransport = null,
+        string operationName = AndroidNames.ReadyOperation)
     {
         AndroidTransportObservation? last = null;
 
@@ -496,7 +516,7 @@ public sealed class AndroidReadinessService
             if (cancellationToken.IsCancellationRequested)
             {
                 return ApplicationResult<AndroidTransportObservation>.Failure(
-                    Cancelled(endpoint, started, AndroidNames.TransportPhase));
+                    Cancelled(endpoint, started, AndroidNames.TransportPhase, operationName));
             }
 
             TimeSpan elapsed = _timeProvider.GetElapsedTime(started);
@@ -517,7 +537,7 @@ public sealed class AndroidReadinessService
                 if (failure.Code == ApplicationFailure.OperationCancelled)
                 {
                     return ApplicationResult<AndroidTransportObservation>.Failure(
-                        Cancelled(endpoint, started, AndroidNames.TransportPhase));
+                        Cancelled(endpoint, started, AndroidNames.TransportPhase, operationName));
                 }
 
                 return observation;
@@ -546,7 +566,7 @@ public sealed class AndroidReadinessService
             catch (OperationCanceledException)
             {
                 return ApplicationResult<AndroidTransportObservation>.Failure(
-                    Cancelled(endpoint, started, AndroidNames.TransportPhase));
+                    Cancelled(endpoint, started, AndroidNames.TransportPhase, operationName));
             }
         }
     }
@@ -562,13 +582,15 @@ public sealed class AndroidReadinessService
     /// <param name="deadline">Общий deadline операции, который ожидание не продлевает.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
     /// <param name="initialTransport">Исходное состояние явной подготовки либо <see langword="null"/>.</param>
+    /// <param name="operationName">Имя операции для structured cancellation log.</param>
     /// <returns>Наблюдение готового Android либо терминальный отказ.</returns>
     private async Task<ApplicationResult<AndroidBootObservation>> WaitForReadyAsync(
         AndroidEndpoint endpoint,
         long started,
         TimeSpan deadline,
         CancellationToken cancellationToken,
-        AndroidTransportState? initialTransport = null)
+        AndroidTransportState? initialTransport = null,
+        string operationName = AndroidNames.ReadyOperation)
     {
         AndroidBootObservation? last = null;
 
@@ -577,7 +599,7 @@ public sealed class AndroidReadinessService
             if (cancellationToken.IsCancellationRequested)
             {
                 return ApplicationResult<AndroidBootObservation>.Failure(
-                    Cancelled(endpoint, started, AndroidNames.BootPhase));
+                    Cancelled(endpoint, started, AndroidNames.BootPhase, operationName));
             }
 
             if (_timeProvider.GetElapsedTime(started) >= deadline)
@@ -593,7 +615,7 @@ public sealed class AndroidReadinessService
                 if (failure.Code == ApplicationFailure.OperationCancelled)
                 {
                     return ApplicationResult<AndroidBootObservation>.Failure(
-                        Cancelled(endpoint, started, AndroidNames.BootPhase));
+                        Cancelled(endpoint, started, AndroidNames.BootPhase, operationName));
                 }
 
                 return observation;
@@ -623,7 +645,7 @@ public sealed class AndroidReadinessService
             catch (OperationCanceledException)
             {
                 return ApplicationResult<AndroidBootObservation>.Failure(
-                    Cancelled(endpoint, started, AndroidNames.BootPhase));
+                    Cancelled(endpoint, started, AndroidNames.BootPhase, operationName));
             }
         }
     }
@@ -689,7 +711,11 @@ public sealed class AndroidReadinessService
         return failure;
     }
 
-    private ApplicationFailure Cancelled(AndroidEndpoint endpoint, long started, string phase)
+    private ApplicationFailure Cancelled(
+        AndroidEndpoint endpoint,
+        long started,
+        string phase,
+        string operationName = AndroidNames.ReadyOperation)
     {
         TimeSpan elapsed = _timeProvider.GetElapsedTime(started);
 
@@ -705,7 +731,7 @@ public sealed class AndroidReadinessService
         {
             AndroidLog.OperationCancelled(
                 _logger,
-                AndroidNames.ReadyOperation,
+                operationName,
                 endpoint.ToString(),
                 phase,
                 (long)elapsed.TotalMilliseconds);

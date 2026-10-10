@@ -54,6 +54,109 @@ public sealed class AcceptanceTransportRunnerTests
         Assert.Equal(0, capture.CallCount);
     }
 
+    [Fact(DisplayName = "Отказ capture сохраняет bounded причину при изменении финального состояния")]
+    public async Task CaptureFailureDetailsSurviveFinalStateChange()
+    {
+        (MuMuLifecycleTestContext muMu, AndroidTestContext android) = CreateContexts();
+        int transportObservations = 0;
+        android.Host.TransportHandler = _ => ApplicationResult<AndroidTransportObservation>.Success(
+            ++transportObservations == 1
+                ? AndroidTestContext.Device()
+                : AndroidTestContext.Transport(AndroidTransportState.Absent));
+        android.Host.BootHandler = _ => ApplicationResult<AndroidBootObservation>.Success(
+            AndroidTestContext.Boot(shellAvailable: true, bootCompleted: 1));
+        android.Host.PackageHandler = (_, _) =>
+            ApplicationResult<AndroidPackagePresence>.Success(AndroidPackagePresence.Installed);
+        android.Host.ProcessesHandler = (_, _) =>
+            ApplicationResult<AndroidProcessObservation>.Success(AndroidTestContext.RunningProcesses(123));
+        android.Host.ForegroundHandler = _ =>
+            ApplicationResult<AndroidForegroundObservation>.Success(AndroidTestContext.GameForeground());
+        FailureCaptureHost capture = new(new ApplicationFailure
+        {
+            Code = ApplicationFailure.AndroidScreenshotCaptureFailed,
+            Message = "capture-failed",
+            Details = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["reason"] = "native_decode_failed",
+            },
+        });
+        ScreenshotAcceptanceRunner runner = new(
+            muMu.Host,
+            muMu.Service,
+            android.Host,
+            capture,
+            android.Readiness,
+            android.GameState,
+            new AndroidCommandAudit(AndroidCommandAuditMode.ScreenshotReadOnly));
+
+        ScreenshotLiveAcceptanceReport report = await runner.RunAsync(
+            new ScreenshotLiveOptions(Instance, 3, null), CancellationToken.None);
+
+        Assert.Equal("BLOCKED", report.Status);
+        Assert.False(report.DeviceStatePreserved);
+        Assert.Equal("screenshot_capture_or_scan_failed", report.FailureCode);
+        Assert.Equal(ApplicationFailure.AndroidScreenshotCaptureFailed, report.CaptureFailureCode);
+        Assert.Equal("native_decode_failed", report.CaptureFailureReason);
+        Assert.Equal(1, capture.CallCount);
+
+        string json = ScreenshotAcceptanceJson.Serialize(report);
+        Assert.Contains("\"captureFailureCode\": \"android_screenshot_capture_failed\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"captureFailureReason\": \"native_decode_failed\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact(DisplayName = "BootEvidence не принимает evidence отказа, не связанного с AndroidNotReady")]
+    public async Task PreparationDoesNotExposeUnrelatedFailureEvidenceAsBootEvidence()
+    {
+        (MuMuLifecycleTestContext muMu, AndroidTestContext android) = CreateContexts();
+        android.Host.TransportHandler = _ => ApplicationResult<AndroidTransportObservation>.Success(
+            AndroidTestContext.Device());
+        android.Host.BootHandler = _ => ApplicationResult<AndroidBootObservation>.Failure(
+            new ApplicationFailure
+            {
+                Code = ApplicationFailure.NativeUnavailable,
+                Message = "native-unavailable",
+                Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["evidence"] = "native-library-diagnostic",
+                },
+            });
+        AndroidTransportPreparationRunner runner = new(
+            muMu.Host,
+            muMu.Service,
+            android.Host,
+            android.Readiness,
+            new AndroidCommandAudit(AndroidCommandAuditMode.TransportPreparation));
+
+        AndroidTransportPreparationReport report = await runner.RunAsync(
+            new AndroidTransportPreparationOptions(Instance), CancellationToken.None);
+
+        Assert.Equal(ApplicationFailure.NativeUnavailable, report.FailureCode);
+        Assert.Null(report.BootEvidence);
+    }
+
+    [Fact(DisplayName = "BootEvidence сохраняется для отказа AndroidNotReady")]
+    public async Task PreparationPreservesBootEvidenceForAndroidNotReady()
+    {
+        (MuMuLifecycleTestContext muMu, AndroidTestContext android) = CreateContexts();
+        android.Host.TransportHandler = _ => ApplicationResult<AndroidTransportObservation>.Success(
+            AndroidTestContext.Device());
+        android.Host.BootHandler = _ => ApplicationResult<AndroidBootObservation>.Success(
+            AndroidTestContext.Boot(shellAvailable: true, bootCompleted: 0));
+        AndroidTransportPreparationRunner runner = new(
+            muMu.Host,
+            muMu.Service,
+            android.Host,
+            android.Readiness,
+            new AndroidCommandAudit(AndroidCommandAuditMode.TransportPreparation));
+
+        AndroidTransportPreparationReport report = await runner.RunAsync(
+            new AndroidTransportPreparationOptions(Instance), CancellationToken.None);
+
+        Assert.Equal(ApplicationFailure.AndroidNotReady, report.FailureCode);
+        Assert.NotNull(report.BootEvidence);
+        Assert.NotEmpty(report.BootEvidence);
+    }
+
     [Theory(DisplayName = "Screenshot preflight не исправляет Offline и Unknown")]
     [InlineData(AndroidTransportState.Offline, "android_transport_offline")]
     [InlineData(AndroidTransportState.Unknown, "android_transport_unknown")]
@@ -281,6 +384,20 @@ public sealed class AcceptanceTransportRunnerTests
                     Code = ApplicationFailure.AndroidScreenshotCaptureFailed,
                     Message = "capture-should-not-be-requested",
                 }));
+        }
+    }
+
+    private sealed class FailureCaptureHost(ApplicationFailure failure) : IAndroidScreenshotHost
+    {
+        internal int CallCount { get; private set; }
+
+        public Task<ApplicationResult<CapturedAndroidScreenshot>> CaptureScreenshotAsync(
+            MuMuInstanceId instanceId,
+            AndroidEndpoint endpoint,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(ApplicationResult<CapturedAndroidScreenshot>.Failure(failure));
         }
     }
 }
