@@ -41,7 +41,8 @@ SHA должен совпасть с ожидаемым локальным HEAD.
 2. Если PR нет — используй удалённую ветку по умолчанию репозитория по правилам
    `azurpilot-git-workflow`.
 
-Номер PR, branch, SHA и base не хардкодятся в skill.
+Номер PR, branch, SHA и base не хардкодятся в skill. Перед запуском CLI
+задай в PowerShell `$base` из фактически подтверждённого base.
 
 ## 2. Политика рабочего дерева
 
@@ -122,7 +123,7 @@ Guided setup/config apply не входят в review cycle и не должны
 команды текущей версии. Референсный интерфейс использует:
 
 ```powershell
-coderabbit review --agent --committed --base <base>
+coderabbit review --agent --committed --base $base
 ```
 
 Если текущая версия предлагает `--base-commit`, можно использовать явный
