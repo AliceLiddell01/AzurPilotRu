@@ -16,9 +16,10 @@ namespace AzurPilot.Core.Android.Orchestration;
 /// умолчанию не подставляется.
 /// </para>
 /// <para>
-/// <see cref="EnsureReadyAsync"/> — единственное место, где разрешена mutation transport, и только
-/// target-local: ровно одно подключение к точному endpoint-у. Mutation выполняется попыткой, а не
-/// доказательством: готовность доказывает наблюдение состояния transport, поэтому ненулевой код выхода
+/// Mutation transport разрешена только в <see cref="EnsureReadyAsync"/> и
+/// <see cref="PrepareTransportAsync"/>: не более одной target-local попытки подключения к точному
+/// endpoint-у за операцию. Подготовка подключает только исходный <see cref="AndroidTransportState.Absent"/>.
+/// Подключение — попытка, а готовность доказывает наблюдение состояния transport, поэтому ненулевой код выхода
 /// подключения сам по себе операцию не завершает, а нулевой сам по себе готовность не подтверждает.
 /// </para>
 /// <para>
@@ -499,7 +500,7 @@ public sealed class AndroidReadinessService
     /// <param name="deadline">Общий deadline операции, который ожидание transport не продлевает.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
     /// <param name="initialTransport">Исходное состояние явной подготовки либо <see langword="null"/>.</param>
-    /// <param name="operationName">Имя операции для structured cancellation log.</param>
+    /// <param name="operationName">Имя операции для структурированного лога отмены.</param>
     /// <returns>Наблюдение готового transport либо терминальный отказ.</returns>
     private async Task<ApplicationResult<AndroidTransportObservation>> WaitForTransportAsync(
         AndroidEndpoint endpoint,
@@ -582,7 +583,7 @@ public sealed class AndroidReadinessService
     /// <param name="deadline">Общий deadline операции, который ожидание не продлевает.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
     /// <param name="initialTransport">Исходное состояние явной подготовки либо <see langword="null"/>.</param>
-    /// <param name="operationName">Имя операции для structured cancellation log.</param>
+    /// <param name="operationName">Имя операции для структурированного лога отмены.</param>
     /// <returns>Наблюдение готового Android либо терминальный отказ.</returns>
     private async Task<ApplicationResult<AndroidBootObservation>> WaitForReadyAsync(
         AndroidEndpoint endpoint,

@@ -10,7 +10,7 @@ namespace AzurPilot.App.Diagnostics;
 /// <summary>Происхождение кадра, переданное в явную операцию диагностического анализа.</summary>
 public enum ScreenshotAnalysisSourceKind
 {
-    /// <summary>Кадр получен из successful capture точного Android target.</summary>
+    /// <summary>Кадр получен из успешного capture точного Android target.</summary>
     AndroidCapture,
 
     /// <summary>Кадр декодирован из локального sample; его путь не сохраняется.</summary>
@@ -20,7 +20,7 @@ public enum ScreenshotAnalysisSourceKind
 /// <summary>Ограниченные сведения об источнике анализируемого кадра.</summary>
 /// <remarks>
 /// Для Android capture сохраняются выбранная identity, точный endpoint, время capture, число PNG-байтов
-/// и проверенные metadata frame. Для локального sample сохраняется только число encoded PNG-байтов;
+/// и проверенные метаданные кадра. Для локального sample сохраняется только число байтов кодированного PNG;
 /// имя и путь файла сюда не передаются.
 /// </remarks>
 public sealed record ScreenshotAnalysisSource
@@ -53,15 +53,15 @@ public sealed record ScreenshotAnalysisSource
     /// <summary>UTC-момент capture; <see langword="null"/> для sample.</summary>
     public DateTimeOffset? CapturedAtUtc { get; }
 
-    /// <summary>Число encoded PNG-байтов, полученных источником.</summary>
+    /// <summary>Число байтов кодированного PNG, полученных источником.</summary>
     public uint EncodedPngByteCount { get; }
 
-    /// <summary>Frame metadata успешного Android capture; <see langword="null"/> для sample.</summary>
+    /// <summary>Метаданные кадра успешного Android capture; <see langword="null"/> для sample.</summary>
     public NativeFrameInfo? CapturedFrameInfo { get; }
 
     /// <summary>Создаёт provenance из успешного Android capture.</summary>
-    /// <param name="captureInfo">Проверенные сведения exact-target capture.</param>
-    /// <returns>Неизменяемый источник с identity, endpoint, временем и frame metadata.</returns>
+    /// <param name="captureInfo">Проверенные сведения capture точного target.</param>
+    /// <returns>Неизменяемый источник с identity, endpoint, временем и метаданными кадра.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="captureInfo"/> равен <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Capture не содержит положительного числа PNG-байтов.</exception>
     public static ScreenshotAnalysisSource ForCapture(AndroidScreenshotCaptureInfo captureInfo)
@@ -85,8 +85,8 @@ public sealed record ScreenshotAnalysisSource
     }
 
     /// <summary>Создаёт provenance локального sample без сохранения имени или пути.</summary>
-    /// <param name="encodedPngByteCount">Число encoded PNG-байтов перед декодированием.</param>
-    /// <returns>Неизменяемый локальный источник без machine-specific file data.</returns>
+    /// <param name="encodedPngByteCount">Число байтов кодированного PNG перед декодированием.</param>
+    /// <returns>Неизменяемый локальный источник без сведений о файле конкретной машины.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Размер равен нулю.</exception>
     public static ScreenshotAnalysisSource ForLocalSample(uint encodedPngByteCount)
     {
@@ -109,9 +109,9 @@ public sealed record ScreenshotAnalysisSource
 }
 
 /// <summary>Структурированный результат статистики одной именованной области native RGB8-кадра.</summary>
-/// <param name="Source">Bounded provenance источника.</param>
-/// <param name="FrameWidth">Реальная ширина decoded frame в пикселях.</param>
-/// <param name="FrameHeight">Реальная высота decoded frame в пикселях.</param>
+/// <param name="Source">Ограниченные сведения о происхождении кадра.</param>
+/// <param name="FrameWidth">Реальная ширина декодированного кадра в пикселях.</param>
+/// <param name="FrameHeight">Реальная высота декодированного кадра в пикселях.</param>
 /// <param name="PixelFormat">Имя пиксельного формата.</param>
 /// <param name="Region">Идентификатор запрошенной именованной области.</param>
 /// <param name="RegionName">Человекочитаемое имя области на русском языке.</param>
@@ -121,9 +121,9 @@ public sealed record ScreenshotAnalysisSource
 /// <param name="MeanRed">Среднее значение красного канала.</param>
 /// <param name="MeanGreen">Среднее значение зелёного канала.</param>
 /// <param name="MeanBlue">Среднее значение синего канала.</param>
-/// <param name="StandardDeviationRed">Population standard deviation красного канала.</param>
-/// <param name="StandardDeviationGreen">Population standard deviation зелёного канала.</param>
-/// <param name="StandardDeviationBlue">Population standard deviation синего канала.</param>
+/// <param name="StandardDeviationRed">Стандартное отклонение красного канала по всей совокупности.</param>
+/// <param name="StandardDeviationGreen">Стандартное отклонение зелёного канала по всей совокупности.</param>
+/// <param name="StandardDeviationBlue">Стандартное отклонение синего канала по всей совокупности.</param>
 public sealed record ScreenshotRegionScanResult(
     ScreenshotAnalysisSource Source,
     uint FrameWidth,
@@ -141,22 +141,22 @@ public sealed record ScreenshotRegionScanResult(
     double StandardDeviationGreen,
     double StandardDeviationBlue);
 
-/// <summary>Явно сканирует одну diagnostic region конкретного native-owned кадра.</summary>
+/// <summary>Явно сканирует одну диагностическую область кадра, которым владеет native слой.</summary>
 /// <remarks>
 /// Сканер не получает screenshot сам, не выводит состояние игры и не обнаруживает viewport/letterbox.
-/// Физические размеры берутся только из <see cref="NativeFrame.GetInfo"/>; region отображается на весь
-/// decoded raster при точном совпадении поддерживаемого aspect ratio.
+/// Физические размеры берутся только из <see cref="NativeFrame.GetInfo"/>; область отображается на весь
+/// декодированный растр при точном совпадении поддерживаемого соотношения сторон.
 /// </remarks>
 public static class ScreenshotRegionScanner
 {
     private const string Rgb8Name = "RGB8";
 
-    /// <summary>Сопоставляет logical region с native ROI и возвращает RGB population statistics.</summary>
+    /// <summary>Сопоставляет логическую область с native ROI и возвращает RGB-статистику всей совокупности.</summary>
     /// <param name="frame">Кадр, который остаётся владельцем native RGB8 пикселей.</param>
-    /// <param name="source">Bounded provenance этого кадра.</param>
+    /// <param name="source">Ограниченные сведения о происхождении этого кадра.</param>
     /// <param name="region">Запрошенная именованная область.</param>
-    /// <returns>Детерминированный structured scan result либо bounded ожидаемый отказ.</returns>
-    /// <exception cref="ArgumentNullException">Кадр или source равен <see langword="null"/>.</exception>
+    /// <returns>Детерминированный структурированный результат анализа либо ограниченный ожидаемый отказ.</returns>
+    /// <exception cref="ArgumentNullException">Кадр или источник равен <see langword="null"/>.</exception>
     public static ApplicationResult<ScreenshotRegionScanResult> Scan(
         NativeFrame frame,
         ScreenshotAnalysisSource source,
@@ -277,7 +277,7 @@ public static class ScreenshotRegionScanner
     {
         ScreenshotDiagnosticRegion.FullFrame => "Весь кадр",
         ScreenshotDiagnosticRegion.Center => "Центральная область",
-        _ => throw new ArgumentOutOfRangeException(nameof(region), region, "Неизвестная screenshot diagnostic region."),
+        _ => throw new ArgumentOutOfRangeException(nameof(region), region, "Неизвестная диагностическая область кадра."),
     };
 
     private static ApplicationFailure DisposedFrameFailure(
@@ -306,7 +306,7 @@ public static class ScreenshotRegionScanner
         => new()
         {
             Code = ApplicationFailure.DiagnosticRegionUnsupported,
-            Message = "Screenshot diagnostic region не поддерживается для полученного кадра.",
+            Message = "Диагностическая область не поддерживается для полученного кадра.",
             IsRetryable = false,
             Details = new Dictionary<string, string>(StringComparer.Ordinal)
             {

@@ -32,10 +32,10 @@ public readonly record struct ScreenshotLogicalBounds(int Left, int Top, int Rig
 /// </remarks>
 public static class ScreenshotDiagnosticRegions
 {
-    /// <summary>Ширина логического пространства областей этого consumer-а.</summary>
+    /// <summary>Ширина логического пространства областей этого потребителя.</summary>
     public const int ReferenceWidth = 1280;
 
-    /// <summary>Высота логического пространства областей этого consumer-а.</summary>
+    /// <summary>Высота логического пространства областей этого потребителя.</summary>
     public const int ReferenceHeight = 720;
 
     private static readonly ScreenshotLogicalBounds FullFrameBounds =
@@ -47,25 +47,25 @@ public static class ScreenshotDiagnosticRegions
 
     /// <summary>Возвращает логические полуоткрытые границы выбранной именованной области.</summary>
     /// <param name="region">Область диагностического потребителя.</param>
-    /// <returns>Неизменяемые границы внутри заданного reference space.</returns>
+    /// <returns>Неизменяемые границы внутри заданного пространства логических координат.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Неизвестная область.</exception>
     public static ScreenshotLogicalBounds GetLogicalBounds(ScreenshotDiagnosticRegion region) => region switch
     {
         ScreenshotDiagnosticRegion.FullFrame => FullFrameBounds,
         ScreenshotDiagnosticRegion.Center => CenterBounds,
-        _ => throw new ArgumentOutOfRangeException(nameof(region), region, "Неизвестная screenshot diagnostic region."),
+        _ => throw new ArgumentOutOfRangeException(nameof(region), region, "Неизвестная диагностическая область кадра."),
     };
 
     /// <summary>Преобразует логические границы в физические пиксели конкретного кадра.</summary>
     /// <remarks>
     /// Левые и верхние границы округляются вниз, правые и нижние — вверх, поэтому целевой полуоткрытый
-    /// интервал покрывает все физические пиксели, пересекающие логический регион. Области вне reference
-    /// space и неподдерживаемые размеры кадра отклоняются; clipping не выполняется.
+    /// интервал покрывает все физические пиксели, пересекающие логический регион. Области вне пространства
+    /// логических координат и неподдерживаемые размеры кадра отклоняются; clipping не выполняется.
     /// </remarks>
     /// <param name="requested">Запрошенные логические полуоткрытые границы.</param>
-    /// <param name="frameWidth">Ширина кадра из native metadata.</param>
-    /// <param name="frameHeight">Высота кадра из native metadata.</param>
-    /// <returns>Физические полуоткрытые pixel bounds либо fail-closed отказ.</returns>
+    /// <param name="frameWidth">Ширина кадра из native метаданных.</param>
+    /// <param name="frameHeight">Высота кадра из native метаданных.</param>
+    /// <returns>Физические полуоткрытые границы пикселей либо fail-closed отказ.</returns>
     public static ApplicationResult<PixelRegion> MapBounds(
         ScreenshotLogicalBounds requested,
         uint frameWidth,
@@ -154,7 +154,7 @@ public static class ScreenshotDiagnosticRegions
         return ApplicationResult<PixelRegion>.Failure(new ApplicationFailure
         {
             Code = ApplicationFailure.DiagnosticRegionUnsupported,
-            Message = "Логическая screenshot region не отображается на этот физический кадр.",
+            Message = "Логическая область не отображается на этот физический кадр.",
             IsRetryable = false,
             Details = new Dictionary<string, string>(StringComparer.Ordinal)
             {
