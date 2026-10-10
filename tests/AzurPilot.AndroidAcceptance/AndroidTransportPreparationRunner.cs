@@ -168,8 +168,8 @@ internal sealed class AndroidTransportPreparationRunner
         }
 
         outcome = prepareResult.Value!;
-        initialTransport = outcome.InitialTransport.ToString().ToLowerInvariant();
-        finalTransport = outcome.FinalTransport.ToString().ToLowerInvariant();
+        initialTransport = outcome.InitialTransportName;
+        finalTransport = outcome.FinalTransportName;
         shellAvailable = outcome.Boot.ShellAvailable;
         bootCompleted = outcome.Boot.BootCompleted;
         bootEvidence = outcome.Boot.Evidence;

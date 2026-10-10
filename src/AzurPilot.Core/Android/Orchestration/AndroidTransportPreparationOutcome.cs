@@ -18,4 +18,11 @@ public sealed record AndroidTransportPreparationOutcome(
     AndroidTransportState FinalTransport,
     AndroidBootObservation Boot,
     bool ConnectAttempted,
-    string Evidence);
+    string Evidence)
+{
+    /// <summary>Возвращает machine-readable имя исходного transport.</summary>
+    public string InitialTransportName => AndroidNames.TransportStateName(InitialTransport);
+
+    /// <summary>Возвращает machine-readable имя transport после подготовки.</summary>
+    public string FinalTransportName => AndroidNames.TransportStateName(FinalTransport);
+}
