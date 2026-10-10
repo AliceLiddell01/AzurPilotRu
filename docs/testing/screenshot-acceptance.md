@@ -79,7 +79,9 @@ JSON aggregate в `artifacts/screenshot-diagnostics/`; новый файл со�
 
 Live report содержит build identity, наблюдённую identity/endpoint, начальные и конечные состояния,
 число capture, размеры и RGB8 format frame, actual pixel bounds, ROI statistics и ограниченные коды
-отказа. Это доказательство конкретной среды и запуска; оно не заменяет fixture tests или sample scan.
+отказа. При сбое capture или scan отдельные поля `captureFailureCode` и `captureFailureReason` сохраняют
+точный bounded отказ источника, даже если финальная проверка обнаружила изменение состояния устройства.
+Это доказательство конкретной среды и запуска; оно не заменяет fixture tests или sample scan.
 
 ## Ограничения доказательства
 
