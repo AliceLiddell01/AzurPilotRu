@@ -11,7 +11,7 @@ using AzurPilot.Windows;
 // поэтому отсутствие файла там доказать нельзя.
 //
 // Режим --abi-mismatch загружает отдельную тестовую DLL с несовместимой версией ABI и доказывает,
-// что Query отвергает её до вызова azurpilot_native_query.
+// что Query отвергает её до query, а frame decode — до поиска frame export.
 //
 // Режим --application-composition <путь> выполняет реальный startup приложения через composition root
 // с явно переданным путём конфигурации. Аргументы здесь допустимы, потому что проба — тестовый
@@ -39,6 +39,31 @@ if (args.Length == 1 && string.Equals(args[0], "--abi-mismatch", StringCompariso
         {
             Console.Error.WriteLine(
                 $"Проба: диагностика несовместимого ABI не называет библиотеку: {exception.Message}");
+            return 1;
+        }
+
+        try
+        {
+            _ = AzurPilotNativeBridge.DecodePng([]);
+        }
+        catch (NativeAbiMismatchException frameException)
+        {
+            if (!frameException.Message.Contains(AzurPilotNativeBridge.LibraryName, StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine(
+                    "Проба: диагностика frame API несовместимого ABI не называет библиотеку: "
+                    + frameException.Message);
+                return 1;
+            }
+
+            Console.WriteLine(
+                "Проба: несовместимый ABI отклонён до frame API: " + frameException.Message);
+        }
+        catch (Exception frameException)
+        {
+            Console.Error.WriteLine(
+                "Проба: frame API вызван до проверки несовместимого ABI: "
+                + $"{frameException.GetType().Name}: {frameException.Message}");
             return 1;
         }
 

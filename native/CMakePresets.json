@@ -19,6 +19,27 @@
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
       }
+    },
+    {
+      "name": "native-x64-asan",
+      "displayName": "Native x64 MSVC AddressSanitizer",
+      "description": "Изолированные Release артефакты для MSVC AddressSanitizer; production runtime не затрагивается.",
+      "generator": "Visual Studio 18 2026",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "binaryDir": "${sourceDir}/../artifacts/native/asan/cmake",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Release",
+        "AZURPILOT_NATIVE_ENABLE_ASAN": "ON",
+        "AZURPILOT_NATIVE_ARTIFACT_DIR": "${sourceDir}/../artifacts/native/asan"
+      }
     }
   ],
   "buildPresets": [
@@ -33,6 +54,12 @@
       "displayName": "Native x64 Debug",
       "configurePreset": "native-x64",
       "configuration": "Debug"
+    },
+    {
+      "name": "native-x64-asan",
+      "displayName": "Native x64 AddressSanitizer Release",
+      "configurePreset": "native-x64-asan",
+      "configuration": "Release"
     }
   ],
   "testPresets": [
@@ -59,6 +86,18 @@
       "execution": {
         "noTestsAction": "error"
       }
+    },
+    {
+      "name": "native-x64-asan",
+      "displayName": "Native x64 CTest AddressSanitizer",
+      "configurePreset": "native-x64-asan",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
     }
   ],
   "workflowPresets": [
@@ -78,6 +117,15 @@
         { "type": "configure", "name": "native-x64" },
         { "type": "build", "name": "native-x64-debug" },
         { "type": "test", "name": "native-x64-debug" }
+      ]
+    },
+    {
+      "name": "native-x64-asan",
+      "displayName": "Native x64 AddressSanitizer: configure, build, CTest",
+      "steps": [
+        { "type": "configure", "name": "native-x64-asan" },
+        { "type": "build", "name": "native-x64-asan" },
+        { "type": "test", "name": "native-x64-asan" }
       ]
     }
   ]

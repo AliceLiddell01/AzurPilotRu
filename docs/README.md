@@ -8,6 +8,7 @@ verification/acceptance, troubleshooting и других деталей, кот�
 
 - `getting-started.md` — prerequisites, сборка, запуск и базовая диагностика.
 - `architecture/overview.md` — структура проекта, boundaries и текущее capability-состояние.
+- `architecture/native-frame-ownership.md` — PNG decode в native-owned RGB8 frame, ABI и lifetime.
 - `architecture/mumu-lifecycle.md` — подробная архитектура MuMu integration/lifecycle.
 - `architecture/android-game-lifecycle.md` — Android/ADB readiness и lifecycle Azur Lane Global/EN.
 - `reference/application-configuration.md` — схема и загрузка пользовательской конфигурации.

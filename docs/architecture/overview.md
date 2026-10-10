@@ -107,8 +107,10 @@ runtime-путь конфигурации сам. Границы остаютс�
   managed runtime в native части.
 - Native boundary не зависит от тестового и managed кода; зависимости native targets —
   только OpenCV и стандартная библиотека C++.
-- Через границу не проходят `cv::Mat`, STL-типы, C++-исключения и владеющие указатели:
-  форма границы описана в заголовке ABI и меняется только вместе с номером ABI.
+- Через границу не проходят `cv::Mat`, STL-типы, C++-исключения или произвольные pixel pointers.
+  Единственное владение native memory передаётся typed opaque frame handle с парным release export-ом;
+  форма границы описана в заголовке ABI и меняется только вместе с номером ABI. Подробности —
+  [native-frame-ownership.md](native-frame-ownership.md).
 - MuMu-capability не меняет направление зависимостей: доменные контракты и orchestration lifecycle
   живут в `AzurPilot.Core`, Windows-адаптер control surface — в `AzurPilot.Windows`, интеграция в
   host — в `AzurPilot.App`. Core не знает о Windows API и не заводит общий filesystem/process layer:
@@ -196,8 +198,10 @@ MSBuild работает по принципу fail-closed и перед managed
   [android-game-lifecycle.md](android-game-lifecycle.md); Android-коды отказа, секции Android и состояния
   игры в диагностике и проверки существуют вместе с этой capability, а продуктовые настройки для неё не
   вводятся: product identity и endpoint — runtime-данные, а не значения схемы.
-- Отсутствуют и не объявляются абстракциями «на будущее»: ввод (tap/swipe/keymap), screenshot/vision-
-  пайплайн, OCR/ONNX/GPU inference, готовность UI игры, product CLI, REPL и agent CLI. Для них не
+- Native boundary поддерживает decode PNG bytes из памяти в native-owned RGB8 frame; это не добавляет
+  screenshot capture, ADB/MuMu вызов, region scan или pixel recognition.
+- Отсутствуют и не объявляются абстракциями «на будущее»: ввод (tap/swipe/keymap), screenshot capture и
+  vision pipeline, OCR/ONNX/GPU inference, готовность UI игры, product CLI, REPL и agent CLI. Для них не
   создаются placeholder-документы, секции конфигурации, коды отказов и диагностические секции. Общие
   команды `build`, `repair` и `update` относятся к инструментам репозитория, а не к будущим product CLI,
   REPL и agent CLI.

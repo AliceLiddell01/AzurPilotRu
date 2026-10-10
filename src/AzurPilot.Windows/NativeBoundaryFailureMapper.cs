@@ -78,6 +78,15 @@ public static class NativeBoundaryFailureMapper
                 Details = BuildDetails(exception, includeLibrary: true, includeStatusCode: false),
             },
 
+            // Ошибка содержимого или поддерживаемого формата frame не является сбоем boundary.
+            NativeFrameDecodeException => new ApplicationFailure
+            {
+                Code = ApplicationFailure.NativeFrameInvalid,
+                Message = exception.Message,
+                IsRetryable = false,
+                Details = BuildDetails(exception, includeLibrary: true, includeStatusCode: true),
+            },
+
             // Отмена — ожидаемый исход операции, а не ошибка. Признак повторяемости не выставляется:
             // повтор той же операции сам по себе исхода не меняет, а решение о повторе принимает
             // вызывающая сторона (владелец кода отказа).

@@ -54,14 +54,15 @@ public sealed class NativeInteropNegativeTests
         Assert.Equal(ApplicationFailure.NativeUnavailable, result.FailureCode);
     }
 
-    [Fact(DisplayName = "Несовместимый ABI отвергается до вызова native query")]
-    public void IncompatibleNativeAbiThrowsBeforeQuery()
+    [Fact(DisplayName = "Несовместимый ABI отвергается до query и frame API")]
+    public void IncompatibleNativeAbiThrowsBeforeQueryAndFrameApi()
     {
         NativeBoundaryProbeRunner.ProbeRun result = NativeBoundaryProbeRunner.Run(
             NativeBoundaryProbeRunner.ProbeMode.AbiMismatch);
 
         Assert.Equal(0, result.ExitCode);
         Assert.Contains("Проба: получено ожидаемое исключение несовместимого ABI", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("Проба: несовместимый ABI отклонён до frame API", result.StandardOutput, StringComparison.Ordinal);
         Assert.Contains(AzurPilotNativeBridge.LibraryName, result.StandardOutput, StringComparison.Ordinal);
         Assert.Equal(ApplicationFailure.NativeIncompatible, result.FailureCode);
     }
