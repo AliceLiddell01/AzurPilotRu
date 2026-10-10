@@ -24,6 +24,7 @@
          в процессе теста, а поведение stdout/stderr и startup failures — запуском реального
          AzurPilot.App.exe отдельным процессом. -->
     <ProjectReference Include="..\..\src\AzurPilot.App\AzurPilot.App.csproj" />
+    <ProjectReference Include="..\AzurPilot.AndroidAcceptance\AzurPilot.AndroidAcceptance.csproj" />
     <!-- ReferenceOutputAssembly=false задаёт порядок сборки пробы, но не подключает её к тестам. -->
     <ProjectReference Include="..\AzurPilot.NativeAbsenceProbe\AzurPilot.NativeAbsenceProbe.csproj"
                       ReferenceOutputAssembly="false" />

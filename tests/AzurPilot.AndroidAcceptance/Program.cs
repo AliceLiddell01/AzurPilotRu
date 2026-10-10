@@ -12,12 +12,28 @@ using AcceptanceSanitizer = AzurPilot.MuMuAcceptance.AcceptanceSanitizer;
 //
 // Существующий `--instance` режим проверяет lifecycle игры и восстанавливает исходное состояние.
 // `--screenshot-live` отдельно проверяет read-only exact-target screenshot на уже готовом foreground
-// target-е; `--screenshot-samples` декодирует локальный набор PNG без доступа к устройству. Все режимы
-// остаются тестовым инструментом: продуктовый CLI в AzurPilot.App не добавляется.
+// target-е; `--prepare-transport` — отдельная явная подготовка transport; `--screenshot-samples`
+// декодирует локальный набор PNG без доступа к устройству. Все режимы остаются тестовым инструментом:
+// продуктовый CLI в AzurPilot.App не добавляется.
 
 Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
 ScreenshotLiveOptions? screenshotLiveOptions = null;
+AndroidTransportPreparationOptions? transportPreparationOptions = null;
+if (AndroidTransportPreparationArgumentParser.IsMode(args))
+{
+    AndroidTransportPreparationArguments preparationArguments =
+        AndroidTransportPreparationArgumentParser.Parse(args);
+    if (preparationArguments.Options is null)
+    {
+        Console.Error.WriteLine("AzurPilot Android acceptance: " + preparationArguments.Error);
+        Console.Error.WriteLine(AndroidTransportPreparationArgumentParser.Usage);
+        return AndroidAcceptanceExitCode.UsageRejected;
+    }
+
+    transportPreparationOptions = preparationArguments.Options;
+}
+
 if (ScreenshotAcceptanceArgumentParser.IsScreenshotMode(args))
 {
     ScreenshotAcceptanceArguments screenshotArguments = ScreenshotAcceptanceArgumentParser.Parse(args);
@@ -82,7 +98,7 @@ if (ScreenshotAcceptanceArgumentParser.IsScreenshotMode(args))
 }
 
 AcceptanceOptions? options = null;
-if (screenshotLiveOptions is null)
+if (screenshotLiveOptions is null && transportPreparationOptions is null)
 {
     AcceptanceArguments arguments = AndroidAcceptanceArgumentParser.Parse(args);
     if (arguments.Options is not AcceptanceOptions acceptedOptions)
@@ -120,7 +136,12 @@ using StderrLoggerFactory loggerFactory = new();
 // Аудит общий для обеих возможностей, а проекция отказа — своя у каждой: смысл отказа запуска процесса
 // принадлежит владельцу возможности, поэтому MuMu-команды и ADB-команды идут через один и тот же
 // WindowsProcessRunner со своей проекцией. Второй реализации запуска процесса при этом не заводится.
-AndroidCommandAudit audit = new(allowScreenshotCapture: screenshotLiveOptions is not null);
+AndroidCommandAuditMode auditMode = transportPreparationOptions is not null
+    ? AndroidCommandAuditMode.TransportPreparation
+    : screenshotLiveOptions is not null
+        ? AndroidCommandAuditMode.ScreenshotReadOnly
+        : AndroidCommandAuditMode.LifecycleAcceptance;
+AndroidCommandAudit audit = new(auditMode);
 IWindowsProcessRunner muMuProcessRunner =
     new AuditingProcessRunner(new WindowsProcessRunner(new MuMuProcessFailureProjection()), audit);
 IWindowsProcessRunner adbProcessRunner =
@@ -200,11 +221,13 @@ if (screenshotLiveOptions is not null)
             screenshotLiveOptions.CaptureCount,
             0,
             [],
-            false,
-            false,
+            null,
+            null,
+            "audit_preflight_incomplete",
+            "недоступно: unexpected failure",
+            "недоступно: unexpected failure",
             "screenshot_acceptance_unexpected_failure",
-            "недоступно: unexpected failure",
-            "недоступно: unexpected failure",
+            null,
             false,
             "screenshot_acceptance_unexpected_failure:" + exception.GetType().Name);
     }
@@ -229,6 +252,50 @@ if (screenshotLiveOptions is not null)
     }
 
     return liveOutput.IsProven
+        ? AndroidAcceptanceExitCode.Success
+        : AndroidAcceptanceExitCode.NotProven;
+}
+
+if (transportPreparationOptions is not null)
+{
+    AndroidTransportPreparationRunner preparationRunner = new(
+        muMuHost,
+        muMuLifecycle,
+        androidHost,
+        readiness,
+        audit);
+
+    AndroidTransportPreparationReport preparationReport;
+    try
+    {
+        preparationReport = await preparationRunner.RunAsync(
+            transportPreparationOptions, cancellation.Token).ConfigureAwait(false);
+    }
+    catch (Exception exception)
+    {
+        preparationReport = new AndroidTransportPreparationReport(
+            AcceptanceBuildIdentity.For(typeof(AndroidTransportPreparationRunner)).Describe(),
+            transportPreparationOptions.InstanceValue,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            false,
+            null,
+            "unexpected failure: " + exception.GetType().Name,
+            "недоступно: preflight не завершён",
+            "недоступно: preflight не завершён",
+            "BLOCKED",
+            false,
+            "android_transport_preparation_unexpected_failure",
+            "preparation_runner_failed");
+    }
+
+    Console.Out.WriteLine(ScreenshotAcceptanceJson.Serialize(preparationReport));
+    return preparationReport.IsProven
         ? AndroidAcceptanceExitCode.Success
         : AndroidAcceptanceExitCode.NotProven;
 }

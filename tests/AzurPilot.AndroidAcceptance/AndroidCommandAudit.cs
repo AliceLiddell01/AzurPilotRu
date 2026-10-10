@@ -8,6 +8,13 @@ using AzurPilot.Windows.Processes;
 
 namespace AzurPilot.AndroidAcceptance;
 
+internal enum AndroidCommandAuditMode
+{
+    LifecycleAcceptance,
+    ScreenshotReadOnly,
+    TransportPreparation,
+}
+
 /// <summary>
 /// Аудит внешних процессов, запущенных за прогон приёмки Android.
 /// </summary>
@@ -33,7 +40,7 @@ namespace AzurPilot.AndroidAcceptance;
 /// </remarks>
 internal sealed class AndroidCommandAudit
 {
-    private readonly bool _allowScreenshotCapture;
+    private readonly AndroidCommandAuditMode _mode;
 
     /// <summary>Аргументы запрещённых действий приёмки: точное совпадение токена.</summary>
     private static readonly string[] ForbiddenTokens =
@@ -93,9 +100,9 @@ internal sealed class AndroidCommandAudit
 
     private readonly List<AuditEntry> _entries = [];
 
-    internal AndroidCommandAudit(bool allowScreenshotCapture = false)
+    internal AndroidCommandAudit(AndroidCommandAuditMode mode = AndroidCommandAuditMode.LifecycleAcceptance)
     {
-        _allowScreenshotCapture = allowScreenshotCapture;
+        _mode = mode;
     }
 
     /// <summary>Число записанных запусков процессов.</summary>
@@ -167,9 +174,17 @@ internal sealed class AndroidCommandAudit
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(controlExecutablePath);
 
+        if (_mode == AndroidCommandAuditMode.TransportPreparation
+            && endpoint is AndroidEndpoint preparationEndpoint
+            && adbExecutablePath is not null
+            && CountConnectAttempts(adbExecutablePath, preparationEndpoint) > 1)
+        {
+            return "подготовка transport выполнила более одной target-local команды connect";
+        }
+
         foreach (AuditEntry entry in _entries)
         {
-            bool isApprovedScreenshot = _allowScreenshotCapture
+            bool isApprovedScreenshot = _mode == AndroidCommandAuditMode.ScreenshotReadOnly
                 && endpoint is AndroidEndpoint screenshotEndpoint
                 && adbExecutablePath is not null
                 && string.Equals(
@@ -200,7 +215,7 @@ internal sealed class AndroidCommandAudit
                     entry.Request.ExecutablePath, adbExecutablePath, StringComparison.OrdinalIgnoreCase))
             {
                 string? adbViolation = ValidateAdb(
-                    entry.Request.Arguments, endpoint, package, _allowScreenshotCapture);
+                    entry.Request.Arguments, endpoint, package, _mode);
                 if (adbViolation is not null)
                 {
                     return adbViolation;
@@ -216,6 +231,20 @@ internal sealed class AndroidCommandAudit
         }
 
         return null;
+    }
+
+    /// <summary>Считает точные connect-вызовы к endpoint-у через указанный bundled ADB.</summary>
+    /// <param name="adbExecutablePath">Путь ADB, обнаруженного у единственной установки.</param>
+    /// <param name="endpoint">Exact endpoint подготовки.</param>
+    /// <returns>Число точных запусков команды connect к endpoint-у.</returns>
+    internal int CountConnectAttempts(string adbExecutablePath, AndroidEndpoint endpoint)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(adbExecutablePath);
+        IReadOnlyList<string> expected = AdbCommandBuilder.BuildConnectArguments(endpoint);
+        return _entries.Count(entry =>
+            string.Equals(
+                entry.Request.ExecutablePath, adbExecutablePath, StringComparison.OrdinalIgnoreCase)
+            && Matches(entry.Request.Arguments, expected));
     }
 
     /// <summary>Описывает bounded сводку выполненных запусков для отчёта.</summary>
@@ -376,13 +405,13 @@ internal sealed class AndroidCommandAudit
     /// <param name="arguments">Аргументы процесса.</param>
     /// <param name="endpoint">Разрешённый exact ADB endpoint либо <see langword="null"/>.</param>
     /// <param name="package">Идентификатор пакета игры.</param>
-    /// <param name="allowScreenshotCapture">Ограничивает ADB только read-only screenshot acceptance.</param>
+    /// <param name="mode">Политика команд, допустимых в выбранном acceptance-режиме.</param>
     /// <returns>Описание нарушения или <see langword="null"/>, если запуск допустим.</returns>
     private static string? ValidateAdb(
         IReadOnlyList<string> arguments,
         AndroidEndpoint? endpoint,
         AndroidPackageId package,
-        bool allowScreenshotCapture)
+        AndroidCommandAuditMode mode)
     {
         if (arguments.Count == 0)
         {
@@ -394,14 +423,14 @@ internal sealed class AndroidCommandAudit
             return null;
         }
 
-        if (allowScreenshotCapture
+        if (mode == AndroidCommandAuditMode.ScreenshotReadOnly
             && endpoint is AndroidEndpoint screenshotEndpoint
             && Matches(arguments, AdbCommandBuilder.BuildScreenshotArguments(screenshotEndpoint)))
         {
             return null;
         }
 
-        if (allowScreenshotCapture)
+        if (mode == AndroidCommandAuditMode.ScreenshotReadOnly)
         {
             if (endpoint is not AndroidEndpoint readOnlyTarget)
             {
@@ -419,6 +448,23 @@ internal sealed class AndroidCommandAudit
                 || Matches(arguments, AdbCommandBuilder.BuildWindowDumpArguments(readOnlyTarget))
                     ? null
                     : "screenshot acceptance выполнила ADB-команду вне read-only preflight/capture набора";
+        }
+
+        if (mode == AndroidCommandAuditMode.TransportPreparation)
+        {
+            if (endpoint is not AndroidEndpoint preparationTarget)
+            {
+                return "подготовка transport запустила ADB до разрешения exact endpoint";
+            }
+
+            return Matches(arguments, AdbCommandBuilder.BuildVersionArguments())
+                || Matches(arguments, AdbCommandBuilder.BuildConnectArguments(preparationTarget))
+                || Matches(arguments, AdbCommandBuilder.BuildGetStateArguments(preparationTarget))
+                || Matches(arguments, AdbCommandBuilder.BuildBootCompletedArguments(preparationTarget))
+                || Matches(arguments, AdbCommandBuilder.BuildAndroidReleaseArguments(preparationTarget))
+                || Matches(arguments, AdbCommandBuilder.BuildSdkLevelArguments(preparationTarget))
+                    ? null
+                    : "подготовка transport выполнила ADB-команду вне exact readiness набора";
         }
 
         if (endpoint is not AndroidEndpoint target)

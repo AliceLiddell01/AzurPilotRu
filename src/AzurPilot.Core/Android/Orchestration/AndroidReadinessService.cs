@@ -231,6 +231,160 @@ public sealed class AndroidReadinessService
             new AndroidReadinessOutcome(endpoint, observation, evidence));
     }
 
+    /// <summary>Явно подготавливает transport уже разрешённого exact endpoint-а.</summary>
+    /// <remarks>
+    /// <para>
+    /// Сначала выполняется read-only наблюдение. Для исходного <see cref="AndroidTransportState.Absent"/>
+    /// допускается ровно одна target-local попытка <c>connect</c>, после которой transport, shell и
+    /// <c>sys.boot_completed</c> независимо подтверждаются существующим bounded readiness orchestration.
+    /// Исходный <see cref="AndroidTransportState.Device"/> не получает лишний <c>connect</c>; для
+    /// <see cref="AndroidTransportState.Offline"/> и <see cref="AndroidTransportState.Unknown"/> операция
+    /// завершается отказом без mutation.
+    /// </para>
+    /// <para>
+    /// Deadline начинается до первого наблюдения и общий для всей операции. Код выхода или текст ответа
+    /// <c>connect</c> не считается доказательством готовности.
+    /// </para>
+    /// </remarks>
+    /// <param name="endpoint">Exact endpoint, ранее разрешённый для явно выбранной identity.</param>
+    /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <returns>Итог доказанной готовности либо ожидаемый отказ.</returns>
+    public async Task<ApplicationResult<AndroidTransportPreparationOutcome>> PrepareTransportAsync(
+        AndroidEndpoint endpoint,
+        CancellationToken cancellationToken)
+    {
+        long started = _timeProvider.GetTimestamp();
+        TimeSpan readinessDeadline = _timings.ReadinessDeadline;
+
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            AndroidLog.OperationRequested(
+                _logger, AndroidNames.PrepareTransportOperation, endpoint.ToString());
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
+                Cancelled(endpoint, started, AndroidNames.TransportPhase));
+        }
+
+        ApplicationResult<AndroidTransportObservation> initialResult = _host.QueryTransport(endpoint);
+        if (initialResult.IsFailure)
+        {
+            ApplicationFailure initialFailure = initialResult.FailureInfo!;
+            return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
+                initialFailure.Code == ApplicationFailure.OperationCancelled
+                    ? Cancelled(endpoint, started, AndroidNames.TransportPhase)
+                    : initialFailure);
+        }
+
+        AndroidTransportObservation initialTransport = initialResult.Value!;
+        if (cancellationToken.IsCancellationRequested)
+        {
+            ApplicationFailure cancelled = Cancelled(endpoint, started, AndroidNames.TransportPhase);
+            return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
+                AndroidFailures.WithInitialTransport(cancelled, initialTransport.State));
+        }
+
+        bool connectAttempted = false;
+        AndroidTransportObservation finalTransport = initialTransport;
+        if (initialTransport.State == AndroidTransportState.Absent)
+        {
+            connectAttempted = true;
+            ApplicationResult<AndroidCommandOutcome> connect =
+                _host.ConnectTransport(endpoint, cancellationToken);
+            if (connect.IsFailure)
+            {
+                ApplicationFailure connectFailure = connect.FailureInfo!;
+                if (connectFailure.Code == ApplicationFailure.OperationCancelled)
+                {
+                    ApplicationFailure cancelled = Cancelled(endpoint, started, AndroidNames.TransportPhase);
+                    return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
+                        AndroidFailures.WithInitialTransport(cancelled, initialTransport.State));
+                }
+
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    AndroidLog.TransportConnectFailed(_logger, endpoint.ToString(), connectFailure.Code);
+                }
+            }
+            else if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                AndroidLog.TransportConnectCompleted(
+                    _logger, endpoint.ToString(), connect.Value!.ExitCode);
+            }
+
+            ApplicationResult<AndroidTransportObservation> transport = await WaitForTransportAsync(
+                endpoint,
+                started,
+                readinessDeadline,
+                cancellationToken,
+                initialTransport.State).ConfigureAwait(false);
+            if (transport.IsFailure)
+            {
+                return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
+                    AndroidFailures.WithInitialTransport(
+                        transport.FailureInfo!, initialTransport.State));
+            }
+
+            finalTransport = transport.Value!;
+        }
+        else if (initialTransport.State != AndroidTransportState.Device)
+        {
+            return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
+                TransportNotReady(
+                    endpoint,
+                    initialTransport,
+                    started,
+                    initialTransport.State));
+        }
+
+        ApplicationResult<AndroidBootObservation> boot = await WaitForReadyAsync(
+            endpoint,
+            started,
+            readinessDeadline,
+            cancellationToken,
+            initialTransport.State).ConfigureAwait(false);
+        if (boot.IsFailure)
+        {
+            return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
+                AndroidFailures.WithInitialTransport(boot.FailureInfo!, initialTransport.State));
+        }
+
+        AndroidBootObservation observation = boot.Value!;
+        string evidence = AndroidEvidence.Compose(
+            AndroidNames.PrepareTransportOperation,
+            "initial_transport=" + AndroidNames.TransportStateName(initialTransport.State),
+            "connect_attempted=" + (connectAttempted ? "true" : "false"),
+            "transport=" + AndroidNames.TransportStateName(finalTransport.State),
+            "shell=available",
+            "boot=" + AndroidNames.Count(observation.BootCompleted ?? 0),
+            "release=" + (observation.AndroidRelease ?? AndroidEvidence.NoMutation),
+            "sdk=" + AndroidNames.Count(observation.SdkLevel ?? 0),
+            observation.Evidence);
+
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            AndroidLog.ReadinessCompleted(
+                _logger,
+                endpoint.ToString(),
+                AndroidNames.TransportStateName(finalTransport.State),
+                observation.AndroidRelease ?? AndroidEvidence.NoMutation,
+                AndroidNames.Count(observation.SdkLevel ?? 0),
+                (long)_timeProvider.GetElapsedTime(started).TotalMilliseconds,
+                evidence);
+        }
+
+        return ApplicationResult<AndroidTransportPreparationOutcome>.Success(
+            new AndroidTransportPreparationOutcome(
+                endpoint,
+                initialTransport.State,
+                finalTransport.State,
+                observation,
+                connectAttempted,
+                evidence));
+    }
+
     /// <summary>Наблюдает Android на точном endpoint-е, ничего не меняя.</summary>
     /// <remarks>
     /// <para>
@@ -326,12 +480,14 @@ public sealed class AndroidReadinessService
     /// <param name="started">Timestamp начала операции: от него измеряются deadline и elapsed.</param>
     /// <param name="deadline">Общий deadline операции, который ожидание transport не продлевает.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <param name="initialTransport">Исходное состояние явной подготовки либо <see langword="null"/>.</param>
     /// <returns>Наблюдение готового transport либо терминальный отказ.</returns>
     private async Task<ApplicationResult<AndroidTransportObservation>> WaitForTransportAsync(
         AndroidEndpoint endpoint,
         long started,
         TimeSpan deadline,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AndroidTransportState? initialTransport = null)
     {
         AndroidTransportObservation? last = null;
 
@@ -351,7 +507,7 @@ public sealed class AndroidReadinessService
             if (last is not null && (elapsed >= deadline || elapsed >= _timings.TransportConnectDeadline))
             {
                 return ApplicationResult<AndroidTransportObservation>.Failure(
-                    TransportNotReady(endpoint, last, started));
+                    TransportNotReady(endpoint, last, started, initialTransport));
             }
 
             ApplicationResult<AndroidTransportObservation> observation = _host.QueryTransport(endpoint);
@@ -405,12 +561,14 @@ public sealed class AndroidReadinessService
     /// <param name="started">Timestamp начала операции: от него измеряются deadline и elapsed.</param>
     /// <param name="deadline">Общий deadline операции, который ожидание не продлевает.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <param name="initialTransport">Исходное состояние явной подготовки либо <see langword="null"/>.</param>
     /// <returns>Наблюдение готового Android либо терминальный отказ.</returns>
     private async Task<ApplicationResult<AndroidBootObservation>> WaitForReadyAsync(
         AndroidEndpoint endpoint,
         long started,
         TimeSpan deadline,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AndroidTransportState? initialTransport = null)
     {
         AndroidBootObservation? last = null;
 
@@ -424,7 +582,8 @@ public sealed class AndroidReadinessService
 
             if (_timeProvider.GetElapsedTime(started) >= deadline)
             {
-                return ApplicationResult<AndroidBootObservation>.Failure(NotReady(endpoint, last, started));
+                return ApplicationResult<AndroidBootObservation>.Failure(
+                    NotReady(endpoint, last, started, initialTransport));
             }
 
             ApplicationResult<AndroidBootObservation> observation = _host.QueryBoot(endpoint);
@@ -478,13 +637,15 @@ public sealed class AndroidReadinessService
     private ApplicationFailure TransportNotReady(
         AndroidEndpoint endpoint,
         AndroidTransportObservation? last,
-        long started)
+        long started,
+        AndroidTransportState? initialTransport = null)
     {
         AndroidTransportState state = last?.State ?? AndroidTransportState.Unknown;
         ApplicationFailure failure = AndroidFailures.TransportNotReady(
             endpoint,
             state,
-            AndroidNames.TransportPhase);
+            AndroidNames.TransportPhase,
+            initialTransport);
 
         if (_logger.IsEnabled(LogLevel.Warning))
         {
@@ -500,7 +661,11 @@ public sealed class AndroidReadinessService
         return failure;
     }
 
-    private ApplicationFailure NotReady(AndroidEndpoint endpoint, AndroidBootObservation? last, long started)
+    private ApplicationFailure NotReady(
+        AndroidEndpoint endpoint,
+        AndroidBootObservation? last,
+        long started,
+        AndroidTransportState? initialTransport = null)
     {
         string evidence = last is null
             ? AndroidEvidence.NoMutation
@@ -508,7 +673,8 @@ public sealed class AndroidReadinessService
                 "shell=" + (last.ShellAvailable ? "available" : "unavailable"),
                 "boot=" + AndroidNames.Count(last.BootCompleted ?? 0),
                 last.Evidence);
-        ApplicationFailure failure = AndroidFailures.NotReady(endpoint, AndroidNames.BootPhase, evidence);
+        ApplicationFailure failure = AndroidFailures.NotReady(
+            endpoint, AndroidNames.BootPhase, evidence, initialTransport);
 
         if (_logger.IsEnabled(LogLevel.Warning))
         {

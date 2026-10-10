@@ -28,24 +28,29 @@ internal sealed record ScreenshotLiveAcceptanceReport(
     int RequestedCaptureCount,
     int SuccessfulCaptureCount,
     IReadOnlyList<ScreenshotCaptureScanEvidence> Captures,
-    bool DeviceStatePreserved,
-    bool AuditPassed,
+    bool? DeviceStatePreserved,
+    bool? AuditPassed,
     string? AuditFailure,
     string AuditSummary,
     string AuditForms,
+    string? PreflightBlocker,
+    string? NextStep,
     bool IsProven,
-    string? FailureCode);
+    string? FailureCode)
+{
+    public string Status => IsProven ? "PROVEN" : "BLOCKED";
+}
 
 internal sealed class ScreenshotAcceptanceRunner
 {
     private const string PreflightFailure = "screenshot_preflight_not_proven";
     private const string CaptureFailure = "screenshot_capture_or_scan_failed";
-    private const string FinalStateFailure = "screenshot_final_state_changed_or_unknown";
+    private const string FinalStateFailure = "screenshot_final_state_changed";
     private const string AuditFailureCode = "screenshot_command_audit_failed";
 
     private readonly IMuMuHost _muMuHost;
     private readonly MuMuLifecycleService _muMuLifecycle;
-    private readonly AndroidWindowsHost _androidHost;
+    private readonly IAndroidHost _androidHost;
     private readonly IAndroidScreenshotHost _screenshotHost;
     private readonly AndroidReadinessService _readiness;
     private readonly AzurLaneGameStateService _gameState;
@@ -54,7 +59,7 @@ internal sealed class ScreenshotAcceptanceRunner
     internal ScreenshotAcceptanceRunner(
         IMuMuHost muMuHost,
         MuMuLifecycleService muMuLifecycle,
-        AndroidWindowsHost androidHost,
+        IAndroidHost androidHost,
         IAndroidScreenshotHost screenshotHost,
         AndroidReadinessService readiness,
         AzurLaneGameStateService gameState,
@@ -101,14 +106,17 @@ internal sealed class ScreenshotAcceptanceRunner
         AzurLaneGameObservation observedInitialGame;
         List<ScreenshotCaptureScanEvidence> captures = [];
         string? failureCode = null;
-        bool deviceStatePreserved = false;
-        bool auditPassed = false;
+        bool? deviceStatePreserved = null;
+        bool? auditPassed = null;
         string? auditFailure;
+        string? preflightBlocker = null;
+        string? nextStep = null;
 
         ApplicationResult<MuMuInstallation> installationResult = _muMuHost.DiscoverInstallation();
         if (installationResult.IsFailure)
         {
-            failureCode = PreflightFailure;
+            failureCode = installationResult.FailureInfo!.Code;
+            preflightBlocker = "mumu_installation_not_available";
             goto Complete;
         }
 
@@ -121,7 +129,8 @@ internal sealed class ScreenshotAcceptanceRunner
             MuMuInstanceSelection.Explicit(options.InstanceId));
         if (!selection.IsResolved || selection.Instance!.Id != options.InstanceId)
         {
-            failureCode = PreflightFailure;
+            failureCode = selection.Failure?.Code ?? "mumu_instance_identity_not_proven";
+            preflightBlocker = "mumu_instance_identity_not_proven";
             goto Complete;
         }
 
@@ -129,7 +138,8 @@ internal sealed class ScreenshotAcceptanceRunner
             _muMuHost.ObserveInstanceState(installation, options.InstanceId);
         if (muMuState.IsFailure)
         {
-            failureCode = PreflightFailure;
+            failureCode = muMuState.FailureInfo!.Code;
+            preflightBlocker = "mumu_state_not_observed";
             goto Complete;
         }
 
@@ -137,14 +147,16 @@ internal sealed class ScreenshotAcceptanceRunner
         initialMuMuState = observedInitialMuMuState.State.ToString();
         if (observedInitialMuMuState.State != MuMuLifecycleState.Running)
         {
-            failureCode = PreflightFailure;
+            failureCode = "mumu_instance_not_running";
+            preflightBlocker = "mumu_instance_not_running";
             goto Complete;
         }
 
         ApplicationResult<AndroidAdbExecutable> adbResult = _androidHost.DiscoverAdbExecutable(installation);
         if (adbResult.IsFailure)
         {
-            failureCode = PreflightFailure;
+            failureCode = adbResult.FailureInfo!.Code;
+            preflightBlocker = "bundled_adb_unavailable";
             goto Complete;
         }
 
@@ -153,7 +165,8 @@ internal sealed class ScreenshotAcceptanceRunner
             _androidHost.ResolveEndpoint(installation, options.InstanceId);
         if (endpointResult.IsFailure)
         {
-            failureCode = PreflightFailure;
+            failureCode = endpointResult.FailureInfo!.Code;
+            preflightBlocker = "adb_endpoint_not_resolved";
             goto Complete;
         }
 
@@ -163,7 +176,8 @@ internal sealed class ScreenshotAcceptanceRunner
         ApplicationResult<AndroidReadinessFacts> readinessResult = _readiness.Observe(endpoint.Value);
         if (readinessResult.IsFailure)
         {
-            failureCode = PreflightFailure;
+            failureCode = readinessResult.FailureInfo!.Code;
+            preflightBlocker = "android_readiness_not_observed";
             goto Complete;
         }
 
@@ -172,14 +186,31 @@ internal sealed class ScreenshotAcceptanceRunner
         initialBootCompleted = observedInitialReadiness.Boot?.BootCompleted;
         if (!IsReady(observedInitialReadiness))
         {
-            failureCode = PreflightFailure;
+            string transport = observedInitialReadiness.Transport.State.ToString().ToLowerInvariant();
+            preflightBlocker = observedInitialReadiness.Transport.State switch
+            {
+                AndroidTransportState.Absent => "android_transport_absent",
+                AndroidTransportState.Offline => "android_transport_offline",
+                AndroidTransportState.Unknown => "android_transport_unknown",
+                AndroidTransportState.Device => "android_boot_not_proven",
+                _ => "android_transport_" + transport,
+            };
+            failureCode = preflightBlocker;
+            if (observedInitialReadiness.Transport.State == AndroidTransportState.Absent)
+            {
+                nextStep = "dotnet run --project tests/AzurPilot.AndroidAcceptance -c Release -- "
+                    + AndroidTransportPreparationArgumentParser.Mode
+                    + " --instance " + options.InstanceValue;
+            }
+
             goto Complete;
         }
 
         ApplicationResult<AzurLaneGameObservation> gameResult = _gameState.Observe(endpoint.Value);
         if (gameResult.IsFailure)
         {
-            failureCode = PreflightFailure;
+            failureCode = gameResult.FailureInfo!.Code;
+            preflightBlocker = "game_state_not_observed";
             goto Complete;
         }
 
@@ -187,7 +218,8 @@ internal sealed class ScreenshotAcceptanceRunner
         initialGameState = observedInitialGame.State.ToString();
         if (observedInitialGame.State != AzurLaneGameState.Foreground)
         {
-            failureCode = PreflightFailure;
+            failureCode = "game_state_" + observedInitialGame.State.ToString().ToLowerInvariant();
+            preflightBlocker = failureCode;
             goto Complete;
         }
 
@@ -260,17 +292,24 @@ internal sealed class ScreenshotAcceptanceRunner
             finalGameState = finalGameResult.Value!.State.ToString();
         }
 
-        deviceStatePreserved = finalMuMuResult.IsSuccess
-            && finalMuMuResult.Value!.State == observedInitialMuMuState.State
-            && finalReadinessResult.IsSuccess
-            && IsReady(finalReadinessResult.Value!)
-            && SameReadiness(observedInitialReadiness, finalReadinessResult.Value!)
-            && finalGameResult.IsSuccess
-            && finalGameResult.Value!.State == observedInitialGame.State;
+        bool? muMuPreserved = finalMuMuResult.IsSuccess
+            ? SameMuMuState(observedInitialMuMuState, finalMuMuResult.Value!)
+            : null;
+        bool? readinessPreserved = finalReadinessResult.IsSuccess
+            ? SameReadiness(observedInitialReadiness, finalReadinessResult.Value!)
+            : null;
+        bool? gamePreserved = finalGameResult.IsSuccess
+            ? SameGameState(observedInitialGame, finalGameResult.Value!)
+            : null;
+        deviceStatePreserved = CombinePreservation(muMuPreserved, readinessPreserved, gamePreserved);
 
-        if (!deviceStatePreserved)
+        if (deviceStatePreserved == false)
         {
             failureCode = FinalStateFailure;
+        }
+        else if (deviceStatePreserved is null)
+        {
+            failureCode = "screenshot_final_state_not_observed";
         }
 
     Complete:
@@ -289,15 +328,15 @@ internal sealed class ScreenshotAcceptanceRunner
             auditFailure = "audit_preflight_incomplete";
         }
 
-        if (!auditPassed)
+        if (auditPassed == false)
         {
             failureCode = AuditFailureCode;
         }
 
         bool proven = failureCode is null
             && captures.Count == options.CaptureCount
-            && deviceStatePreserved
-            && auditPassed;
+            && deviceStatePreserved == true
+            && auditPassed == true;
 
         return new ScreenshotLiveAcceptanceReport(
             AcceptanceBuildIdentity.For(typeof(ScreenshotAcceptanceRunner)).Describe(),
@@ -320,6 +359,8 @@ internal sealed class ScreenshotAcceptanceRunner
             auditFailure,
             controlExecutablePath is null ? "недоступно: preflight не завершён" : _audit.Describe(adbExecutablePath),
             controlExecutablePath is null ? "недоступно: preflight не завершён" : _audit.DescribeForms(adbExecutablePath),
+            preflightBlocker,
+            nextStep,
             proven,
             proven ? null : failureCode ?? PreflightFailure);
     }
@@ -328,11 +369,53 @@ internal sealed class ScreenshotAcceptanceRunner
         => facts.Transport.State == AndroidTransportState.Device
             && facts.Boot is { ShellAvailable: true, BootCompleted: 1 };
 
-    private static bool SameReadiness(AndroidReadinessFacts initial, AndroidReadinessFacts final)
-        => initial.Endpoint == final.Endpoint
-            && initial.Transport.State == final.Transport.State
-            && initial.Boot?.ShellAvailable == final.Boot?.ShellAvailable
-            && initial.Boot?.BootCompleted == final.Boot?.BootCompleted
-            && string.Equals(initial.Boot?.AndroidRelease, final.Boot?.AndroidRelease, StringComparison.Ordinal)
-            && initial.Boot?.SdkLevel == final.Boot?.SdkLevel;
+    private static bool? SameMuMuState(MuMuInstanceState initial, MuMuInstanceState final)
+        => final.State == MuMuLifecycleState.Unknown ? null : final.State == initial.State;
+
+    private static bool? SameGameState(AzurLaneGameObservation initial, AzurLaneGameObservation final)
+        => final.State == AzurLaneGameState.Unknown ? null : final.State == initial.State;
+
+    private static bool? SameReadiness(AndroidReadinessFacts initial, AndroidReadinessFacts final)
+    {
+        if (initial.Endpoint != final.Endpoint || final.Transport.State == AndroidTransportState.Unknown)
+        {
+            return initial.Endpoint != final.Endpoint ? false : null;
+        }
+
+        if (final.Transport.State != AndroidTransportState.Device)
+        {
+            return false;
+        }
+
+        if (final.Boot is not { } finalBoot)
+        {
+            return null;
+        }
+
+        if (!finalBoot.ShellAvailable || finalBoot.BootCompleted == 0)
+        {
+            return false;
+        }
+
+        if (finalBoot.BootCompleted is null)
+        {
+            return null;
+        }
+
+        return initial.Transport.State == final.Transport.State
+            && initial.Boot?.ShellAvailable == finalBoot.ShellAvailable
+            && initial.Boot?.BootCompleted == finalBoot.BootCompleted
+            && string.Equals(initial.Boot?.AndroidRelease, finalBoot.AndroidRelease, StringComparison.Ordinal)
+            && initial.Boot?.SdkLevel == finalBoot.SdkLevel;
+    }
+
+    private static bool? CombinePreservation(params bool?[] observations)
+    {
+        if (observations.Any(static result => result == false))
+        {
+            return false;
+        }
+
+        return observations.All(static result => result == true) ? true : null;
+    }
 }
