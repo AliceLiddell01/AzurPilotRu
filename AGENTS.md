@@ -25,21 +25,31 @@ AzurPilotRu — Windows-only x64 приложение: managed часть на .
 1. Определи затронутую capability по фактическому коду/diff.
 2. Открой `.codex/context/INDEX.md`.
 3. Прочитай только указанные там agent-context документы, относящиеся к этой задаче.
-4. Если нужны объяснение архитектуры, примеры, acceptance evidence или troubleshooting — переходи в `docs/`.
-5. Не загружай весь `.codex/context/` или `docs/` «на всякий случай».
+4. Для изменения поведения прочитай `.codex/context/verification.md` и относящиеся к подсистеме
+   контракты.
+5. Если нужны объяснение архитектуры, примеры, acceptance evidence или troubleshooting — переходи в `docs/`.
+6. Не загружай весь `.codex/context/` или `docs/` «на всякий случай».
 
 Код, schema, manifests, tests и runtime evidence имеют приоритет как фактические источники состояния.
 Документация не должна подменять machine-readable source of truth.
 
 ## Маршрутизация процедур
 
+Перед каждым соответствующим этапом сопоставь текущую задачу и её scope с этой таблицей и
+`description` применимых project skills. При совпадении прочитай их `SKILL.md` до начала этапа,
+следуй его контракту, а нужные references прочитай перед соответствующими шагами. Поле `whenToUse`
+само по себе не гарантирует автоматическое применение skill. При изменении scope повтори
+маршрутизацию и выбор agent-context для новой capability. Если нужный файл недоступен, обозначь
+блокер и не подменяй его workflow.
+
 | Задача | Владелец |
 | --- | --- |
 | Карта agent-context и владельцев | `.codex/context/INDEX.md` |
 | Человеческая документация проекта | `docs/README.md` |
-| Git/branch/commit/push/PR/Draft/merge lifecycle | `.agents/skills/azurpilot-git-workflow/` |
-| Явно запрошенный CodeRabbit review cycle | `.agents/skills/azurpilot-coderabbit-review/` |
-| Классификация и оформление новых правил/документации | `.agents/skills/azurpilot-documentation/` |
+| Делегирование и координация субагентов | `.agents/skills/azurpilot-agent-coordination/SKILL.md` |
+| Git/branch/commit/push/PR/Draft/merge lifecycle | `.agents/skills/azurpilot-git-workflow/SKILL.md` |
+| Явно запрошенный CodeRabbit review cycle | `.agents/skills/azurpilot-coderabbit-review/SKILL.md` |
+| Классификация и оформление новых правил/документации | `.agents/skills/azurpilot-documentation/SKILL.md` |
 
 ## Изменение постоянных знаний
 
@@ -47,3 +57,10 @@ AzurPilotRu — Windows-only x64 приложение: managed часть на .
 Сначала классифицируй его через `azurpilot-documentation`: глобальный invariant, agent-critical contract,
 человеческая документация, повторяемая процедура либо machine-readable факт должны иметь разных владельцев.
 Не дублируй одно правило между владельцами; в остальных местах ставь ссылку.
+
+## Критерии и evidence
+
+До реализации установи критерии результата, после неё сопоставь их с итоговым diff и фактически
+выполненными проверками. Для изменений поведения применяй владельцев и границы доказательства из
+`.codex/context/verification.md`; не выдавай непроверенное за проверенное. В итогах указывай реальные
+проверки, ограничения, применённые skills, фактически задействованных субагентов и состояние Git/PR.
