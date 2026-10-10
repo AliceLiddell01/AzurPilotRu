@@ -19,7 +19,7 @@ public sealed class AcceptanceTransportRunnerTests
     public async Task UnexpectedCaptureExceptionPreservesSafeReasonAndFinalState()
     {
         (MuMuLifecycleTestContext muMu, AndroidTestContext android) = CreateReadyContexts();
-        const string privateMessage = "private screenshot path and diagnostic payload";
+        const string privateMessage = "личный путь к снимку и закрытые диагностические данные";
         ThrowingCaptureHost capture = new(new InvalidOperationException(privateMessage));
         ScreenshotAcceptanceRunner runner = new(
             muMu.Host, muMu.Service, android.Host, capture, android.Readiness, android.GameState,
