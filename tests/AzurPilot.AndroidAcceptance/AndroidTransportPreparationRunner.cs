@@ -150,7 +150,8 @@ internal sealed class AndroidTransportPreparationRunner
             if (failure.Details is not null)
             {
                 _ = failure.Details.TryGetValue("initial_transport", out initialTransport);
-                if (failure.Details.TryGetValue("state", out string? observedState))
+                if (failure.Code == ApplicationFailure.AndroidTransportNotReady
+                    && failure.Details.TryGetValue("state", out string? observedState))
                 {
                     finalTransport = observedState;
                 }
@@ -167,8 +168,8 @@ internal sealed class AndroidTransportPreparationRunner
         }
 
         outcome = prepareResult.Value!;
-        initialTransport = outcome.InitialTransport.ToString();
-        finalTransport = outcome.FinalTransport.ToString();
+        initialTransport = outcome.InitialTransport.ToString().ToLowerInvariant();
+        finalTransport = outcome.FinalTransport.ToString().ToLowerInvariant();
         shellAvailable = outcome.Boot.ShellAvailable;
         bootCompleted = outcome.Boot.BootCompleted;
         bootEvidence = outcome.Boot.Evidence;

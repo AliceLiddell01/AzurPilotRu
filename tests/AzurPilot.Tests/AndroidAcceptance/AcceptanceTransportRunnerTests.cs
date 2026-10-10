@@ -106,8 +106,8 @@ public sealed class AcceptanceTransportRunnerTests
         Assert.True(report.IsProven);
         Assert.Equal("mumu:1", report.InstanceId);
         Assert.Equal(Endpoint.ToString(), report.Endpoint);
-        Assert.Equal("Absent", report.InitialTransport);
-        Assert.Equal("Device", report.FinalTransport);
+        Assert.Equal("absent", report.InitialTransport);
+        Assert.Equal("device", report.FinalTransport);
         Assert.True(report.ShellAvailable);
         Assert.Equal(1, report.BootCompleted);
         Assert.True(report.ConnectAttempted);
@@ -115,6 +115,33 @@ public sealed class AcceptanceTransportRunnerTests
         Assert.Equal([Instance], android.Host.EndpointRequests);
         Assert.Equal([Endpoint], android.Host.ConnectRequests);
         Assert.Empty(android.Host.MutationRequests);
+    }
+
+    [Fact(DisplayName = "Preparation при отмене не принимает состояние игры за final transport")]
+    public async Task PreparationCancellationDoesNotReportGameStateAsFinalTransport()
+    {
+        (MuMuLifecycleTestContext muMu, AndroidTestContext android) = CreateContexts();
+        using CancellationTokenSource cancellation = new();
+        android.Host.TransportHandler = _ =>
+        {
+            cancellation.Cancel();
+            return ApplicationResult<AndroidTransportObservation>.Success(
+                AndroidTestContext.Transport(AndroidTransportState.Absent));
+        };
+        AndroidTransportPreparationRunner runner = new(
+            muMu.Host,
+            muMu.Service,
+            android.Host,
+            android.Readiness,
+            new AndroidCommandAudit(AndroidCommandAuditMode.TransportPreparation));
+
+        AndroidTransportPreparationReport report = await runner.RunAsync(
+            new AndroidTransportPreparationOptions(Instance), cancellation.Token);
+
+        Assert.Equal("absent", report.InitialTransport);
+        Assert.Null(report.FinalTransport);
+        Assert.False(report.ConnectAttempted);
+        Assert.Equal(ApplicationFailure.OperationCancelled, report.FailureCode);
     }
 
     [Theory(DisplayName = "Preparation отказывает для Offline и Unknown без connect")]

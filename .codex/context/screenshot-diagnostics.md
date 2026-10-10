@@ -9,6 +9,7 @@
   bounds, округляет наружу и не делает clipping или letterbox detection.
 - Region statistics выполняются существующим `NativeFrame`/`SafeHandle` и native ABI. Не копируй RGB
   frame в managed memory и не вводи второй frame owner.
-- Startup diagnostics не захватывают screenshot. Локальные samples читаются только на верхнем уровне и
-  ограничены 500 файлами; evidence не содержит пользовательских путей, имён и изображений.
+- Startup diagnostics не захватывают screenshot. Локальные samples читаются только на верхнем уровне;
+  ограничение перечисления задаёт `ScreenshotSampleRunner`. Evidence не содержит пользовательских путей,
+  имён и изображений.
 - Подробности архитектуры и локального acceptance: [`docs/architecture/screenshot-diagnostics.md`](../../docs/architecture/screenshot-diagnostics.md), [`docs/testing/screenshot-acceptance.md`](../../docs/testing/screenshot-acceptance.md).
