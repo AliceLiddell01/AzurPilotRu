@@ -5,6 +5,7 @@
   <PropertyGroup>
     <_AzurPilotRuntimeDirectory>$(MSBuildThisFileDirectory)artifacts/native/runtime/$(Configuration)</_AzurPilotRuntimeDirectory>
     <_AzurPilotAbiMismatchFixture>$(MSBuildThisFileDirectory)artifacts/native/abi-mismatch/$(Configuration)/AzurPilot.Native.dll</_AzurPilotAbiMismatchFixture>
+    <_AzurPilotAbiV2MissingReleaseFixture>$(MSBuildThisFileDirectory)artifacts/native/abi-v2-missing-release/$(Configuration)/AzurPilot.Native.dll</_AzurPilotAbiV2MissingReleaseFixture>
   </PropertyGroup>
 
   <Target Name="AzurPilotIncludeNativeRuntime"
@@ -26,15 +27,21 @@
     </ItemGroup>
   </Target>
 
-  <!-- ABI fixture остаётся в отдельном каталоге теста и не подменяет production DLL. -->
+  <!-- Тестовые ABI DLL остаются в отдельных каталогах и не подменяют production DLL. -->
   <Target Name="AzurPilotIncludeAbiMismatchFixture"
           BeforeTargets="AssignTargetPaths"
           Condition="'$(MSBuildProjectName)' == 'AzurPilot.Tests' and '$(DesignTimeBuild)' != 'true'">
     <Error Condition="!Exists('$(_AzurPilotAbiMismatchFixture)')"
-           Text="Не найдена негативная ABI fixture: $(_AzurPilotAbiMismatchFixture). Сначала соберите соответствующий CMake workflow preset native-x64-release или native-x64-debug из каталога native." />
+           Text="Не найдена негативная ABI DLL: $(_AzurPilotAbiMismatchFixture). Сначала соберите соответствующий CMake workflow preset native-x64-release или native-x64-debug из каталога native." />
+    <Error Condition="!Exists('$(_AzurPilotAbiV2MissingReleaseFixture)')"
+           Text="Не найдена ABI v2 DLL без функции освобождения кадра: $(_AzurPilotAbiV2MissingReleaseFixture). Сначала соберите соответствующий CMake workflow preset native-x64-release или native-x64-debug из каталога native." />
     <ItemGroup>
       <Content Include="$(_AzurPilotAbiMismatchFixture)"
                Link="abi-mismatch/AzurPilot.Native.dll"
+               CopyToOutputDirectory="PreserveNewest"
+               Visible="false" />
+      <Content Include="$(_AzurPilotAbiV2MissingReleaseFixture)"
+               Link="abi-v2-missing-release/AzurPilot.Native.dll"
                CopyToOutputDirectory="PreserveNewest"
                Visible="false" />
     </ItemGroup>
