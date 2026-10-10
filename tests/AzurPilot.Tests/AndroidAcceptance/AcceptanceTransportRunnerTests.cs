@@ -15,6 +15,64 @@ public sealed class AcceptanceTransportRunnerTests
     private static readonly MuMuInstanceId Instance = MuMuInstanceId.FromIndex("1");
     private static readonly AndroidEndpoint Endpoint = AndroidTestContext.Endpoint;
 
+    [Fact(DisplayName = "Неожиданный отказ screenshot host сохраняет безопасную причину и final observations")]
+    public async Task UnexpectedCaptureExceptionPreservesSafeReasonAndFinalState()
+    {
+        (MuMuLifecycleTestContext muMu, AndroidTestContext android) = CreateReadyContexts();
+        const string privateMessage = "private screenshot path and diagnostic payload";
+        ThrowingCaptureHost capture = new(new InvalidOperationException(privateMessage));
+        ScreenshotAcceptanceRunner runner = new(
+            muMu.Host, muMu.Service, android.Host, capture, android.Readiness, android.GameState,
+            new AndroidCommandAudit(AndroidCommandAuditMode.ScreenshotReadOnly));
+
+        ScreenshotLiveAcceptanceReport report = await runner.RunAsync(
+            new ScreenshotLiveOptions(Instance, 3, null), CancellationToken.None);
+
+        Assert.False(report.IsProven);
+        Assert.Equal("screenshot_capture_or_scan_failed", report.FailureCode);
+        Assert.Equal("screenshot_capture_unexpected_failure", report.CaptureFailureCode);
+        Assert.Equal("exception_type:InvalidOperationException", report.CaptureFailureReason);
+        Assert.Equal(1, capture.CallCount);
+        Assert.Equal(0, report.SuccessfulCaptureCount);
+        Assert.True(report.DeviceStatePreserved);
+        Assert.True(report.AuditPassed);
+        Assert.Equal("Running", report.FinalMuMuState);
+        Assert.Equal("Device", report.FinalAndroidTransport);
+        Assert.Equal("Foreground", report.FinalGameState);
+        Assert.Equal(2, muMu.Host.ObservationCount);
+        Assert.Equal(2, android.Host.TransportRequests.Count);
+        Assert.Empty(android.Host.ConnectRequests);
+        Assert.Empty(android.Host.MutationRequests);
+        Assert.DoesNotContain(privateMessage, ScreenshotAcceptanceJson.Serialize(report), StringComparison.Ordinal);
+    }
+
+    [Fact(DisplayName = "Отмена screenshot host сохраняет семантику отмены и final observations")]
+    public async Task CaptureCancellationRetainsCancellationAndFinalState()
+    {
+        (MuMuLifecycleTestContext muMu, AndroidTestContext android) = CreateReadyContexts();
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+        ThrowingCaptureHost capture = new(new OperationCanceledException(cancellation.Token));
+        ScreenshotAcceptanceRunner runner = new(
+            muMu.Host, muMu.Service, android.Host, capture, android.Readiness, android.GameState,
+            new AndroidCommandAudit(AndroidCommandAuditMode.ScreenshotReadOnly));
+
+        // Отмену сообщает host после начала операции, чтобы проверить catch и завершающее наблюдение.
+        ScreenshotLiveAcceptanceReport report = await runner.RunAsync(
+            new ScreenshotLiveOptions(Instance, 3, null), CancellationToken.None);
+
+        Assert.False(report.IsProven);
+        Assert.Equal("screenshot_capture_cancelled", report.FailureCode);
+        Assert.Null(report.CaptureFailureCode);
+        Assert.Null(report.CaptureFailureReason);
+        Assert.True(report.DeviceStatePreserved);
+        Assert.Equal(1, capture.CallCount);
+        Assert.Equal(2, muMu.Host.ObservationCount);
+        Assert.Equal(2, android.Host.TransportRequests.Count);
+        Assert.Empty(android.Host.ConnectRequests);
+        Assert.Empty(android.Host.MutationRequests);
+    }
+
     [Fact(DisplayName = "Screenshot preflight при Absent блокирует capture и предлагает отдельную подготовку")]
     public async Task ScreenshotAbsentIsBlockedWithoutMutation()
     {
@@ -346,6 +404,22 @@ public sealed class AcceptanceTransportRunnerTests
         Assert.Empty(android.Host.BootRequests);
     }
 
+    private static (MuMuLifecycleTestContext MuMu, AndroidTestContext Android) CreateReadyContexts()
+    {
+        (MuMuLifecycleTestContext muMu, AndroidTestContext android) = CreateContexts();
+        android.Host.TransportHandler = _ => ApplicationResult<AndroidTransportObservation>.Success(
+            AndroidTestContext.Device());
+        android.Host.BootHandler = _ => ApplicationResult<AndroidBootObservation>.Success(
+            AndroidTestContext.Boot(shellAvailable: true, bootCompleted: 1));
+        android.Host.PackageHandler = (_, _) =>
+            ApplicationResult<AndroidPackagePresence>.Success(AndroidPackagePresence.Installed);
+        android.Host.ProcessesHandler = (_, _) =>
+            ApplicationResult<AndroidProcessObservation>.Success(AndroidTestContext.RunningProcesses(123));
+        android.Host.ForegroundHandler = _ =>
+            ApplicationResult<AndroidForegroundObservation>.Success(AndroidTestContext.GameForeground());
+        return (muMu, android);
+    }
+
     private static (MuMuLifecycleTestContext MuMu, AndroidTestContext Android) CreateContexts()
     {
         MuMuLifecycleTestContext muMu = new();
@@ -366,6 +440,20 @@ public sealed class AcceptanceTransportRunnerTests
                 Message = "test-endpoint-unavailable",
             });
         return (muMu, android);
+    }
+
+    private sealed class ThrowingCaptureHost(Exception exception) : IAndroidScreenshotHost
+    {
+        internal int CallCount { get; private set; }
+
+        public Task<ApplicationResult<CapturedAndroidScreenshot>> CaptureScreenshotAsync(
+            MuMuInstanceId instanceId,
+            AndroidEndpoint endpoint,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromException<ApplicationResult<CapturedAndroidScreenshot>>(exception);
+        }
     }
 
     private sealed class NoCaptureHost : IAndroidScreenshotHost
