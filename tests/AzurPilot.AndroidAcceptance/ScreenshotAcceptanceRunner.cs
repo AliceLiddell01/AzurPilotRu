@@ -269,10 +269,12 @@ internal sealed class ScreenshotAcceptanceRunner
         {
             failureCode = "screenshot_capture_cancelled";
         }
-        catch (Exception)
+        catch (Exception exception)
         {
             // Ошибка одного capture не должна обходить завершающее read-only наблюдение состояния.
             failureCode = CaptureFailure;
+            captureFailureCode = "screenshot_capture_unexpected_failure";
+            captureFailureReason = "exception_type:" + GetSafeExceptionType(exception);
         }
 
         if (captures.Count != options.CaptureCount)
@@ -380,6 +382,12 @@ internal sealed class ScreenshotAcceptanceRunner
             && failure.Details.TryGetValue("reason", out string? reason)
                 ? reason
                 : null;
+
+    internal static string GetSafeExceptionType(Exception exception)
+        => new(exception.GetType().Name
+            .Where(static character => char.IsAsciiLetterOrDigit(character) || character == '_')
+            .Take(64)
+            .ToArray());
 
     private static bool IsReady(AndroidReadinessFacts facts)
         => facts.Transport.State == AndroidTransportState.Device

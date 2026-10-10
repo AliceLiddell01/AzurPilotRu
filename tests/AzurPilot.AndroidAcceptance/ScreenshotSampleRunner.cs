@@ -106,14 +106,21 @@ public static class ScreenshotSampleRunner
             AddFailure(failures, "directory_enumeration_failed");
         }
 
-        if (!enumerationSucceeded)
+        if (enumerationCapped)
+        {
+            // Неполный inventory не задаёт детерминированный набор для decode: порядок обхода
+            // каталога не является контрактом. До полного inventory файлы не читаются.
+            AddFailure(failures, "directory_enumeration_capped");
+        }
+
+        if (!enumerationSucceeded || enumerationCapped)
         {
             return CreateReport(
                 files: files,
                 pngFiles: 0,
                 otherFiles: 0,
-                enumerationSucceeded: false,
-                enumerationCapped: false,
+                enumerationSucceeded: enumerationSucceeded,
+                enumerationCapped: enumerationCapped,
                 headerDimensions: EmptyCounts,
                 selectedDimensions: EmptyCounts,
                 decodedDimensions: EmptyCounts,

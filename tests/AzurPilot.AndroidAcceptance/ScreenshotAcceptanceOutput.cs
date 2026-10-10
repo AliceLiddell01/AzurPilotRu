@@ -6,4 +6,13 @@ internal sealed record ScreenshotAcceptanceOutput<TEvidence>(
     string? FailureCode,
     bool ReportArtifactRequested,
     bool ReportArtifactWritten,
-    TEvidence Evidence);
+    string? ArtifactFailureCode,
+    TEvidence Evidence)
+{
+    // Результат capture/scan и сохранение явно запрошенного отчёта имеют разные коды выхода.
+    internal int ExitCode => !IsProven
+        ? AndroidAcceptanceExitCode.NotProven
+        : ReportArtifactRequested && !ReportArtifactWritten
+            ? AndroidAcceptanceExitCode.ReportArtifactNotWritten
+            : AndroidAcceptanceExitCode.Success;
+}
