@@ -52,7 +52,7 @@ internal static class OperatorUiLogPresentation
         List<string> lines =
         [
             $"Время (UTC): {entry.TimestampUtc:O}",
-            $"Уровень: {entry.Level}",
+            $"Уровень: {LevelLabel(entry.Level)}",
             $"Источник: {OperatorUiSession.CleanText(entry.Category, 160)}",
             $"Событие: {entry.EventId} {OperatorUiSession.CleanText(entry.EventName, 96)}",
             $"Trace ID: {OperatorUiSession.CleanText(entry.TraceId ?? "не задан", 128)}",

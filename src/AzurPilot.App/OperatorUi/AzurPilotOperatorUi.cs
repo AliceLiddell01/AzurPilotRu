@@ -22,17 +22,22 @@ public sealed class AzurPilotOperatorUi : IDisposable
     private const int MinimumWidth = 60;
     private const int MinimumHeight = 18;
     private const int MaximumRenderedRows = 2048;
-    private static readonly Scheme InformationScheme = new(new Terminal.Gui.Drawing.Attribute("BrightCyan", "Black", "Bold"));
-    private static readonly Scheme SuccessScheme = new(new Terminal.Gui.Drawing.Attribute("BrightGreen", "Black", "Bold"));
-    private static readonly Scheme WarningScheme = new(new Terminal.Gui.Drawing.Attribute("BrightYellow", "Black", "Bold"));
-    private static readonly Scheme ErrorScheme = new(new Terminal.Gui.Drawing.Attribute("BrightRed", "Black", "Bold"));
-    private static readonly Scheme SelectionScheme = new(new Terminal.Gui.Drawing.Attribute("Black", "BrightCyan", "Bold"));
+    /// <summary>Заголовок записи, которой UI отмечает введённую оператором команду.</summary>
+    private const string OperatorEchoTitle = "Оператор";
+    /// <summary>Нейтральная схема: и текст, и фон наследуются от темы терминала.</summary>
+    private static readonly Scheme NeutralScheme = new(new Terminal.Gui.Drawing.Attribute("None", "None", TextStyle.None));
+    private Scheme _primaryScheme = NeutralScheme;
+    private Scheme _mutedScheme = NeutralScheme;
+    private Scheme _successScheme = NeutralScheme;
+    private Scheme _warningScheme = NeutralScheme;
+    private Scheme _errorScheme = NeutralScheme;
+    private Scheme _selectionScheme = NeutralScheme;
     private readonly OperatorUiController _controller;
     private readonly IOperatorUiLogSource _logSource;
     private readonly OperatorUiSession _session;
     private readonly List<PaletteChoice> _choices = [];
     private IApplication? _application;
-    private Window? _window;
+    private Runnable? _window;
     private View? _messagesView;
     private View? _logsView;
     private View? _paletteView;
@@ -59,6 +64,48 @@ public sealed class AzurPilotOperatorUi : IDisposable
     private bool _exitRequested;
     private bool _suppressCompletion;
     private bool _hasRun;
+
+    /// <summary>
+    /// Строит спокойную палитру после Init(), когда доступна реальная пара цветов темы терминала.
+    /// </summary>
+    /// <remarks>
+    /// Фон везде наследуется от терминала (Color.None), поэтому сплошных плашек и инверсных полос нет,
+    /// а явные цвета выбираются по полярности фона и удерживают контраст не ниже 4.5:1.
+    /// </remarks>
+    /// <param name="darkBackground">Фон терминала тёмный.</param>
+    private void BuildPalette(bool darkBackground)
+    {
+        string muted = darkBackground ? "#9A9A9A" : "#5F6368";
+        string accent = darkBackground ? "#4E9ACF" : "#2E6DA4";
+        string success = darkBackground ? "#7FB069" : "#217A3C";
+        string warning = darkBackground ? "#C19C00" : "#8A6100";
+        string error = darkBackground ? "#E06C75" : "#B3261E";
+        _primaryScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute("None", "None", TextStyle.None));
+        _mutedScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(muted, "None", TextStyle.None));
+        _successScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(success, "None", TextStyle.None));
+        _warningScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(warning, "None", TextStyle.None));
+        _errorScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(error, "None", TextStyle.None));
+        _selectionScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(accent, "None", TextStyle.Bold));
+    }
+
+    /// <summary>
+    /// Задаёт все роли схемы явно: иначе Terminal.Gui выводит Focus/Active/Highlight из темы и
+    /// получает полную инверсию Normal, то есть те самые сплошные полосы.
+    /// </summary>
+    /// <param name="normal">Основной атрибут роли Normal.</param>
+    /// <returns>Схема без выведенных ролей.</returns>
+    private static Scheme CalmScheme(Terminal.Gui.Drawing.Attribute normal) => new(normal)
+    {
+        HotNormal = normal,
+        Focus = normal,
+        HotFocus = normal,
+        Active = normal,
+        HotActive = normal,
+        Highlight = normal,
+        Editable = normal,
+        ReadOnly = normal,
+        Disabled = normal,
+    };
 
     /// <summary>Использует уже собранный startup snapshot и общий источник логов application host.</summary>
     /// <param name="service">Владелец production use cases.</param>
@@ -97,7 +144,18 @@ public sealed class AzurPilotOperatorUi : IDisposable
         using IApplication application = Application.Create();
         _application = application;
         _ = application.Init();
-        using Window window = new() { Title = "AzurPilot — оператор", Width = Dim.Fill(), Height = Dim.Fill() };
+        Terminal.Gui.Drawing.Color terminalBackground =
+            application.Driver!.DefaultAttribute?.Background ?? Terminal.Gui.Drawing.Color.None;
+        // Неразрешённый фон темы (Color.None) считаем тёмным: это исторический вид поверхности.
+        BuildPalette(terminalBackground.A == 0 || terminalBackground.IsDarkColor());
+        // Корневая поверхность без декоративной границы: содержимое занимает всю доступную площадь
+        // терминала, а второго названия приложения внутри TUI нет. Схема корня наследуется composer-ом,
+        // заголовком и footer, поэтому все роли заданы явно и не дают непрозрачных полос.
+        using Runnable window = new()
+        {
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+        };
         _window = window;
         _header = new Label { Height = 1 };
         _operation = new Label { Height = 1 };
@@ -108,6 +166,12 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _paletteView = new View { CanFocus = false, Visible = false };
         _sizeNotice = new Label { Visible = false };
         window.Add(_header, _operation, _messagesView, _logsView, _composer, _footer, _paletteView, _sizeNotice);
+        // Все роли заданы явно, иначе производные роли дают непрозрачные полосы на строке composer.
+        foreach (View calmView in new View[] { _header, _operation, _composer, _footer })
+        {
+            _ = calmView.SetScheme(_primaryScheme);
+        }
+
         _composer.TextChanged += (_, _) => UpdateCommandPalette();
         application.Keyboard.KeyDown += (_, key) => HandleKey(key);
         application.Mouse.MouseEvent += (_, mouse) => HandleMouse(mouse);
@@ -171,7 +235,8 @@ public sealed class AzurPilotOperatorUi : IDisposable
         }
 
         _lastSize = size;
-        bool small = size.Width < MinimumWidth - 2 || size.Height < MinimumHeight - 2;
+        // Корень без рамки: доступная площадь совпадает с фактическими терминальными ячейками.
+        bool small = size.Width < MinimumWidth || size.Height < MinimumHeight;
         _sizeNotice!.Visible = small;
         _sizeNotice.Text = $"Увеличьте терминал минимум до {MinimumWidth}×{MinimumHeight}. Ctrl+C — выход.";
         _sizeNotice.Width = Math.Max(1, size.Width);
@@ -259,7 +324,12 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
         if (key == Key.F2)
         {
-            ClosePalette(); _composer!.Text = "/"; OpenCommands(); key.Handled = true; return;
+            // F2 открывает палитру из любого состояния; прежний draft запоминается до подстановки триггера.
+            ClosePalette(restoreDraft: false);
+            _session.CaptureComposerDraft(_composer!.Text);
+            SetComposerText("/");
+            OpenCommands();
+            key.Handled = true; return;
         }
 
         if (key == Key.F3)
@@ -313,6 +383,11 @@ public sealed class AzurPilotOperatorUi : IDisposable
         }
         else if (key == Key.Tab)
         {
+            if (_paletteMode == PaletteMode.Hidden)
+            {
+                _session.CaptureComposerDraft(_composer!.Text);
+            }
+
             OpenCommands(); key.Handled = true;
         }
     }
@@ -333,11 +408,17 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
         if (_composer.Text.StartsWith('/'))
         {
+            if (_paletteMode == PaletteMode.Hidden)
+            {
+                _session.CaptureComposerDraft(_composer.Text);
+            }
+
             OpenCommands();
         }
         else if (_paletteMode == PaletteMode.Commands)
         {
-            ClosePalette();
+            // Строка перестала быть запросом палитры: закрываем без восстановления черновика.
+            ClosePalette(restoreDraft: false);
         }
     }
 
@@ -399,7 +480,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
             PaletteMode.Confirmation => "Подтверждение · по умолчанию отмена",
             _ => string.Empty,
         };
-        _ = AddLine(_paletteView, 0, title).SetScheme(InformationScheme);
+        _ = AddLine(_paletteView, 0, title).SetScheme(_mutedScheme);
         int planRows = Math.Min(confirmationLines.Length, Math.Max(0, rows - 1 - _choices.Count));
         for (int index = 0; index < planRows; index++)
         {
@@ -417,7 +498,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
             line.Y = planRows + index - first + 1;
             if (index == _choiceIndex)
             {
-                _ = line.SetScheme(SelectionScheme);
+                _ = line.SetScheme(_selectionScheme);
             }
         }
 
@@ -496,10 +577,8 @@ public sealed class AzurPilotOperatorUi : IDisposable
         }
 
         OperatorUiCommand command = OperatorUiCommand.For(choice.Action!.Value);
-        _suppressCompletion = true;
-        _composer!.Text = command.Command;
-        _composer.InsertionPoint = command.Command.Length;
-        _suppressCompletion = false;
+        _session.DiscardComposerDraft();
+        SetComposerText(command.Command);
         HidePalette();
         if (!completeOnly)
         {
@@ -515,11 +594,29 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _composer!.Enabled = true;
     }
 
-    private void ClosePalette()
+    private void ClosePalette(bool restoreDraft = true)
     {
         _session.CancelConfirmation();
         HidePalette();
+        if (!restoreDraft)
+        {
+            _session.DiscardComposerDraft();
+        }
+        else if (_session.RestoreComposerDraft() is string restored)
+        {
+            // Восстановленный текст не должен снова открыть палитру.
+            SetComposerText(restored);
+        }
+
         _ = _composer!.SetFocus();
+    }
+
+    private void SetComposerText(string text)
+    {
+        _suppressCompletion = true;
+        _composer!.Text = text;
+        _composer.InsertionPoint = text.Length;
+        _suppressCompletion = false;
     }
 
     private void SubmitComposer()
@@ -531,8 +628,9 @@ public sealed class AzurPilotOperatorUi : IDisposable
         }
 
         _session.RememberCommand(input);
-        AddMessage("Оператор", input);
-        _suppressCompletion = true; _composer.Text = string.Empty; _suppressCompletion = false;
+        _session.DiscardComposerDraft();
+        AddMessage(OperatorEchoTitle, input);
+        SetComposerText(string.Empty);
         OperatorUiCommand? command = OperatorUiCommand.All.FirstOrDefault(item =>
             string.Equals(item.Command, input, StringComparison.OrdinalIgnoreCase));
         if (command is null)
@@ -636,7 +734,9 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _choices.Clear();
         foreach (AzurPilotOperatorMuMuInstance instance in _instances)
         {
-            string state = instance.Observation?.State.ToString() ?? "не наблюдалось";
+            string state = instance.Observation is null
+                ? "не наблюдалось"
+                : OperatorUiController.DescribeMuMuState(instance.Observation.State);
             _choices.Add(new PaletteChoice(OperatorUiSession.CleanText(
                 $"{instance.Instance.Id} · {instance.Instance.DisplayName} · {state}", 256), Instance: instance.Instance.Id));
         }
@@ -753,9 +853,9 @@ public sealed class AzurPilotOperatorUi : IDisposable
         if (_detailsMessage is OperatorUiMessage selected)
         {
             lines.Add("── Технические детали · Esc возвращает к истории ──");
-            schemes[0] = InformationScheme;
+            schemes[0] = _mutedScheme;
             schemes[lines.Count] = MessageScheme(selected.Kind);
-            lines.Add($"[{KindLabel(selected.Kind)}] {selected.Title}");
+            lines.Add(selected.Title);
             lines.AddRange(Wrap(selected.Text, _messagesView.Viewport.Width));
             lines.Add(string.Empty);
             lines.Add("Технические данные");
@@ -764,9 +864,9 @@ public sealed class AzurPilotOperatorUi : IDisposable
         else if (_detailsLogEntry is AzurPilotOperatorLogEntry logEntry)
         {
             lines.Add("── Технические детали журнала · Esc возвращает к истории ──");
-            schemes[0] = InformationScheme;
+            schemes[0] = _mutedScheme;
             schemes[lines.Count] = LogLevelScheme(logEntry.Level);
-            lines.Add($"[{OperatorUiLogPresentation.LevelLabel(logEntry.Level)}] {OperatorUiLogPresentation.FormatSummaryHeader(logEntry)}");
+            lines.Add($"{OperatorUiLogPresentation.LevelLabel(logEntry.Level)} · {OperatorUiLogPresentation.FormatSummaryHeader(logEntry)}");
             lines.Add(string.Empty);
             lines.AddRange(OperatorUiLogPresentation.FormatTechnicalDetails(logEntry)
                 .SelectMany(line => Wrap(line, _messagesView.Viewport.Width)));
@@ -774,14 +874,25 @@ public sealed class AzurPilotOperatorUi : IDisposable
         else
         {
             lines.Add("── Сообщения и результаты · /details — технические данные ──");
-            schemes[0] = InformationScheme;
+            schemes[0] = _mutedScheme;
             foreach (OperatorUiMessage message in _session.SnapshotMessages())
             {
                 int row = lines.Count;
-                lines.Add($"[{KindLabel(message.Kind)}] {message.Title}");
-                lines.AddRange(Wrap(message.Text, _messagesView.Viewport.Width));
+                if (string.Equals(message.Title, OperatorEchoTitle, StringComparison.Ordinal))
+                {
+                    // Введённая команда — одна компактная строка вместо пары «заголовок + блок».
+                    lines.Add("> " + message.Text);
+                    schemes[row] = _mutedScheme;
+                }
+                else
+                {
+                    // Смысл результата несёт сам заголовок; дублирующая метка статуса не добавляется.
+                    lines.Add(message.Title);
+                    lines.AddRange(Wrap(message.Text, _messagesView.Viewport.Width));
+                    schemes[row] = MessageScheme(message.Kind);
+                }
+
                 lines.Add(string.Empty);
-                schemes[row] = MessageScheme(message.Kind);
             }
         }
 
@@ -810,9 +921,16 @@ public sealed class AzurPilotOperatorUi : IDisposable
         foreach (AzurPilotOperatorLogEntry entry in snapshot)
         {
             int row = lines.Count;
-            lines.Add(OperatorUiLogPresentation.FormatSummaryHeader(entry, _logsView.Viewport.Width));
-            schemes[row] = LogLevelScheme(entry.Level);
-            lines.AddRange(Wrap("  " + OperatorUiLogPresentation.SummaryMessage(entry), _logsView.Viewport.Width));
+            // Компактная однострочная запись вместо повторяющегося «заголовок + блок».
+            string compact = OperatorUiLogPresentation.FormatSummaryHeader(entry)
+                + " — " + OperatorUiLogPresentation.SummaryMessage(entry);
+            lines.AddRange(Wrap(compact, _logsView.Viewport.Width));
+            // Схема уровня применяется ко всем физическим строкам записи, иначе цвет меняется посреди фразы.
+            Scheme entryScheme = LogLevelScheme(entry.Level);
+            for (int wrapped = row; wrapped < lines.Count; wrapped++)
+            {
+                schemes[wrapped] = entryScheme;
+            }
         }
 
         _logRows = RenderLines(_logsView, lines, _followLogs, schemes);
@@ -858,30 +976,30 @@ public sealed class AzurPilotOperatorUi : IDisposable
         return label;
     }
 
-    private static Scheme MessageScheme(OperatorUiMessageKind kind) => kind switch
+    private Scheme MessageScheme(OperatorUiMessageKind kind) => kind switch
     {
-        OperatorUiMessageKind.Success => SuccessScheme,
-        OperatorUiMessageKind.Warning => WarningScheme,
-        OperatorUiMessageKind.Error => ErrorScheme,
-        OperatorUiMessageKind.Information => InformationScheme,
-        _ => InformationScheme,
+        OperatorUiMessageKind.Success => _successScheme,
+        OperatorUiMessageKind.Warning => _warningScheme,
+        OperatorUiMessageKind.Error => _errorScheme,
+        OperatorUiMessageKind.Information => _primaryScheme,
+        _ => _primaryScheme,
     };
 
-    private static Scheme LogLevelScheme(LogLevel level) => level switch
+    private Scheme LogLevelScheme(LogLevel level) => level switch
     {
-        LogLevel.Warning => WarningScheme,
-        LogLevel.Error or LogLevel.Critical => ErrorScheme,
-        LogLevel.Trace or LogLevel.Debug or LogLevel.Information or LogLevel.None => InformationScheme,
-        _ => InformationScheme,
+        LogLevel.Warning => _warningScheme,
+        LogLevel.Error or LogLevel.Critical => _errorScheme,
+        LogLevel.Trace or LogLevel.Debug or LogLevel.Information or LogLevel.None => _mutedScheme,
+        _ => _mutedScheme,
     };
 
     private static string KindLabel(OperatorUiMessageKind kind) => kind switch
     {
-        OperatorUiMessageKind.Success => "УСПЕХ",
-        OperatorUiMessageKind.Warning => "ВНИМАНИЕ",
-        OperatorUiMessageKind.Error => "ОТКАЗ",
-        OperatorUiMessageKind.Information => "ИНФО",
-        _ => "ИНФО",
+        OperatorUiMessageKind.Success => "Готово",
+        OperatorUiMessageKind.Warning => "Внимание",
+        OperatorUiMessageKind.Error => "Отказ",
+        OperatorUiMessageKind.Information => "Инфо",
+        _ => "Инфо",
     };
 
     private static IEnumerable<string> Wrap(string text, int columns)

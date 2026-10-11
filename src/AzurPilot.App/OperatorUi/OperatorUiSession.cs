@@ -45,6 +45,8 @@ public sealed class OperatorUiSession
     private OperatorUiConfirmation? _authorized;
     private int _historyPosition;
     private string _draft = string.Empty;
+    private string _composerDraft = string.Empty;
+    private bool _composerDraftCaptured;
 
     /// <summary>Текущий explicit target; отсутствие выбора не означает автоматический выбор.</summary>
     public MuMuInstanceId? SelectedInstance { get; private set; }
@@ -194,6 +196,40 @@ public sealed class OperatorUiSession
 
         _historyPosition = Math.Clamp(_historyPosition + Math.Sign(direction), 0, _history.Count);
         return _historyPosition == _history.Count ? _draft : _history[_historyPosition];
+    }
+
+    /// <summary>Запоминает состояние composer перед открытием палитры.</summary>
+    /// <param name="composerText">Текст composer до подстановки триггера палитры.</param>
+    public void CaptureComposerDraft(string composerText)
+    {
+        ArgumentNullException.ThrowIfNull(composerText);
+        _composerDraft = composerText;
+        _composerDraftCaptured = true;
+    }
+
+    /// <summary>Забывает сохранённый composer draft после принятого действия.</summary>
+    public void DiscardComposerDraft()
+    {
+        _composerDraft = string.Empty;
+        _composerDraftCaptured = false;
+    }
+
+    /// <summary>Возвращает текст composer для отмены палитры и очищает сохранённое состояние.</summary>
+    /// <remarks>
+    /// Одиночный <c>/</c> — триггер палитры, а не черновик оператора: после отмены он не восстанавливается.
+    /// Осмысленный черновик возвращается без изменений.
+    /// </remarks>
+    /// <returns>Текст для восстановления либо <see langword="null"/>, если палитра не открывалась.</returns>
+    public string? RestoreComposerDraft()
+    {
+        if (!_composerDraftCaptured)
+        {
+            return null;
+        }
+
+        string draft = _composerDraft;
+        DiscardComposerDraft();
+        return draft.Length == 0 || string.Equals(draft, "/", StringComparison.Ordinal) ? string.Empty : draft;
     }
 
     /// <summary>Убирает C0/C1 terminal controls, сохраняя Unicode и переводы строк.</summary>

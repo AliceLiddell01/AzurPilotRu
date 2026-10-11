@@ -214,8 +214,8 @@ public sealed class OperatorUiController : IDisposable
                     (
                         $"MuMu {target}: {DescribeAction(action)} завершено. "
                         + $"Состояние: {DescribeMuMuState(outcome.InitialState)} → {DescribeMuMuState(outcome.FinalState)}.",
-                        $"Действие: {action}\nИсходное состояние: {outcome.InitialState}\n"
-                        + $"Итоговое состояние: {outcome.FinalState}\nEvidence: {outcome.Evidence}"
+                        $"Действие: {action}\nИсходное состояние: {DescribeMuMuState(outcome.InitialState)}\n"
+                        + $"Итоговое состояние: {DescribeMuMuState(outcome.FinalState)}\nEvidence: {outcome.Evidence}"
                     ));
             case OperatorUiAction.AndroidObserve:
                 return Present(_service.ObserveAndroid(target!.Value), facts =>
@@ -428,14 +428,14 @@ public sealed class OperatorUiController : IDisposable
             + $"control surface {report.MuMu.ControlSurfaceStatus}; configured instance {report.MuMu.ConfiguredInstance}; "
             + $"selected instance {report.MuMu.SelectedInstanceId ?? "не выбран"}; "
             + $"display name {report.MuMu.SelectedInstanceDisplayName ?? "не наблюдалось"}; "
-            + $"состояние {report.MuMu.LifecycleState?.ToString() ?? "не наблюдалось"}; evidence {report.MuMu.Evidence ?? "не наблюдались"}\n"
+            + $"состояние {(report.MuMu.LifecycleState is MuMuLifecycleState muMuState ? DescribeMuMuState(muMuState) : "не наблюдалось")}; evidence {report.MuMu.Evidence ?? "не наблюдались"}\n"
             + $"Android: ADB {Fact(report.Android.IsAdbAvailable)}; endpoint {report.Android.Endpoint ?? "не разрешён"}; "
-            + $"stage {report.Android.Stage}; transport {report.Android.TransportState?.ToString() ?? "не наблюдалось"}; "
+            + $"stage {report.Android.Stage}; transport {(report.Android.TransportState is AndroidTransportState androidTransport ? DescribeTransportState(androidTransport) : "не наблюдалось")}; "
             + $"shell {Fact(report.Android.IsShellAvailable)}; boot_completed "
             + $"{report.Android.BootCompleted?.ToString(CultureInfo.InvariantCulture) ?? "не наблюдалось"}; "
             + $"Android release {report.Android.AndroidRelease ?? "не наблюдалась"}; SDK {report.Android.SdkLevel?.ToString(CultureInfo.InvariantCulture) ?? "не наблюдался"}; "
             + $"evidence {report.Android.Evidence ?? "не наблюдались"}\n"
-            + $"Azur Lane Global/EN: package {report.AzurLane.Package}; состояние {report.AzurLane.State?.ToString() ?? "не наблюдалось"}; "
+            + $"Azur Lane Global/EN: package {report.AzurLane.Package}; состояние {(report.AzurLane.State is AzurLaneGameState gameState ? DescribeGameState(gameState) : "не наблюдалось")}; "
             + $"установлена {Fact(report.AzurLane.IsInstalled)}; процесс {Fact(report.AzurLane.IsProcessRunning)}; "
             + $"передний план {Fact(report.AzurLane.IsForeground)}; evidence {report.AzurLane.Evidence ?? "не наблюдались"}\n"
             + string.Join('\n', new[] { report.Native.Failure, report.MuMu.Failure, report.Android.Failure, report.AzurLane.Failure }
@@ -485,7 +485,7 @@ public sealed class OperatorUiController : IDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Неизвестное действие."),
     };
 
-    private static string DescribeMuMuState(MuMuLifecycleState state) => state switch
+    internal static string DescribeMuMuState(MuMuLifecycleState state) => state switch
     {
         MuMuLifecycleState.Running => "работает",
         MuMuLifecycleState.Stopped => "остановлен",
