@@ -305,30 +305,41 @@ public sealed class AzurPilotOperatorUi : IDisposable
             key.Handled = true; return;
         }
 
-        if (key == Key.Esc)
+        if (key == Key.Esc || key == Key.F2)
         {
-            if (_paletteMode == PaletteMode.Hidden && (_detailsMessage is not null || _detailsLogEntry is not null))
+            ComposerKeyTransition transition = ApplyComposerKey(
+                key,
+                _composer!.Text,
+                _paletteMode,
+                _detailsMessage is not null || _detailsLogEntry is not null,
+                _session);
+            if (transition.Effect == ComposerKeyEffect.ClearDetails)
             {
                 _detailsMessage = null;
                 _detailsLogEntry = null;
                 _messagesDirty = true;
-                _ = _composer!.SetFocus();
+                _ = _composer.SetFocus();
+            }
+            else if (transition.Effect == ComposerKeyEffect.OpenPalette)
+            {
+                _session.CancelConfirmation();
+                HidePalette();
+                if (transition.ComposerText is string opened)
+                {
+                    SetComposerText(opened);
+                }
+
+                OpenCommands();
             }
             else
             {
-                ClosePalette();
+                ClosePalette(restoreDraft: false);
+                if (transition.ComposerText is string restored)
+                {
+                    SetComposerText(restored);
+                }
             }
 
-            key.Handled = true; return;
-        }
-
-        if (key == Key.F2)
-        {
-            // F2 открывает палитру из любого состояния; прежний draft запоминается до подстановки триггера.
-            ClosePalette(restoreDraft: false);
-            _session.CaptureComposerDraft(_composer!.Text);
-            SetComposerText("/");
-            OpenCommands();
             key.Handled = true; return;
         }
 
@@ -383,9 +394,11 @@ public sealed class AzurPilotOperatorUi : IDisposable
         }
         else if (key == Key.Tab)
         {
-            if (_paletteMode == PaletteMode.Hidden)
+            ComposerKeyTransition transition = ApplyComposerKey(
+                Key.Tab, _composer!.Text, _paletteMode, detailsVisible: false, _session);
+            if (transition.ComposerText is string completed)
             {
-                _session.CaptureComposerDraft(_composer!.Text);
+                SetComposerText(completed);
             }
 
             OpenCommands(); key.Handled = true;
@@ -408,11 +421,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
         if (_composer.Text.StartsWith('/'))
         {
-            if (_paletteMode == PaletteMode.Hidden)
-            {
-                _session.CaptureComposerDraft(_composer.Text);
-            }
-
+            _ = OpenPalette(_session, _paletteMode, ComposerPaletteSource.Trigger, _composer.Text);
             OpenCommands();
         }
         else if (_paletteMode == PaletteMode.Commands)
@@ -617,6 +626,82 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _composer!.Text = text;
         _composer.InsertionPoint = text.Length;
         _suppressCompletion = false;
+    }
+
+    /// <summary>Запоминает черновик composer и сообщает, что палитру нужно открыть.</summary>
+    /// <remarks>
+    /// Отделено от обработчика клавиш, чтобы привязку источника открытия к состоянию composer можно было
+    /// проверить детерминированным тестом: Terminal.Gui 2.5.0 не поставляет тестовый драйвер, а Run()
+    /// требует реального терминала.
+    /// </remarks>
+    /// <param name="session">Сессия, владеющая сохранённым черновиком.</param>
+    /// <param name="paletteMode">Текущее состояние палитры.</param>
+    /// <param name="source">Источник открытия.</param>
+    /// <param name="composerText">Текущий текст composer.</param>
+    /// <returns>Переход состояния.</returns>
+    internal static ComposerKeyTransition OpenPalette(
+        OperatorUiSession session,
+        PaletteMode paletteMode,
+        ComposerPaletteSource source,
+        string composerText)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (paletteMode != PaletteMode.Hidden && source != ComposerPaletteSource.FunctionKey)
+        {
+            return new ComposerKeyTransition(ComposerKeyEffect.OpenPalette, null);
+        }
+
+        if (source == ComposerPaletteSource.FunctionKey)
+        {
+            // F2 открывает палитру из любого состояния; прежний draft запоминается до подстановки триггера.
+            session.DiscardComposerDraft();
+            session.CaptureComposerDraft(composerText);
+            return new ComposerKeyTransition(ComposerKeyEffect.OpenPalette, "/");
+        }
+
+        session.CaptureComposerDraft(composerText);
+        return new ComposerKeyTransition(ComposerKeyEffect.OpenPalette, null);
+    }
+
+    /// <summary>Переводит клавишу в переход состояния composer и палитры без обращения к представлению.</summary>
+    /// <param name="key">Нажатая клавиша.</param>
+    /// <param name="composerText">Текущий текст composer.</param>
+    /// <param name="paletteMode">Текущее состояние палитры.</param>
+    /// <param name="detailsVisible">Открыты ли технические детали.</param>
+    /// <param name="session">Сессия, владеющая сохранённым черновиком.</param>
+    /// <returns>Переход состояния; <see cref="ComposerKeyEffect.NotHandled"/> для прочих клавиш.</returns>
+    internal static ComposerKeyTransition ApplyComposerKey(
+        Key key,
+        string composerText,
+        PaletteMode paletteMode,
+        bool detailsVisible,
+        OperatorUiSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (key == Key.Esc)
+        {
+            if (paletteMode == PaletteMode.Hidden)
+            {
+                return detailsVisible
+                    ? new ComposerKeyTransition(ComposerKeyEffect.ClearDetails, null)
+                    : new ComposerKeyTransition(ComposerKeyEffect.ClosePalette, null);
+            }
+
+            session.CancelConfirmation();
+            return new ComposerKeyTransition(ComposerKeyEffect.ClosePalette, session.RestoreComposerDraft());
+        }
+
+        if (key == Key.F2)
+        {
+            return OpenPalette(session, paletteMode, ComposerPaletteSource.FunctionKey, composerText);
+        }
+
+        if (key == Key.Tab)
+        {
+            return OpenPalette(session, paletteMode, ComposerPaletteSource.Completion, composerText);
+        }
+
+        return new ComposerKeyTransition(ComposerKeyEffect.NotHandled, null);
     }
 
     private void SubmitComposer()
@@ -971,7 +1056,8 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
     private static Label AddLine(View pane, int row, string text)
     {
-        Label label = new() { X = 0, Y = row, Width = Dim.Fill(), Height = 1, Text = text, HotKeySpecifier = new Rune(0xffff) };
+        // Ширина по тексту: строчная Label не растягивается на всю панель и не может закрасить строку фоном.
+        Label label = new() { X = 0, Y = row, Width = Dim.Auto(), Height = 1, Text = text, HotKeySpecifier = new Rune(0xffff) };
         _ = pane.Add(label);
         return label;
     }
@@ -1125,7 +1211,8 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
     private sealed record PaletteChoice(string Title, OperatorUiAction? Action = null, MuMuInstanceId? Instance = null,
         bool Confirm = false, OperatorUiMessage? Message = null, AzurPilotOperatorLogEntry? LogEntry = null);
-    private enum PaletteMode
+    /// <summary>Состояние палитры действий.</summary>
+    internal enum PaletteMode
     {
         Hidden,
         Commands,
@@ -1133,4 +1220,33 @@ public sealed class AzurPilotOperatorUi : IDisposable
         Details,
         Confirmation,
     }
+
+    /// <summary>Источник открытия палитры действий.</summary>
+    internal enum ComposerPaletteSource
+    {
+        /// <summary>Клавиша F2.</summary>
+        FunctionKey,
+        /// <summary>Ввод триггера `/`.</summary>
+        Trigger,
+        /// <summary>Клавиша Tab.</summary>
+        Completion,
+    }
+
+    /// <summary>Действие, которое представление применяет к палитре и техническим деталям.</summary>
+    internal enum ComposerKeyEffect
+    {
+        /// <summary>Клавиша не относится к composer и палитре.</summary>
+        NotHandled,
+        /// <summary>Открыть палитру действий.</summary>
+        OpenPalette,
+        /// <summary>Закрыть палитру.</summary>
+        ClosePalette,
+        /// <summary>Закрыть технические детали.</summary>
+        ClearDetails,
+    }
+
+    /// <summary>Переход состояния composer и палитры.</summary>
+    /// <param name="Effect">Что применить к представлению.</param>
+    /// <param name="ComposerText">Текст composer после перехода либо отсутствие изменения.</param>
+    internal readonly record struct ComposerKeyTransition(ComposerKeyEffect Effect, string? ComposerText);
 }

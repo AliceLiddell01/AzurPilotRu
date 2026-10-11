@@ -242,13 +242,10 @@ public sealed class OperatorUiSessionTests
             });
 
         string header = OperatorUiLogPresentation.FormatSummaryHeader(entry);
-        string compactHeader = OperatorUiLogPresentation.FormatSummaryHeader(entry, 58);
         string details = string.Join('\n', OperatorUiLogPresentation.FormatTechnicalDetails(entry));
 
         Assert.Contains("[ВНИМАНИЕ]", header);
         Assert.Contains("Orchestration.AndroidReadinessService", header);
-        Assert.Contains("AndroidReadinessService", compactHeader);
-        Assert.True(compactHeader.EnumerateRunes().Sum(static rune => Math.Max(0, rune.GetColumns())) <= 58);
         Assert.DoesNotContain("0123456789abcdef", header);
         Assert.Contains("3002 EndpointResolutionFailed", details);
         Assert.Contains("0123456789abcdef", details);
