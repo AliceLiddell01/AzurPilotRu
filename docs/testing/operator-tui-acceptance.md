@@ -43,20 +43,35 @@ Android или Azur Lane; structured JSON не должен попадать в 
 
 1. Открой `/instances` и выбери конкретный `MuMuInstanceId` из реально обнаруженного inventory. Не
    используй display name или автоматический выбор первого экземпляра.
-2. Выполни read-only `/android` и `/game`. Сохрани доказанный результат или ограниченную причину
-   неизвестного состояния.
-3. Выполни `/screenshot` только когда существующая production readiness уже доказывает готовый target.
-   Убедись, что один capture породил `FullFrame` и `Center` scan с фактическим размером, bounds и
-   aggregate RGB statistics; не трактуй цветовую статистику как распознавание экрана.
-4. Повтори read-only наблюдение host/Android/game состояния и сохрани bounded postflight рядом с тем же
-   build identity и exact target.
+2. Выполни read-only `/android` и `/game`. Сохрани наблюдённые факты либо ограниченную причину, по
+   которой состояние не удалось доказать. Эти команды не подключают ADB, не запускают MuMu и не меняют
+   игру.
+3. Различай пассивное наблюдение и подтверждённую подготовку:
+   - Если проверяется только `/android` или `/game`, недоступность endpoint/readiness относится к этому
+     read-only результату. Не запускай MuMu и не подключай ADB лишь для получения положительного ответа.
+   - `/environment-prepare` — отдельная подтверждаемая операция. Она повторно разрешает exact target и
+     наблюдает host-side состояние внутри production use case. При доказанном `Stopped` команда может
+     запустить этот MuMu; при `Running` пропускает запуск. `Stopped` не является ошибкой предусловия.
+     Read-only `android_endpoint_unavailable` до запуска не запрещает этот сценарий: endpoint и Android
+     readiness разрешаются после host-side шага.
+   - Если exact identity не разрешена, host-side состояние `Unknown` или discovery/наблюдение MuMu
+     завершается реальным отказом, use case должен fail closed до последующих lifecycle/Android действий.
+     Если отказ возникает уже после запуска MuMu на этапе endpoint/readiness, зафиксируй его фактическую
+     stage и failure code; не представляй его как отказ предусловия до запуска. Частичное изменение
+     состояния сохраняется без compensating stop.
+4. После подготовки независимо повтори `/instances`, `/android` и `/game`. Успех запуска приложения или
+   MuMu сам по себе не доказывает готовность Android: positive readiness требует exact endpoint,
+   transport `Device`, доступный shell и `boot_completed=1`.
+5. Выполни production `/screenshot` только после доказанной текущей Android readiness. Убедись, что один
+   capture породил `FullFrame` и `Center` scan с фактическим размером, bounds и aggregate RGB statistics;
+   не трактуй цветовую статистику как распознавание экрана. Не запускай Azur Lane только ради захвата.
 
-Если MuMu отсутствует, instance не выбран, endpoint/readiness неизвестны или Android не готов, пометь
-live часть как `BLOCKED` с кодом причины. Не запускай эмулятор, не подключай ADB и не меняй игру для
-того, чтобы превратить отказ precondition в зелёный результат. Любую отдельную mutation можно включить
-в acceptance только через production orchestration и при доказуемом восстановлении начального состояния.
-Не выполняй положительное подтверждение `/environment-prepare`, если live preflight не разрешает
-подготовку выбранного target; проверка плана и значения по умолчанию «Отмена» остаётся безопасной.
+Если exact instance отсутствует или identity/host-side состояние не доказаны, сохраняй конкретную причину
+и не продолжай mutation через другой target или fallback. Если Android endpoint/readiness отсутствовали
+до подтверждённого `/environment-prepare`, это само по себе не является `BLOCKED` для подготовки.
+Выполняй её только через production orchestration, с отдельным явным подтверждением и точным target.
+После теста восстанови исходное известное host-side состояние через production lifecycle-команду и
+независимо подтверди postcondition через `/instances`.
 
 Если понадобится автоматически запускать Azur Lane после подготовки, см. отдельный контракт и причины
 в [описании операторского TUI](../architecture/operator-tui.md#follow-up-настраиваемый-запуск-игры).
