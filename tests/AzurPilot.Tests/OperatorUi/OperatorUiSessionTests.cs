@@ -3,6 +3,9 @@ using AzurPilot.App.OperatorServices;
 using AzurPilot.App.OperatorUi;
 using AzurPilot.Core.MuMu;
 using Microsoft.Extensions.Logging;
+using Terminal.Gui.Input;
+using Terminal.Gui.Text;
+using Terminal.Gui.ViewBase;
 using Xunit;
 
 namespace AzurPilot.Tests.OperatorUi;
@@ -56,6 +59,29 @@ public sealed class OperatorUiSessionTests
         Assert.False(session.TryBeginOperation(OperatorUiAction.GameStop, out _));
     }
 
+    [Fact(DisplayName = "Подготовка MuMu и Android доступна только после подтверждения exact target")]
+    public void EnvironmentPreparationRequiresConfirmationForExactTarget()
+    {
+        OperatorUiCommand command = OperatorUiCommand.For(OperatorUiAction.EnvironmentPrepare);
+        Assert.Equal("/environment-prepare", command.Command);
+        Assert.Contains("без запуска игры", command.Title);
+        Assert.True(command.RequiresConfirmation);
+        Assert.True(command.RequiresInstance);
+        Assert.True(command.IsOperation);
+
+        OperatorUiSession session = new();
+        MuMuInstanceId selected = MuMuInstanceId.FromIndex("7");
+        Assert.True(session.SelectInstance(selected));
+        Assert.False(session.TryBeginOperation(OperatorUiAction.EnvironmentPrepare, out _));
+        Assert.True(session.RequestConfirmation(OperatorUiAction.EnvironmentPrepare));
+        Assert.Equal(new OperatorUiConfirmation(OperatorUiAction.EnvironmentPrepare, selected), session.PendingConfirmation);
+        Assert.True(session.ConfirmMutation());
+        Assert.True(session.TryBeginOperation(OperatorUiAction.EnvironmentPrepare, out MuMuInstanceId? target));
+        Assert.Equal(selected, target);
+        Assert.Null(session.PendingConfirmation);
+        session.CompleteOperation();
+    }
+
     [Fact(DisplayName = "История сохраняет draft, а сообщения ограничены и очищают terminal controls")]
     public void HistoryPreservesDraftAndMessagesAreBoundedAndSanitized()
     {
@@ -70,14 +96,90 @@ public sealed class OperatorUiSessionTests
 
         for (int index = 0; index < 130; index++)
         {
-            session.AddMessage($"title-{index}", index == 129 ? "русский\u001b[31m\tтекст" : $"message-{index}");
+            session.AddMessage($"title-{index}", index == 129 ? "русский\u001b[31m\tтекст" : $"message-{index}",
+                index == 129 ? OperatorUiMessageKind.Error : OperatorUiMessageKind.Information,
+                index == 129 ? "код\u001b[31m: отказ" : null);
         }
 
         IReadOnlyList<OperatorUiMessage> messages = session.SnapshotMessages();
         Assert.Equal(128, messages.Count);
         Assert.Equal("title-2", messages[0].Title);
         Assert.Equal("русский[31mтекст", messages[^1].Text);
+        Assert.Equal(OperatorUiMessageKind.Error, messages[^1].Kind);
+        Assert.Equal("код[31m: отказ", messages[^1].Details);
         Assert.DoesNotContain('\u001b', string.Join('\n', messages.Select(static message => message.Text)));
+        Assert.DoesNotContain('\u001b', string.Join('\n', messages.Select(static message => message.Details)));
+
+        session.AddMessage("bounded", "кратко", details: new string('т', 9000));
+        Assert.Equal(8192, session.SnapshotMessages()[^1].Details!.Length);
+        Assert.Contains(OperatorUiCommand.All, command => command.Action == OperatorUiAction.Details
+            && command.Command == "/details");
+    }
+
+    [Theory(DisplayName = "Wheel переводится в независимый scroll delta истории и логов")]
+    [InlineData(MouseFlags.WheeledUp, -3)]
+    [InlineData(MouseFlags.WheeledDown, 3)]
+    public void MouseWheelProducesThreeRowDelta(MouseFlags flags, int expectedDelta)
+    {
+        Assert.True(OperatorUiScrollMath.TryGetWheelDelta(flags, out int delta));
+        Assert.Equal(expectedDelta, delta);
+    }
+
+    [Theory(DisplayName = "Нев-wheel мышь не меняет scroll position")]
+    [InlineData(MouseFlags.None)]
+    [InlineData(MouseFlags.LeftButtonClicked)]
+    public void NonWheelMouseHasNoScrollDelta(MouseFlags flags)
+    {
+        Assert.False(OperatorUiScrollMath.TryGetWheelDelta(flags, out int delta));
+        Assert.Equal(0, delta);
+    }
+
+    [Theory(DisplayName = "Scroll position ограничен содержимым pane")]
+    [InlineData(-10, 100, 20, 0)]
+    [InlineData(200, 100, 20, 80)]
+    [InlineData(10, 5, 20, 0)]
+    public void ScrollPositionIsClamped(int requestedY, int contentRows, int viewportRows, int expectedY)
+    {
+        Assert.Equal(expectedY, OperatorUiScrollMath.ClampViewportY(requestedY, contentRows, viewportRows));
+    }
+
+    [Fact(DisplayName = "Wheel маршрутизируется к видимой панели под указателем")]
+    public void MouseWheelRoutesToVisibleScrollablePaneUnderPointer()
+    {
+        using View root = new();
+        View messages = new();
+        View logs = new();
+        View historyLabel = new();
+        View logLabel = new();
+        View palette = new();
+        _ = root.Add(messages);
+        _ = root.Add(logs);
+        _ = root.Add(palette);
+        _ = messages.Add(historyLabel);
+        _ = logs.Add(logLabel);
+
+        Assert.Same(messages, AzurPilotOperatorUi.FindScrollablePane(historyLabel, messages, logs));
+        Assert.Same(logs, AzurPilotOperatorUi.FindScrollablePane(logLabel, messages, logs));
+        Assert.Null(AzurPilotOperatorUi.FindScrollablePane(palette, messages, logs));
+
+        logs.Visible = false;
+        Assert.Null(AzurPilotOperatorUi.FindScrollablePane(logLabel, messages, logs));
+    }
+
+    [Theory(DisplayName = "Footer помещает приоритетные клавиши и помощь в доступную ширину")]
+    [InlineData(118)]
+    [InlineData(98)]
+    [InlineData(78)]
+    [InlineData(58)]
+    public void FooterFitsViewportAndKeepsImportantActions(int width)
+    {
+        string footer = AzurPilotOperatorUi.BuildFooterText(width);
+        int cellWidth = footer.EnumerateRunes().Sum(static rune => Math.Max(0, rune.GetColumns()));
+
+        Assert.InRange(cellWidth, 1, width);
+        Assert.Contains("F4 отмена", footer);
+        Assert.Contains("Ctrl+C выход", footer);
+        Assert.Contains("F2", footer);
     }
 
     [Fact(DisplayName = "Log buffer ограничен, однострочен и связывает запись с activity")]
@@ -118,5 +220,39 @@ public sealed class OperatorUiSessionTests
         Assert.DoesNotContain('\r', entries[0].Message);
         Assert.DoesNotContain('\n', entries[0].Message);
         Assert.Equal(entries.Count, buffer.SnapshotLines().Count);
+    }
+
+    [Fact(DisplayName = "Краткая строка журнала отделяет источник от подробных полей")]
+    public void LogSummaryKeepsReadableFieldsAndDetailsKeepCorrelation()
+    {
+        AzurPilotOperatorLogEntry entry = new(
+            Sequence: 7,
+            TimestampUtc: new DateTimeOffset(2026, 10, 11, 12, 34, 56, TimeSpan.Zero),
+            Level: LogLevel.Warning,
+            Category: "AzurPilot.Core.Android.Orchestration.AndroidReadinessService",
+            EventId: 3002,
+            EventName: "EndpointResolutionFailed",
+            TraceId: "0123456789abcdef",
+            SpanId: "abcdef0123456789",
+            Message: "ADB endpoint не разрешён для mumu:1",
+            Properties: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["instance_id"] = "mumu:1",
+                ["reason"] = "host_missing",
+            });
+
+        string header = OperatorUiLogPresentation.FormatSummaryHeader(entry);
+        string compactHeader = OperatorUiLogPresentation.FormatSummaryHeader(entry, 58);
+        string details = string.Join('\n', OperatorUiLogPresentation.FormatTechnicalDetails(entry));
+
+        Assert.Contains("[ВНИМАНИЕ]", header);
+        Assert.Contains("Orchestration.AndroidReadinessService", header);
+        Assert.Contains("AndroidReadinessService", compactHeader);
+        Assert.True(compactHeader.EnumerateRunes().Sum(static rune => Math.Max(0, rune.GetColumns())) <= 58);
+        Assert.DoesNotContain("0123456789abcdef", header);
+        Assert.Contains("3002 EndpointResolutionFailed", details);
+        Assert.Contains("0123456789abcdef", details);
+        Assert.Contains("instance_id: mumu:1", details);
+        Assert.Contains("reason: host_missing", details);
     }
 }

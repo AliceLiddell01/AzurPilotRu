@@ -6,7 +6,26 @@ namespace AzurPilot.App.OperatorUi;
 /// <summary>Ограниченное сообщение операторской сессии.</summary>
 /// <param name="Title">Тип или заголовок сообщения.</param>
 /// <param name="Text">Текст, очищенный от управляющих символов терминала.</param>
-public sealed record OperatorUiMessage(string Title, string Text);
+/// <param name="Kind">Семантический статус, не зависящий от цвета renderer-а.</param>
+/// <param name="Details">Технические evidence, показываемые только по запросу.</param>
+public sealed record OperatorUiMessage(
+    string Title,
+    string Text,
+    OperatorUiMessageKind Kind = OperatorUiMessageKind.Information,
+    string? Details = null);
+
+/// <summary>Семантический тип сообщения операторской поверхности.</summary>
+public enum OperatorUiMessageKind
+{
+    /// <summary>Справочная информация или нейтральное состояние.</summary>
+    Information,
+    /// <summary>Успешно завершённое действие.</summary>
+    Success,
+    /// <summary>Наблюдённое ограничение или состояние, требующее внимания.</summary>
+    Warning,
+    /// <summary>Операция завершилась отказом.</summary>
+    Error,
+}
 
 /// <summary>Неизменяемая пара действия и exact target, предъявленная для подтверждения.</summary>
 /// <param name="Action">Mutation.</param>
@@ -20,6 +39,7 @@ public sealed class OperatorUiSession
     private const int MessageCapacity = 128;
     private const int HistoryCapacity = 64;
     private const int MaximumMessageLength = 8192;
+    private const int MaximumDetailsLength = 8192;
     private readonly Queue<OperatorUiMessage> _messages = new();
     private readonly List<string> _history = [];
     private OperatorUiConfirmation? _authorized;
@@ -37,8 +57,14 @@ public sealed class OperatorUiSession
 
     /// <summary>Добавляет ограниченное сообщение, удаляя самое старое при заполнении.</summary>
     /// <param name="title">Заголовок.</param>
-    /// <param name="text">Текст результата.</param>
-    public void AddMessage(string title, string text)
+    /// <param name="text">Краткое сообщение оператору.</param>
+    /// <param name="kind">Семантический статус сообщения.</param>
+    /// <param name="details">Bounded технические evidence, доступные в отдельном просмотре.</param>
+    public void AddMessage(
+        string title,
+        string text,
+        OperatorUiMessageKind kind = OperatorUiMessageKind.Information,
+        string? details = null)
     {
         ArgumentNullException.ThrowIfNull(title);
         ArgumentNullException.ThrowIfNull(text);
@@ -47,7 +73,11 @@ public sealed class OperatorUiSession
             _ = _messages.Dequeue();
         }
 
-        _messages.Enqueue(new OperatorUiMessage(CleanText(title, 128), CleanText(text, MaximumMessageLength)));
+        _messages.Enqueue(new OperatorUiMessage(
+            CleanText(title, 128),
+            CleanText(text, MaximumMessageLength),
+            kind,
+            details is null ? null : CleanText(details, MaximumDetailsLength)));
     }
 
     /// <summary>Возвращает независимый снимок сообщений.</summary>

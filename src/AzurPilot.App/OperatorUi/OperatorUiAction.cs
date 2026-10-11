@@ -19,6 +19,8 @@ public enum OperatorUiAction
     AndroidObserve,
     /// <summary>Явная подготовка Android transport.</summary>
     AndroidPrepare,
+    /// <summary>Подготовка exact MuMu и Android readiness без запуска игры.</summary>
+    EnvironmentPrepare,
     /// <summary>Read-only Azur Lane observation.</summary>
     GameObserve,
     /// <summary>Запуск Azur Lane.</summary>
@@ -33,6 +35,8 @@ public enum OperatorUiAction
     Cancel,
     /// <summary>Переключение независимой панели логов.</summary>
     Logs,
+    /// <summary>Выбор и чтение технических деталей результата.</summary>
+    Details,
     /// <summary>Помощь по доступным действиям.</summary>
     Help,
     /// <summary>Завершение с ожиданием текущей операции.</summary>
@@ -47,7 +51,8 @@ public sealed record OperatorUiCommand(OperatorUiAction Action, string Command, 
 {
     /// <summary>Признак изменения состояния, требующего отдельного подтверждения.</summary>
     public bool RequiresConfirmation => Action is OperatorUiAction.MuMuStart or OperatorUiAction.MuMuStop
-        or OperatorUiAction.MuMuRestart or OperatorUiAction.AndroidPrepare or OperatorUiAction.GameStart
+        or OperatorUiAction.MuMuRestart or OperatorUiAction.AndroidPrepare or OperatorUiAction.EnvironmentPrepare
+        or OperatorUiAction.GameStart
         or OperatorUiAction.GameStop or OperatorUiAction.GameRestart;
 
     /// <summary>Признак действия над exact выбранным экземпляром.</summary>
@@ -70,11 +75,13 @@ public sealed record OperatorUiCommand(OperatorUiAction Action, string Command, 
         new(OperatorUiAction.MuMuStop, "/mumu-stop", "Остановить MuMu"),
         new(OperatorUiAction.MuMuRestart, "/mumu-restart", "Перезапустить MuMu"),
         new(OperatorUiAction.AndroidPrepare, "/android-prepare", "Подготовить Android transport"),
+        new(OperatorUiAction.EnvironmentPrepare, "/environment-prepare", "Подготовить MuMu и Android без запуска игры"),
         new(OperatorUiAction.GameStart, "/game-start", "Запустить Azur Lane"),
         new(OperatorUiAction.GameStop, "/game-stop", "Остановить Azur Lane"),
         new(OperatorUiAction.GameRestart, "/game-restart", "Перезапустить Azur Lane"),
         new(OperatorUiAction.Cancel, "/cancel", "Отменить текущую операцию"),
         new(OperatorUiAction.Logs, "/logs", "Показать или скрыть логи"),
+        new(OperatorUiAction.Details, "/details", "Технические детали результатов и журнала"),
         new(OperatorUiAction.Help, "/help", "Помощь"),
         new(OperatorUiAction.Exit, "/exit", "Завершить работу"),
     ]);

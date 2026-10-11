@@ -20,7 +20,7 @@ if (!Console.IsInputRedirected && !Console.IsOutputRedirected)
             using AzurPilotOperatorUi ui = new(
                 service,
                 initialDiagnostics,
-                new OperatorUiLogSourceAdapter(logBuffer.SnapshotLines));
+                new OperatorUiLogSourceAdapter(logBuffer.Snapshot));
             ui.Run(cancellationToken);
             return Task.CompletedTask;
         }).ConfigureAwait(false);

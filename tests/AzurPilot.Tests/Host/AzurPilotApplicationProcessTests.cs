@@ -76,6 +76,10 @@ public sealed class AzurPilotApplicationProcessTests
         {
             // Ни отчёт, ни события не заявляют отказ: запуск обязан быть успешным.
             Assert.Equal(AzurPilotExitCode.Success, run.ExitCode);
+            Assert.Contains(
+                "Итог: приложение запущено; выполнена начальная диагностика. "
+                    + "Это не подтверждает готовность MuMu, Android или Azur Lane.",
+                run.StandardOutput);
             return;
         }
 

@@ -31,6 +31,45 @@ public sealed record AzurPilotOperatorScreenshotAnalysis(
     AndroidScreenshotCaptureInfo Capture,
     IReadOnlyList<ScreenshotRegionScanResult> Regions);
 
+/// <summary>Последний этап явной подготовки Android для выбранного экземпляра MuMu.</summary>
+public enum AzurPilotOperatorAndroidPreparationStage
+{
+    /// <summary>Разрешение exact identity в найденной установке.</summary>
+    ResolveMuMu,
+    /// <summary>Read-only наблюдение host-side состояния.</summary>
+    ObserveMuMu,
+    /// <summary>Строгий запуск через production lifecycle.</summary>
+    StartMuMu,
+    /// <summary>Разрешение exact endpoint и подготовка Android.</summary>
+    PrepareAndroid,
+    /// <summary>Готовность Android доказана.</summary>
+    Completed,
+}
+
+/// <summary>Ограниченный итог подготовки, сохраняющий завершённые этапы и исходный production отказ.</summary>
+/// <param name="InstanceId">Явно выбранная identity.</param>
+/// <param name="Stage">Этап завершения либо отказа.</param>
+/// <param name="InitialMuMuState">Исходное наблюдение; null означает отсутствие доказательства.</param>
+/// <param name="MuMuStartRequested">Запрашивался ли строгий lifecycle; факт mutation сам по себе не утверждается.</param>
+/// <param name="MuMuStartOutcome">Доказанный итог lifecycle либо null, если успеха запуска нет.</param>
+/// <param name="AndroidPreparation">Доказанная готовность Android либо null при отказе.</param>
+/// <param name="Failure">Production отказ либо отказ preflight; null при полном успехе.</param>
+public sealed record AzurPilotOperatorAndroidPreparationOutcome(
+    MuMuInstanceId InstanceId,
+    AzurPilotOperatorAndroidPreparationStage Stage,
+    MuMuLifecycleState? InitialMuMuState,
+    bool MuMuStartRequested,
+    MuMuLifecycleOutcome? MuMuStartOutcome,
+    AndroidTransportPreparationOutcome? AndroidPreparation,
+    ApplicationFailure? Failure)
+{
+    /// <summary>Успех означает завершённую подготовку с доказанными transport, shell и boot.</summary>
+    public bool IsSuccess => Stage == AzurPilotOperatorAndroidPreparationStage.Completed && Failure is null;
+
+    /// <summary>MuMu мог остаться запущенным; отмена и отказ Android не выполняют compensating stop.</summary>
+    public bool MuMuMayRemainRunning => InitialMuMuState == MuMuLifecycleState.Running || MuMuStartRequested;
+}
+
 /// <summary>
 /// Связывает пользовательские действия AzurPilot с уже существующими production capabilities.
 /// </summary>
@@ -54,6 +93,7 @@ public sealed class AzurPilotOperatorService
     private const string MuMuLifecycleActivity = "azurpilot.operator.mumu.lifecycle";
     private const string AndroidObserveActivity = "azurpilot.operator.android.observe";
     private const string AndroidPrepareActivity = "azurpilot.operator.android.prepare";
+    private const string SelectedAndroidPrepareActivity = "azurpilot.operator.android.prepare_selected";
     private const string GameObserveActivity = "azurpilot.operator.azurlane.observe";
     private const string GameLifecycleActivity = "azurpilot.operator.azurlane.lifecycle";
     private const string ScreenshotActivity = "azurpilot.operator.screenshot";
@@ -197,10 +237,12 @@ public sealed class AzurPilotOperatorService
         MuMuInstanceId instanceId,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         using AzurPilotOperation operation = AzurPilotOperation.Start(AndroidPrepareActivity);
         using (operation.StartStep("azurpilot.operator.android.resolve"))
         {
             ApplicationResult<ResolvedAndroidTarget> target = ResolveAndroidTarget(instanceId);
+            cancellationToken.ThrowIfCancellationRequested();
             if (target.IsFailure)
             {
                 return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(target.FailureInfo!);
@@ -212,6 +254,116 @@ public sealed class AzurPilotOperatorService
                     target.Value!.Endpoint,
                     cancellationToken).ConfigureAwait(false);
             }
+        }
+    }
+
+    /// <summary>Явно подготавливает Android: наблюдает exact MuMu, при доказанном Stopped запускает и доказывает готовность.</summary>
+    /// <remarks>
+    /// Lifecycle и readiness владеют своими deadline; новый retry или deadline не вводится. Отказ
+    /// сохраняет частичный результат и не останавливает MuMu. Игра этим действием не запускается.
+    /// </remarks>
+    public async Task<AzurPilotOperatorAndroidPreparationOutcome> PrepareSelectedAndroidAsync(
+        MuMuInstanceId instanceId,
+        CancellationToken cancellationToken)
+    {
+        using AzurPilotOperation operation = AzurPilotOperation.Start(SelectedAndroidPrepareActivity);
+        AzurPilotOperatorAndroidPreparationOutcome outcome = new(
+            instanceId, AzurPilotOperatorAndroidPreparationStage.ResolveMuMu, null, false, null, null, null);
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ApplicationResult<ResolvedMuMuTarget> resolved = ResolveMuMuTarget(instanceId);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (resolved.IsFailure)
+            {
+                return outcome with { Failure = resolved.FailureInfo! };
+            }
+
+            ResolvedMuMuTarget target = resolved.Value!;
+            outcome = outcome with { Stage = AzurPilotOperatorAndroidPreparationStage.ObserveMuMu };
+            ApplicationResult<MuMuInstanceState> observed = _muMuHost.ObserveInstanceState(
+                target.Installation, target.Instance.Id);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (observed.IsFailure)
+            {
+                return outcome with { Failure = observed.FailureInfo! };
+            }
+
+            MuMuLifecycleState initial = observed.Value!.State;
+            outcome = outcome with { InitialMuMuState = initial };
+            if (initial is not (MuMuLifecycleState.Running or MuMuLifecycleState.Stopped))
+            {
+                return outcome with
+                {
+                    Failure = new ApplicationFailure
+                    {
+                        Code = ApplicationFailure.MuMuStateUnproven,
+                        Message = "Состояние выбранного MuMu не доказано: подготовка Android не выполнялась.",
+                        IsRetryable = true,
+                        Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            ["instance_id"] = instanceId.ToString(),
+                            ["phase"] = "operator_preflight",
+                            ["mutation_attempted"] = "false",
+                        },
+                    },
+                };
+            }
+
+            if (initial == MuMuLifecycleState.Stopped)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                outcome = outcome with
+                {
+                    Stage = AzurPilotOperatorAndroidPreparationStage.StartMuMu,
+                    MuMuStartRequested = true,
+                };
+                ApplicationResult<MuMuLifecycleOutcome> started = await _muMuLifecycle.StartFromKnownStateAsync(
+                    target.Installation, target.Instance, cancellationToken).ConfigureAwait(false);
+                if (started.IsFailure)
+                {
+                    return outcome with { Failure = started.FailureInfo! };
+                }
+
+                outcome = outcome with { MuMuStartOutcome = started.Value! };
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            outcome = outcome with { Stage = AzurPilotOperatorAndroidPreparationStage.PrepareAndroid };
+            ApplicationResult<AndroidTransportPreparationOutcome> prepared = await PrepareAndroidAsync(
+                instanceId, cancellationToken).ConfigureAwait(false);
+            if (prepared.IsFailure)
+            {
+                return outcome with { Failure = prepared.FailureInfo! };
+            }
+
+            AndroidTransportPreparationOutcome readiness = prepared.Value!;
+            outcome = outcome with { AndroidPreparation = readiness };
+            cancellationToken.ThrowIfCancellationRequested();
+            if (readiness.FinalTransport != AndroidTransportState.Device
+                || !readiness.Boot.ShellAvailable || readiness.Boot.BootCompleted != 1)
+            {
+                throw new InvalidOperationException("Подготовка Android вернула успех без доказанного postcondition.");
+            }
+
+            return outcome with { Stage = AzurPilotOperatorAndroidPreparationStage.Completed };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return outcome with
+            {
+                Failure = new ApplicationFailure
+                {
+                    Code = ApplicationFailure.OperationCancelled,
+                    Message = "Подготовка Android отменена. Запущенный MuMu автоматически не останавливается.",
+                    Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["instance_id"] = instanceId.ToString(),
+                        ["phase"] = outcome.Stage.ToString(),
+                    },
+                },
+            };
         }
     }
 

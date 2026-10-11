@@ -14,6 +14,100 @@ namespace AzurPilot.Tests.MuMu;
 /// </remarks>
 public sealed class MuMuLifecycleStartStopTests
 {
+    [Theory(DisplayName = "Строгий запуск различает доказанные Running и Stopped, сохраняя общий postcondition")]
+    [InlineData(MuMuLifecycleState.Running, 0)]
+    [InlineData(MuMuLifecycleState.Stopped, 1)]
+    public async Task StrictStartUsesKnownStateAndProvesRunning(MuMuLifecycleState initial, int mutationCount)
+    {
+        MuMuLifecycleTestContext context = new();
+        MuMuInstance instance = MuMuLifecycleTestContext.Instance("7");
+        context.Host.ObservationResult = MuMuLifecycleTestContext.Observed(initial);
+        context.Host.MutationHandler = request =>
+        {
+            Assert.Equal(instance.Id, request.InstanceId);
+            Assert.Equal(MuMuLifecycleMutation.Start, request.Mutation);
+            context.Host.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
+            return MuMuLifecycleTestContext.Command(0);
+        };
+
+        ApplicationResult<MuMuLifecycleOutcome> result = await context.Service.StartFromKnownStateAsync(
+            MuMuLifecycleTestContext.Installation, instance, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(initial, result.Value!.InitialState);
+        Assert.Equal(MuMuLifecycleState.Running, result.Value.FinalState);
+        Assert.Equal(instance.Id, result.Value.InstanceId);
+        Assert.Equal(mutationCount, context.Host.MutationCount);
+        Assert.Equal(0, context.Gate.TrackedInstanceCount);
+    }
+
+    [Fact(DisplayName = "Строгий запуск Unknown возвращает отдельный отказ до mutation")]
+    public async Task StrictStartUnknownStateDoesNotMutate()
+    {
+        MuMuLifecycleTestContext context = new();
+        MuMuInstance instance = MuMuLifecycleTestContext.Instance("7");
+
+        ApplicationResult<MuMuLifecycleOutcome> result = await context.Service.StartFromKnownStateAsync(
+            MuMuLifecycleTestContext.Installation, instance, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ApplicationFailure.MuMuStateUnproven, result.FailureInfo!.Code);
+        Assert.Equal("initial_observation", result.FailureInfo.Details!["phase"]);
+        Assert.Equal("false", result.FailureInfo.Details["mutation_attempted"]);
+        Assert.Equal(instance.Id.ToString(), result.FailureInfo.Details["instance_id"]);
+        Assert.Equal(1, context.Host.ObservationCount);
+        Assert.Empty(context.Host.MutationRequests);
+        Assert.Equal(0, context.Gate.TrackedInstanceCount);
+    }
+
+    [Fact(DisplayName = "Строгий запуск наблюдает состояние после ожидания существующего mutation gate")]
+    public async Task StrictStartUnknownAfterGateDoesNotMutate()
+    {
+        MuMuLifecycleTestContext context = new();
+        MuMuInstance instance = MuMuLifecycleTestContext.Instance("7");
+        context.Host.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Stopped);
+        IDisposable lease = await context.Gate.AcquireAsync(instance.Id, CancellationToken.None);
+        Task<ApplicationResult<MuMuLifecycleOutcome>> task;
+        try
+        {
+            task = context.Service.StartFromKnownStateAsync(
+                MuMuLifecycleTestContext.Installation, instance, CancellationToken.None);
+            Assert.False(task.IsCompleted);
+            Assert.Equal(0, context.Host.ObservationCount);
+            context.Host.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Unknown);
+        }
+        finally
+        {
+            lease.Dispose();
+        }
+
+        ApplicationResult<MuMuLifecycleOutcome> result = await task;
+        Assert.True(result.IsFailure);
+        Assert.Equal(ApplicationFailure.MuMuStateUnproven, result.FailureInfo!.Code);
+        Assert.Equal(1, context.Host.ObservationCount);
+        Assert.Empty(context.Host.MutationRequests);
+        Assert.Equal(0, context.Gate.TrackedInstanceCount);
+    }
+
+    [Fact(DisplayName = "Отмена строгого запуска при ожидании gate не наблюдает target и не мутирует")]
+    public async Task StrictStartCancellationWhileWaitingForGateDoesNotMutate()
+    {
+        MuMuLifecycleTestContext context = new();
+        MuMuInstance instance = MuMuLifecycleTestContext.Instance("7");
+        using CancellationTokenSource cancellation = new();
+        using IDisposable lease = await context.Gate.AcquireAsync(instance.Id, CancellationToken.None);
+        Task<ApplicationResult<MuMuLifecycleOutcome>> task = context.Service.StartFromKnownStateAsync(
+            MuMuLifecycleTestContext.Installation, instance, cancellation.Token);
+        cancellation.Cancel();
+
+        ApplicationResult<MuMuLifecycleOutcome> result = await task;
+        Assert.True(result.IsFailure);
+        Assert.Equal(ApplicationFailure.OperationCancelled, result.FailureInfo!.Code);
+        Assert.Equal("gate", result.FailureInfo.Details!["phase"]);
+        Assert.Equal(0, context.Host.ObservationCount);
+        Assert.Empty(context.Host.MutationRequests);
+    }
+
     [Fact(DisplayName = "Start при доказанном Running успешен без mutation")]
     public async Task StartWhenRunningDoesNotMutate()
     {

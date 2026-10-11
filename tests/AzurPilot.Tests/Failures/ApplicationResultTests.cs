@@ -15,6 +15,22 @@ namespace AzurPilot.Tests.Failures;
 /// </remarks>
 public sealed class ApplicationResultTests
 {
+    [Fact(DisplayName = "Недоказанное состояние MuMu имеет стабильный код и входит в закрытый whitelist")]
+    public void MuMuStateUnprovenIsAnAcceptedStableFailureCode()
+    {
+        Assert.Equal("mumu_state_unproven", ApplicationFailure.MuMuStateUnproven);
+        ApplicationFailure failure = new()
+        {
+            Code = ApplicationFailure.MuMuStateUnproven,
+            Message = "Состояние MuMu не доказано; запуск не выполнялся.",
+        };
+
+        ApplicationResult result = ApplicationResult.Failure(failure);
+
+        Assert.True(result.IsFailure);
+        Assert.Same(failure, result.FailureInfo);
+    }
+
     private static readonly ApplicationFailure Failure = new()
     {
         Code = ApplicationFailure.ConfigurationInvalid,

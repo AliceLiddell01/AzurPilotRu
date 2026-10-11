@@ -8,14 +8,15 @@ namespace AzurPilot.Core.Failures;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Контракт фиксирован: допустимы ровно двадцать семь кодов — <see cref="ConfigurationInvalid"/>,
+/// Контракт фиксирован: допустимы ровно двадцать восемь кодов — <see cref="ConfigurationInvalid"/>,
 /// <see cref="ConfigurationSchemaUnsupported"/>, <see cref="NativeUnavailable"/>,
 /// <see cref="NativeIncompatible"/>, <see cref="NativeFrameInvalid"/>, <see cref="OperationCancelled"/>,
-/// <see cref="InternalError"/>, семь
+/// <see cref="InternalError"/>, восемь
 /// кодов MuMu-отказов: <see cref="MuMuInstallationNotFound"/>,
 /// <see cref="MuMuInstallationAmbiguous"/>, <see cref="MuMuInstanceNotFound"/>,
 /// <see cref="MuMuInstanceAmbiguous"/>, <see cref="MuMuControlSurfaceUnsupported"/>,
-/// <see cref="MuMuLifecyclePostconditionNotMet"/> и <see cref="MuMuLifecycleTimeout"/>, а также десять
+/// <see cref="MuMuStateUnproven"/>, <see cref="MuMuLifecyclePostconditionNotMet"/> и
+/// <see cref="MuMuLifecycleTimeout"/>, а также десять
 /// кодов ADB readiness и lifecycle игры: <see cref="AndroidAdbUnavailable"/>,
 /// <see cref="AndroidEndpointUnavailable"/>, <see cref="AndroidTransportNotReady"/>,
 /// <see cref="AndroidNotReady"/>, <see cref="AzurLanePackageMissing"/>, <see cref="AzurLaneStateUnknown"/>,
@@ -97,6 +98,9 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <summary>Код отказа: deadline lifecycle-операции MuMu достигнут без нужного terminal state.</summary>
     public const string MuMuLifecycleTimeout = "mumu_lifecycle_timeout";
 
+    /// <summary>Код отказа: строгий запуск отклонён до mutation из-за недоказанного состояния MuMu.</summary>
+    public const string MuMuStateUnproven = "mumu_state_unproven";
+
     /// <summary>Код отказа: исполняемый файл ADB обнаруженной установки MuMuPlayer недоступен.</summary>
     public const string AndroidAdbUnavailable = "android_adb_unavailable";
 
@@ -145,6 +149,7 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
             MuMuInstanceNotFound,
             MuMuInstanceAmbiguous,
             MuMuControlSurfaceUnsupported,
+            MuMuStateUnproven,
             MuMuLifecyclePostconditionNotMet,
             MuMuLifecycleTimeout,
             AndroidAdbUnavailable,
@@ -171,7 +176,8 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <see cref="InternalError"/>, <see cref="MuMuInstallationNotFound"/>,
     /// <see cref="MuMuInstallationAmbiguous"/>, <see cref="MuMuInstanceNotFound"/>,
     /// <see cref="MuMuInstanceAmbiguous"/>, <see cref="MuMuControlSurfaceUnsupported"/>,
-    /// <see cref="MuMuLifecyclePostconditionNotMet"/>, <see cref="MuMuLifecycleTimeout"/>,
+    /// <see cref="MuMuStateUnproven"/>, <see cref="MuMuLifecyclePostconditionNotMet"/>,
+    /// <see cref="MuMuLifecycleTimeout"/>,
     /// <see cref="AndroidAdbUnavailable"/>, <see cref="AndroidEndpointUnavailable"/>,
     /// <see cref="AndroidTransportNotReady"/>, <see cref="AndroidNotReady"/>,
     /// <see cref="AzurLanePackageMissing"/>, <see cref="AzurLaneStateUnknown"/>,

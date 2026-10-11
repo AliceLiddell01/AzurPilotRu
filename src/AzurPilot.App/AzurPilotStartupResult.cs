@@ -132,7 +132,8 @@ public sealed record AzurPilotStartupResult
             $"  MuMu: {DescribeMuMu(diagnostics.MuMu)}",
             $"  Android: {DescribeAndroid(diagnostics.Android)}",
             $"  Azur Lane: {DescribeAzurLane(diagnostics.AzurLane)}",
-            "Итог: запуск успешен",
+            "Итог: приложение запущено; выполнена начальная диагностика. "
+                + "Это не подтверждает готовность MuMu, Android или Azur Lane.",
         ];
     }
 

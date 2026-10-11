@@ -25,6 +25,266 @@ namespace AzurPilot.Tests.OperatorServices;
 [Trait("Category", "Operator")]
 public sealed class AzurPilotOperatorServiceTests
 {
+    private static readonly string[] AndroidReadinessProperties =
+    [
+        "sys.boot_completed",
+        "ro.build.version.release",
+        "ro.build.version.sdk",
+    ];
+
+    [Fact(DisplayName = "Подготовка выбранного Android при Running не запускает MuMu повторно или игру")]
+    public async Task PrepareSelectedAndroidWhenRunningDoesNotMutateMuMuOrGame()
+    {
+        MuMuInstanceId selectedId = MuMuInstanceId.FromIndex("7");
+        AndroidEndpoint endpoint = new("127.0.0.1", 20312);
+        OperatorFixture fixture = CreateFixture(
+            MuMuLifecycleTestContext.Instance("3"), MuMuLifecycleTestContext.Instance("7"));
+        fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
+        EnqueueAndroidReady(fixture, selectedId, endpoint);
+
+        AzurPilotOperatorAndroidPreparationOutcome result = await fixture.Service.PrepareSelectedAndroidAsync(
+            selectedId, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(AzurPilotOperatorAndroidPreparationStage.Completed, result.Stage);
+        Assert.Equal(selectedId, result.InstanceId);
+        Assert.Equal(MuMuLifecycleState.Running, result.InitialMuMuState);
+        Assert.False(result.MuMuStartRequested);
+        Assert.Null(result.MuMuStartOutcome);
+        Assert.Equal(endpoint, result.AndroidPreparation!.Endpoint);
+        Assert.True(result.MuMuMayRemainRunning);
+        Assert.Equal(1, fixture.MuMuHost.ObservationCount);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+        AssertAndroidPreparationCommandsOnly(fixture, selectedId, endpoint);
+    }
+
+    [Fact(DisplayName = "Подготовка Android запускает exact Stopped MuMu и доказывает transport, shell и boot")]
+    public async Task PrepareSelectedAndroidStartsExactStoppedMuMuThenPreparesAndroid()
+    {
+        MuMuInstanceId selectedId = MuMuInstanceId.FromIndex("7");
+        AndroidEndpoint endpoint = new("127.0.0.1", 20312);
+        OperatorFixture fixture = CreateFixture(
+            MuMuLifecycleTestContext.Instance("3"), MuMuLifecycleTestContext.Instance("7"));
+        fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Stopped);
+        fixture.MuMuHost.MutationHandler = request =>
+        {
+            Assert.Equal(selectedId, request.InstanceId);
+            Assert.Empty(fixture.Runner.Requests);
+            fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
+            return MuMuLifecycleTestContext.Command(0);
+        };
+        EnqueueAndroidReady(fixture, selectedId, endpoint);
+
+        AzurPilotOperatorAndroidPreparationOutcome result = await fixture.Service.PrepareSelectedAndroidAsync(
+            selectedId, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(MuMuLifecycleState.Stopped, result.InitialMuMuState);
+        Assert.True(result.MuMuStartRequested);
+        Assert.Equal(MuMuLifecycleState.Running, result.MuMuStartOutcome!.FinalState);
+        Assert.True(result.AndroidPreparation!.Boot.ShellAvailable);
+        Assert.Equal(1, result.AndroidPreparation.Boot.BootCompleted);
+        Assert.Equal(AndroidTransportState.Device, result.AndroidPreparation.FinalTransport);
+        MuMuMutationRequest mutation = Assert.Single(fixture.MuMuHost.MutationRequests);
+        Assert.Equal(selectedId, mutation.InstanceId);
+        Assert.Equal(MuMuLifecycleMutation.Start, mutation.Mutation);
+        AssertAndroidPreparationCommandsOnly(fixture, selectedId, endpoint);
+    }
+
+    [Fact(DisplayName = "Неизвестное исходное состояние запрещает lifecycle и Android preparation")]
+    public async Task PrepareSelectedAndroidUnknownStateNeverMutatesOrResolvesAndroid()
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+
+        AzurPilotOperatorAndroidPreparationOutcome result = await fixture.Service.PrepareSelectedAndroidAsync(
+            MuMuInstanceId.FromIndex("7"), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(AzurPilotOperatorAndroidPreparationStage.ObserveMuMu, result.Stage);
+        Assert.Equal(ApplicationFailure.MuMuStateUnproven, result.Failure!.Code);
+        Assert.Equal(MuMuLifecycleState.Unknown, result.InitialMuMuState);
+        Assert.False(result.MuMuStartRequested);
+        Assert.Equal(1, fixture.MuMuHost.ObservationCount);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+        Assert.Empty(fixture.Runner.Requests);
+    }
+
+    [Fact(DisplayName = "Отказ исходного наблюдения сохраняется без lifecycle и Android preparation")]
+    public async Task PrepareSelectedAndroidObservationFailureIsNotStopped()
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        ApplicationFailure failure = new()
+        {
+            Code = ApplicationFailure.MuMuControlSurfaceUnsupported,
+            Message = "Control surface не позволила наблюдать экземпляр.",
+        };
+        fixture.MuMuHost.ObservationResult = ApplicationResult<MuMuInstanceState>.Failure(failure);
+
+        AzurPilotOperatorAndroidPreparationOutcome result = await fixture.Service.PrepareSelectedAndroidAsync(
+            MuMuInstanceId.FromIndex("7"), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Same(failure, result.Failure);
+        Assert.Null(result.InitialMuMuState);
+        Assert.False(result.MuMuStartRequested);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+        Assert.Empty(fixture.Runner.Requests);
+    }
+
+    [Fact(DisplayName = "Гонка Stopped → Unknown под gate не запускает MuMu и не достигает Android")]
+    public async Task PrepareSelectedAndroidStoppedToUnknownRaceFailsBeforeMutation()
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        fixture.MuMuHost.ObservationHandler = _ => MuMuLifecycleTestContext.Observed(
+            fixture.MuMuHost.ObservationCount == 1 ? MuMuLifecycleState.Stopped : MuMuLifecycleState.Unknown);
+
+        AzurPilotOperatorAndroidPreparationOutcome result = await fixture.Service.PrepareSelectedAndroidAsync(
+            MuMuInstanceId.FromIndex("7"), CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(AzurPilotOperatorAndroidPreparationStage.StartMuMu, result.Stage);
+        Assert.Equal(ApplicationFailure.MuMuStateUnproven, result.Failure!.Code);
+        Assert.Equal(2, fixture.MuMuHost.ObservationCount);
+        Assert.Null(result.MuMuStartOutcome);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+        Assert.Empty(fixture.Runner.Requests);
+    }
+
+    [Fact(DisplayName = "Отказ Android после запуска сохраняет частичный итог и не выполняет stop")]
+    public async Task PrepareSelectedAndroidFailurePreservesStartedMuMuWithoutCompensation()
+    {
+        MuMuInstanceId selectedId = MuMuInstanceId.FromIndex("7");
+        AndroidEndpoint endpoint = new("127.0.0.1", 20312);
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Stopped);
+        fixture.MuMuHost.MutationHandler = _ =>
+        {
+            fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
+            return MuMuLifecycleTestContext.Command(0);
+        };
+        fixture.Runner.EnqueueOutcome(0, "Android Debug Bridge version 1.0.41\nVersion 35.0.2-test\n");
+        fixture.Runner.EnqueueOutcome(0, InstanceResponse(selectedId, endpoint));
+        fixture.Runner.EnqueueOutcome(0, "offline\n");
+
+        AzurPilotOperatorAndroidPreparationOutcome result = await fixture.Service.PrepareSelectedAndroidAsync(
+            selectedId, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(AzurPilotOperatorAndroidPreparationStage.PrepareAndroid, result.Stage);
+        Assert.Equal(ApplicationFailure.AndroidTransportNotReady, result.Failure!.Code);
+        Assert.True(result.MuMuMayRemainRunning);
+        Assert.Equal(MuMuLifecycleState.Running, result.MuMuStartOutcome!.FinalState);
+        Assert.Null(result.AndroidPreparation);
+        Assert.Equal(MuMuLifecycleMutation.Start, Assert.Single(fixture.MuMuHost.MutationRequests).Mutation);
+        Assert.Equal(3, fixture.Runner.Requests.Count);
+    }
+
+    [Fact(DisplayName = "Отмена до подготовки не наблюдает target и не выполняет mutation")]
+    public async Task PrepareSelectedAndroidPreCancelledDoesNoWork()
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+
+        AzurPilotOperatorAndroidPreparationOutcome result = await fixture.Service.PrepareSelectedAndroidAsync(
+            MuMuInstanceId.FromIndex("7"), cancellation.Token);
+
+        Assert.Equal(ApplicationFailure.OperationCancelled, result.Failure!.Code);
+        Assert.False(result.IsSuccess);
+        Assert.False(result.MuMuStartRequested);
+        Assert.Equal(0, fixture.MuMuHost.ObservationCount);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+        Assert.Empty(fixture.Runner.Requests);
+    }
+
+    [Fact(DisplayName = "Отмена после host-side запуска сохраняет MuMu и не подготавливает Android или игру")]
+    public async Task PrepareSelectedAndroidCancellationAfterMuMuStartPreservesPartialState()
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        using CancellationTokenSource cancellation = new();
+        fixture.MuMuHost.ObservationHandler = instanceId =>
+        {
+            if (fixture.MuMuHost.MutationCount == 0)
+            {
+                return MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Stopped);
+            }
+
+            cancellation.Cancel();
+            return MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
+        };
+
+        AzurPilotOperatorAndroidPreparationOutcome result = await fixture.Service.PrepareSelectedAndroidAsync(
+            MuMuInstanceId.FromIndex("7"), cancellation.Token);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ApplicationFailure.OperationCancelled, result.Failure!.Code);
+        Assert.True(result.MuMuMayRemainRunning);
+        Assert.Equal(MuMuLifecycleMutation.Start, Assert.Single(fixture.MuMuHost.MutationRequests).Mutation);
+        Assert.Empty(fixture.Runner.Requests);
+    }
+
+    private static void EnqueueAndroidReady(OperatorFixture fixture, MuMuInstanceId instanceId, AndroidEndpoint endpoint)
+    {
+        fixture.Runner.EnqueueOutcome(0, "Android Debug Bridge version 1.0.41\nVersion 35.0.2-test\n");
+        fixture.Runner.EnqueueOutcome(0, InstanceResponse(instanceId, endpoint));
+        fixture.Runner.EnqueueOutcome(0, "device\n");
+        fixture.Runner.EnqueueOutcome(0, "1\n");
+        fixture.Runner.EnqueueOutcome(0, "15.0\n");
+        fixture.Runner.EnqueueOutcome(0, "35\n");
+    }
+
+    [Fact(DisplayName = "Подготовка Android передаёт cancellation token единственному exact target connect")]
+    public async Task PrepareSelectedAndroidPassesCancellationToExactTransportPreparation()
+    {
+        MuMuInstanceId selectedId = MuMuInstanceId.FromIndex("7");
+        AndroidEndpoint endpoint = new("127.0.0.1", 20312);
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
+        using CancellationTokenSource cancellation = new();
+        fixture.Runner.EnqueueOutcome(0, "Android Debug Bridge version 1.0.41\nVersion 35.0.2-test\n");
+        fixture.Runner.EnqueueOutcome(0, InstanceResponse(selectedId, endpoint));
+        fixture.Runner.EnqueueOutcome(1, string.Empty, $"error: device '{endpoint}' not found");
+        fixture.Runner.EnqueueFailure(new ApplicationFailure
+        {
+            Code = ApplicationFailure.OperationCancelled,
+            Message = "Подключение ADB отменено на process boundary.",
+        });
+
+        AzurPilotOperatorAndroidPreparationOutcome result = await fixture.Service.PrepareSelectedAndroidAsync(
+            selectedId, cancellation.Token);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ApplicationFailure.OperationCancelled, result.Failure!.Code);
+        Assert.Equal(AzurPilotOperatorAndroidPreparationStage.PrepareAndroid, result.Stage);
+        Assert.True(result.MuMuMayRemainRunning);
+        Assert.Equal(4, fixture.Runner.Requests.Count);
+        RecordedProcessRequest connect = fixture.Runner.Requests[3];
+        Assert.Equal(["connect", endpoint.ToString()], connect.Request.Arguments);
+        Assert.Equal(cancellation.Token, connect.CancellationToken);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+    }
+
+    private static void AssertAndroidPreparationCommandsOnly(
+        OperatorFixture fixture, MuMuInstanceId instanceId, AndroidEndpoint endpoint)
+    {
+        Assert.Equal(6, fixture.Runner.Requests.Count);
+        Assert.Equal(MuMuManagerCommandBuilder.BuildInstanceInfoArguments(instanceId).ToArray(),
+            fixture.Runner.Requests[1].Request.Arguments.ToArray());
+        Assert.Equal(["-s", endpoint.ToString(), "get-state"],
+            fixture.Runner.Requests[2].Request.Arguments);
+        foreach (RecordedProcessRequest request in fixture.Runner.Requests.Skip(3))
+        {
+            Assert.Equal("-s", request.Request.Arguments[0]);
+            Assert.Equal(endpoint.ToString(), request.Request.Arguments[1]);
+            Assert.Equal("shell", request.Request.Arguments[2]);
+            Assert.Equal("getprop", request.Request.Arguments[3]);
+        }
+
+        Assert.Equal(
+            AndroidReadinessProperties,
+            fixture.Runner.Requests.Skip(3).Select(static request => request.Request.Arguments[4]));
+    }
+
     [Fact(DisplayName = "Screenshot разрешает exact target, сканирует оба production ROI и освобождает capture frame")]
     public async Task CaptureAndScanUsesExactTargetAndDisposesOneCapturedFrameAfterBothScans()
     {
@@ -170,6 +430,107 @@ public sealed class AzurPilotOperatorServiceTests
         Assert.False(controller.CompleteOperation());
         Assert.False(controller.Session.IsOperationActive);
         Assert.Equal("Операция: отменена", controller.OperationText);
+    }
+
+    [Fact(DisplayName = "TUI сообщает о частичной подготовке, exact target и возможном запущенном MuMu")]
+    public async Task ControllerPresentsPartialEnvironmentPreparationFailure()
+    {
+        MuMuInstanceId selectedId = MuMuInstanceId.FromIndex("7");
+        AndroidEndpoint endpoint = new("127.0.0.1", 20312);
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7", "selected"));
+        fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Stopped);
+        fixture.MuMuHost.MutationHandler = _ =>
+        {
+            fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
+            return MuMuLifecycleTestContext.Command(0);
+        };
+        fixture.Runner.EnqueueOutcome(0, "Android Debug Bridge version 1.0.41\nVersion 35.0.2-test\n");
+        fixture.Runner.EnqueueOutcome(0, InstanceResponse(selectedId, endpoint));
+        fixture.Runner.EnqueueOutcome(0, "offline\n");
+
+        using OperatorUiController controller = new(fixture.Service, InitialDiagnostics());
+        Assert.True(controller.Session.SelectInstance(selectedId));
+        Assert.True(controller.Session.RequestConfirmation(OperatorUiAction.EnvironmentPrepare));
+        Assert.True(controller.Session.ConfirmMutation());
+        Assert.True(controller.TryStartOperation(OperatorUiAction.EnvironmentPrepare));
+        await controller.WaitForOperationAsync();
+        Assert.False(controller.CompleteOperation());
+
+        OperatorUiMessage result = controller.Session.SnapshotMessages()[^1];
+        Assert.Equal(OperatorUiMessageKind.Error, result.Kind);
+        Assert.Contains("mumu:7", result.Text);
+        Assert.Contains("подготовки Android", result.Text);
+        Assert.Contains("MuMu может остаться запущенным", result.Text);
+        Assert.Contains("Azur Lane не запускалась", result.Text);
+        Assert.Contains(ApplicationFailure.AndroidTransportNotReady, result.Details);
+        MuMuMutationRequest mutation = Assert.Single(fixture.MuMuHost.MutationRequests);
+        Assert.Equal(MuMuLifecycleMutation.Start, mutation.Mutation);
+        Assert.Equal(selectedId, mutation.InstanceId);
+    }
+
+    [Fact(DisplayName = "Отмена подготовки среды сохраняется в статусе и предупреждении TUI")]
+    public async Task ControllerMarksCancelledEnvironmentPreparationAsCancelled()
+    {
+        MuMuInstanceId selectedId = MuMuInstanceId.FromIndex("7");
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7", "selected"));
+        TaskCompletionSource observationAfterStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource releaseObservation = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        fixture.MuMuHost.ObservationHandler = instanceId =>
+        {
+            if (fixture.MuMuHost.MutationCount == 0)
+            {
+                return MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Stopped);
+            }
+
+            _ = observationAfterStart.TrySetResult();
+            releaseObservation.Task.GetAwaiter().GetResult();
+            return MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
+        };
+
+        using OperatorUiController controller = new(fixture.Service, InitialDiagnostics());
+        Assert.True(controller.Session.SelectInstance(selectedId));
+        Assert.True(controller.Session.RequestConfirmation(OperatorUiAction.EnvironmentPrepare));
+        Assert.True(controller.Session.ConfirmMutation());
+        Assert.True(controller.TryStartOperation(OperatorUiAction.EnvironmentPrepare));
+        await observationAfterStart.Task.WaitAsync(
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken);
+
+        controller.CancelOperation();
+        _ = releaseObservation.TrySetResult();
+        await controller.WaitForOperationAsync();
+        Assert.False(controller.CompleteOperation());
+
+        Assert.Equal("Операция: отменена", controller.OperationText);
+        OperatorUiMessage result = controller.Session.SnapshotMessages()[^1];
+        Assert.Equal(OperatorUiMessageKind.Warning, result.Kind);
+        Assert.Contains("остановлена на этапе", result.Text);
+        Assert.Contains("отменена", result.Text);
+        _ = Assert.Single(fixture.MuMuHost.MutationRequests);
+        Assert.Empty(fixture.Runner.Requests);
+    }
+
+    [Fact(DisplayName = "Диагностика не считает Android готовым только по Device transport")]
+    public void ControllerRequiresShellAndCompletedBootForAndroidReadySummary()
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        AzurPilotDiagnosticReport diagnostics = InitialDiagnostics();
+        diagnostics = diagnostics with
+        {
+            Android = diagnostics.Android with
+            {
+                IsShellAvailable = false,
+                BootCompleted = 0,
+            },
+        };
+
+        using OperatorUiController controller = new(fixture.Service, diagnostics);
+
+        OperatorUiMessage summary = controller.Session.SnapshotMessages()[^1];
+        Assert.Equal(OperatorUiMessageKind.Warning, summary.Kind);
+        Assert.Contains("Android — транспорт доступен; shell недоступен, загрузка выполняется", summary.Text);
+        Assert.DoesNotContain("Android — готов", summary.Text);
+        Assert.Contains("/environment-prepare", summary.Text);
     }
 
     private static OperatorFixture CreateFixture(params MuMuInstance[] instances)

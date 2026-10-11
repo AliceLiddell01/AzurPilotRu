@@ -107,6 +107,9 @@ public static class AzurPilotExitCode
     /// <summary>PNG frame повреждён, превышает предел или не поддерживается.</summary>
     public const int NativeFrameInvalid = 27;
 
+    /// <summary>Строгая подготовка отклонена до mutation из-за недоказанного состояния MuMu.</summary>
+    public const int MuMuStateUnproven = 28;
+
     /// <summary>Возвращает код выхода для application-level отказа.</summary>
     /// <param name="failure">Ожидаемый отказ application boundary.</param>
     /// <returns>Код выхода процесса, соответствующий коду отказа.</returns>
@@ -127,6 +130,7 @@ public static class AzurPilotExitCode
             ApplicationFailure.MuMuInstanceNotFound => MuMuInstanceNotFound,
             ApplicationFailure.MuMuInstanceAmbiguous => MuMuInstanceAmbiguous,
             ApplicationFailure.MuMuControlSurfaceUnsupported => MuMuControlSurfaceUnsupported,
+            ApplicationFailure.MuMuStateUnproven => MuMuStateUnproven,
             ApplicationFailure.MuMuLifecyclePostconditionNotMet => MuMuLifecyclePostconditionNotMet,
             ApplicationFailure.MuMuLifecycleTimeout => MuMuLifecycleTimeout,
             ApplicationFailure.AndroidAdbUnavailable => AndroidAdbUnavailable,

@@ -199,6 +199,18 @@ public sealed class MuMuLifecycleService
         CancellationToken cancellationToken)
         => RunAsync(installation, instance, MuMuLifecycleOperation.Start, cancellationToken);
 
+    /// <summary>Запускает только доказанно остановленный экземпляр; неизвестное состояние не мутирует.</summary>
+    /// <remarks>
+    /// Наблюдение выполняется повторно под существующим mutation gate. Уже доказанное Running даёт
+    /// идемпотентный успех; Stopped использует общий bounded переход запуска с теми же deadline и retry.
+    /// Unknown после получения gate завершает операцию отказом до первой mutation.
+    /// </remarks>
+    public Task<ApplicationResult<MuMuLifecycleOutcome>> StartFromKnownStateAsync(
+        MuMuInstallation installation,
+        MuMuInstance instance,
+        CancellationToken cancellationToken)
+        => RunAsync(installation, instance, MuMuLifecycleOperation.Start, cancellationToken, requireKnownState: true);
+
     /// <summary>Останавливает экземпляр и доказывает состояние <see cref="MuMuLifecycleState.Stopped"/>.</summary>
     /// <remarks>
     /// Если экземпляр уже доказанно остановлен, операция завершается успехом без mutation. Иначе
@@ -272,7 +284,8 @@ public sealed class MuMuLifecycleService
         MuMuInstallation installation,
         MuMuInstance instance,
         MuMuLifecycleOperation operation,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool requireKnownState = false)
     {
         ArgumentNullException.ThrowIfNull(installation);
         ArgumentNullException.ThrowIfNull(instance);
@@ -302,7 +315,8 @@ public sealed class MuMuLifecycleService
 
         try
         {
-            return await ExecuteAsync(installation, instanceId, operation, cancellationToken).ConfigureAwait(false);
+            return await ExecuteAsync(installation, instanceId, operation, requireKnownState, cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -314,6 +328,7 @@ public sealed class MuMuLifecycleService
         MuMuInstallation installation,
         MuMuInstanceId instanceId,
         MuMuLifecycleOperation operation,
+        bool requireKnownState,
         CancellationToken cancellationToken)
     {
         long started = _timeProvider.GetTimestamp();
@@ -336,6 +351,18 @@ public sealed class MuMuLifecycleService
         }
 
         MuMuInstanceState initial = initialObservation.Value!;
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return CancelledOutcome(operation, instanceId, initial.State, started, MuMuFailures.InitialObservationPhase);
+        }
+
+        if (requireKnownState && initial.State is not (MuMuLifecycleState.Running or MuMuLifecycleState.Stopped))
+        {
+            ApplicationFailure failure = MuMuFailures.StateUnproven(instanceId, initial.State);
+            LogFailure(operation, instanceId, failure.Code, initial.State, _timeProvider.GetElapsedTime(started));
+            return ApplicationResult<MuMuLifecycleOutcome>.Failure(failure);
+        }
+
         return operation switch
         {
             MuMuLifecycleOperation.Start => await RunStartAsync(

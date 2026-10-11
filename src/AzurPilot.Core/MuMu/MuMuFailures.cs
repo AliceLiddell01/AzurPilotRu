@@ -234,4 +234,20 @@ internal static class MuMuFailures
         };
 
     private static string Count(int value) => value.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>Отказывает строгому запуску до mutation, если состояние после gate не доказано.</summary>
+    internal static ApplicationFailure StateUnproven(MuMuInstanceId instanceId, MuMuLifecycleState state)
+        => new()
+        {
+            Code = ApplicationFailure.MuMuStateUnproven,
+            Message = $"Состояние MuMu instance {instanceId} не доказано: запуск не выполнялся.",
+            IsRetryable = true,
+            Details = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [InstanceIdDetailKey] = instanceId.ToString(),
+                [StateDetailKey] = MuMuNames.StateName(state),
+                [PhaseDetailKey] = InitialObservationPhase,
+                ["mutation_attempted"] = "false",
+            },
+        };
 }
