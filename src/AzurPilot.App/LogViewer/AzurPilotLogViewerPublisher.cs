@@ -36,6 +36,7 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
     private readonly NamedPipeServerStream _server;
     private readonly Channel<AzurPilotLogViewerEvent> _queue;
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly SemaphoreSlim _outputGate = new(1, 1);
     private readonly Task _writer;
     private readonly Task _clientReader;
     private readonly AzurPilotLogViewerProvider _provider;
@@ -64,6 +65,39 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
 
     /// <summary>Живы writer и read-only consumer текущего канала.</summary>
     internal bool IsConnected => !_writer.IsCompleted && !_clientReader.IsCompleted && _server.IsConnected;
+
+    /// <summary>Проверяет закрытие consumer-а реальным I/O, а не кэшированным флагом Named Pipe.</summary>
+    internal async Task<bool> CheckConnectionAsync(CancellationToken cancellationToken)
+    {
+        if (!IsConnected)
+        {
+            return false;
+        }
+
+        using CancellationTokenSource probe = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        probe.CancelAfter(TimeSpan.FromSeconds(1));
+        try
+        {
+            await _outputGate.WaitAsync(probe.Token).ConfigureAwait(false);
+            try
+            {
+                // Пустой frame viewer игнорирует. Общий gate не даёт ему разорвать JSON-событие;
+                // запись в закрытый канал обнаруживает EOF даже до обработки read continuation.
+                await _server.WriteAsync(AzurPilotLogViewerProtocol.EncodeLine(string.Empty), probe.Token).ConfigureAwait(false);
+                await _server.FlushAsync(probe.Token).ConfigureAwait(false);
+                return IsConnected;
+            }
+            finally
+            {
+                _ = _outputGate.Release();
+            }
+        }
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException
+            || exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
 
     /// <summary>Число событий, отброшенных из-за переполнения очереди.</summary>
     internal long DroppedCount => Interlocked.Read(ref _totalDroppedCount);
@@ -201,6 +235,7 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
         await _clientReader.ConfigureAwait(false);
         _provider.Dispose();
         await _server.DisposeAsync().ConfigureAwait(false);
+        _outputGate.Dispose();
         _shutdown.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -237,11 +272,19 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
             await foreach (AzurPilotLogViewerEvent item in _queue.Reader.ReadAllAsync(cancellationToken)
                 .ConfigureAwait(false))
             {
-                await ReportDroppedAsync(cancellationToken).ConfigureAwait(false);
-                byte[] payload = AzurPilotLogViewerProtocol.EncodeLine(
-                    AzurPilotLogViewerProtocol.Serialize(item));
-                await _server.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
-                await _server.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await _outputGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await ReportDroppedAsync(cancellationToken).ConfigureAwait(false);
+                    byte[] payload = AzurPilotLogViewerProtocol.EncodeLine(
+                        AzurPilotLogViewerProtocol.Serialize(item));
+                    await _server.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+                    await _server.FlushAsync(cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _ = _outputGate.Release();
+                }
             }
         }
         catch (OperationCanceledException)

@@ -19,7 +19,8 @@ public sealed class AzurPilotLogViewerSession(LogLevel minimumLevel) : ILoggerPr
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_publisher is { IsConnected: true })
+            if (_publisher is AzurPilotLogViewerPublisher existing
+                && await existing.CheckConnectionAsync(cancellationToken).ConfigureAwait(false))
             {
                 return ApplicationResult<bool>.Success(true);
             }

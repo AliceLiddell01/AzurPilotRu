@@ -68,8 +68,10 @@ public sealed class AzurPilotLogViewerTests
         Assert.Equal("ab…", AzurPilotLogViewerProtocol.Sanitize("ab😀x", 4));
     }
 
-    [Fact(DisplayName = "Повторное открытие не дублирует живое окно и восстанавливает поток после disconnect")]
-    public async Task SessionReopensOnlyAfterDisconnect()
+    [Theory(DisplayName = "Повторное открытие не дублирует живое окно и восстанавливает поток сразу после disconnect")]
+    [InlineData(1)]
+    [InlineData(16)]
+    public async Task SessionReopensOnlyAfterDisconnect(int reconnects)
     {
         List<LogViewerStand> opened = [];
         await using AzurPilotLogViewerSession session = new(LogLevel.Information, () =>
@@ -81,13 +83,17 @@ public sealed class AzurPilotLogViewerTests
         Assert.True((await session.OpenAsync(TestContext.Current.CancellationToken)).IsSuccess);
         Assert.True((await session.OpenAsync(TestContext.Current.CancellationToken)).IsSuccess);
         _ = Assert.Single(opened);
-        await opened[0].Viewer.DisconnectAsync();
-        Assert.True(await opened[0].Viewer.WaitForCompletionAsync(TimeSpan.FromSeconds(5)));
-        Assert.True((await session.OpenAsync(TestContext.Current.CancellationToken)).IsSuccess);
-        Assert.Equal(2, opened.Count);
+        for (int index = 0; index < reconnects; index++)
+        {
+            await opened[^1].Viewer.DisconnectAsync();
+            Assert.True(await opened[^1].Viewer.WaitForCompletionAsync(TimeSpan.FromSeconds(5)));
+            Assert.True((await session.OpenAsync(TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.Equal(index + 2, opened.Count);
+        }
+
         session.CreateLogger("AzurPilot.Tests").Log(LogLevel.Information, new EventId(1),
             "Журнал восстановлен", null, static (state, _) => state);
-        Assert.Equal("Журнал восстановлен", (await opened[1].Viewer.WaitForCountAsync(1))[0].Message);
+        Assert.Equal("Журнал восстановлен", (await opened[^1].Viewer.WaitForCountAsync(1))[0].Message);
         foreach (LogViewerStand stand in opened)
         {
             await stand.DisposeAsync();
