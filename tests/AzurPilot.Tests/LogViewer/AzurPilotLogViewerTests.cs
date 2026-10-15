@@ -68,6 +68,28 @@ public sealed class AzurPilotLogViewerTests
         Assert.Equal("ab…", AzurPilotLogViewerProtocol.Sanitize("ab😀x", 4));
     }
 
+    [Fact(DisplayName = "Редактирование секретов не превышает пределы полей и строки канала")]
+    public void RedactionExpansionIsBoundedBeforeSerialization()
+    {
+        string repeatedBearer = string.Concat(Enumerable.Repeat("Bearer a ", 512));
+        AzurPilotLogViewerEvent bounded = AzurPilotLogViewerProtocol.Bound(new AzurPilotLogViewerEvent(
+            DateTimeOffset.UnixEpoch,
+            LogLevel.Warning,
+            new string('я', 400),
+            repeatedBearer,
+            Properties: [.. Enumerable.Range(0, 8).Select(index =>
+                new KeyValuePair<string, string>($"property-{index}", repeatedBearer))]));
+        string line = AzurPilotLogViewerProtocol.Serialize(bounded);
+
+        Assert.True(bounded.Message.Length <= AzurPilotLogViewerProtocol.MaximumMessageLength);
+        Assert.All(
+            bounded.Properties!,
+            property => Assert.True(property.Value.Length <= AzurPilotLogViewerProtocol.MaximumPropertyValueLength));
+        Assert.True(AzurPilotLogViewerProtocol.EncodeLine(line).Length <= AzurPilotLogViewerProtocol.MaximumLineBytes);
+        Assert.True(AzurPilotLogViewerProtocol.TryDeserialize(line, out _));
+        Assert.DoesNotContain("Bearer a", line, StringComparison.Ordinal);
+    }
+
     [Theory(DisplayName = "Повторное открытие не дублирует живое окно и восстанавливает поток сразу после disconnect")]
     [InlineData(1)]
     [InlineData(16)]

@@ -1,8 +1,8 @@
 using System.Text;
-using System.Text.Json;
 using AzurPilot.App;
 using AzurPilot.App.LogViewer;
 using AzurPilot.App.OperatorUi;
+using AzurPilot.Core.Configuration;
 
 // Точка входа приложения: разбирает минимальный CLI, запускает application host и печатает
 // человекочитаемый итог. Вся runtime-логика (composition, диагностика, логирование) живёт в
@@ -16,21 +16,9 @@ Console.OutputEncoding = Encoding.UTF8;
 ApplicationArguments arguments = ApplicationArguments.Parse(args);
 if (arguments.Failure is ApplicationArgumentFailure argumentFailure)
 {
-    if (Console.IsInputRedirected || Console.IsOutputRedirected)
+    foreach (string line in argumentFailure.ReportLines())
     {
-        Console.Error.WriteLine(JsonSerializer.Serialize(new Dictionary<string, string>
-        {
-            ["LogLevel"] = "Error",
-            ["Category"] = "AzurPilot.App",
-            ["Message"] = string.Join(' ', argumentFailure.ReportLines()),
-        }));
-    }
-    else
-    {
-        foreach (string line in argumentFailure.ReportLines())
-        {
-            Console.Error.WriteLine(line);
-        }
+        Console.Error.WriteLine(line);
     }
 
     return ApplicationArguments.ExitCodeFor();
@@ -38,7 +26,7 @@ if (arguments.Failure is ApplicationArgumentFailure argumentFailure)
 
 if (arguments.Help)
 {
-    Console.WriteLine("Использование: AzurPilot.App [--mode normal|manual|diagnostic]");
+    Console.WriteLine("Использование: AzurPilot.App [--mode " + string.Join("|", OperatorUiModeNames.All) + "]");
     Console.WriteLine("Без аргументов: ui.mode из config.yaml; по умолчанию normal.");
     Console.WriteLine("При перенаправлении stdin или stdout: одноразовая read-only диагностика.");
     return AzurPilotExitCode.Success;

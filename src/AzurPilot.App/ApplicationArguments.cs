@@ -13,7 +13,7 @@ public sealed record ApplicationArgumentFailure(string Message)
     public IReadOnlyList<string> ReportLines() =>
     [
         "Запуск отклонён: " + Message,
-        "Использование: AzurPilot.App [--mode normal|manual|diagnostic] "
+        "Использование: AzurPilot.App [--mode " + string.Join("|", OperatorUiModeNames.All) + "] "
             + "[--log-viewer --log-viewer-pipe <name> [--log-viewer-level <level>] [--log-viewer-details]]",
     ];
 }
@@ -90,7 +90,8 @@ public sealed record ApplicationArguments(
                     if (!OperatorUiModePresentation.TryParse(modeValue, out OperatorUiMode parsed))
                     {
                         return Failed(new ApplicationArgumentFailure(
-                            $"--mode «{modeValue}» не поддерживается: допустимы normal, manual и diagnostic."));
+                            $"--mode «{modeValue}» не поддерживается: допустимы "
+                            + string.Join(", ", OperatorUiModeNames.All) + "."));
                     }
 
                     mode = parsed;

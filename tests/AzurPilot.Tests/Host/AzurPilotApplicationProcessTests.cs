@@ -1,4 +1,5 @@
 using AzurPilot.App;
+using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Tests.Configuration;
 using Microsoft.Extensions.Logging;
@@ -159,6 +160,27 @@ public sealed class AzurPilotApplicationProcessTests
         Assert.Contains("--mode", run.StandardError, StringComparison.Ordinal);
         Assert.Contains("bogus", run.StandardError, StringComparison.Ordinal);
         Assert.Contains("normal", run.StandardError, StringComparison.Ordinal);
+        Assert.Empty(run.StandardOutput);
+        Assert.Empty(run.Logs);
+        Assert.DoesNotContain("{", run.StandardError, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            run.StandardError.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length);
+    }
+
+    [Fact(DisplayName = "Справка реального процесса перечисляет режимы от их владельца")]
+    public void HelpUsesOwnedModeNames()
+    {
+        ApplicationHostProcess application = ApplicationHostProcess.CreateStaged();
+
+        ApplicationHostRun run = application.Run("--help");
+
+        Assert.Equal(AzurPilotExitCode.Success, run.ExitCode);
+        Assert.Contains(
+            "[--mode " + string.Join("|", OperatorUiModeNames.All) + "]",
+            run.StandardOutput,
+            StringComparison.Ordinal);
+        Assert.Empty(run.StandardError);
     }
 
     [Fact(DisplayName = "Явный режим интерфейса не меняет контракт одноразовой диагностики")]

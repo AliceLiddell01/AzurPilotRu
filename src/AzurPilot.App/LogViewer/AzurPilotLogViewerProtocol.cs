@@ -145,7 +145,7 @@ internal static partial class AzurPilotLogViewerProtocol
         return logEvent with
         {
             Category = Sanitize(logEvent.Category, MaximumCategoryLength),
-            Message = Redact(Sanitize(logEvent.Message, MaximumMessageLength)),
+            Message = Sanitize(Redact(logEvent.Message ?? string.Empty), MaximumMessageLength),
             EventId = SanitizeOptional(logEvent.EventId, MaximumIdentifierLength),
             CorrelationId = SanitizeOptional(logEvent.CorrelationId, MaximumIdentifierLength),
             Properties = BoundProperties(logEvent.Properties),
@@ -246,7 +246,7 @@ internal static partial class AzurPilotLogViewerProtocol
                 || key.Contains("key", StringComparison.OrdinalIgnoreCase)
                 || key.Contains("authorization", StringComparison.OrdinalIgnoreCase);
             bounded.Add(new KeyValuePair<string, string>(key, sensitive
-                ? "[скрыто]" : Redact(Sanitize(pair.Value, MaximumPropertyValueLength))));
+                ? "[скрыто]" : Sanitize(Redact(pair.Value ?? string.Empty), MaximumPropertyValueLength)));
         }
 
         return bounded.Count == 0 ? null : bounded.AsReadOnly();

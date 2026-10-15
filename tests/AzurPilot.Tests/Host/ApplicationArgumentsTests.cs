@@ -48,4 +48,15 @@ public sealed class ApplicationArgumentsTests
         Assert.False(parsed.IsSuccess);
         Assert.Contains("не сочетается с другими параметрами", parsed.Failure!.Message, StringComparison.Ordinal);
     }
+
+    [Fact(DisplayName = "Отказ режима и usage строятся из единого списка допустимых режимов")]
+    public void InvalidModeUsesOwnedModeNames()
+    {
+        ApplicationArguments parsed = ApplicationArguments.Parse(["--mode", "bogus"]);
+        string allowedModes = string.Join(", ", OperatorUiModeNames.All);
+        string usageModes = string.Join("|", OperatorUiModeNames.All);
+
+        Assert.Contains(allowedModes, parsed.Failure!.Message, StringComparison.Ordinal);
+        Assert.Contains("[--mode " + usageModes + "]", parsed.Failure.ReportLines()[1], StringComparison.Ordinal);
+    }
 }
