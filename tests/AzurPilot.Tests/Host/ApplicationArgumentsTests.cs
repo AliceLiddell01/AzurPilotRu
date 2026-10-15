@@ -25,6 +25,7 @@ public sealed class ApplicationArgumentsTests
     [InlineData("--unknown")]
     [InlineData("--log-viewer")]
     [InlineData("--log-viewer-level 2")]
+    [InlineData("--log-viewer --log-viewer-pipe ok --log-viewer-level 2")]
     [InlineData("--mode normal --log-viewer --log-viewer-pipe ok")]
     public void RejectsInvalidArguments(string text)
         => Assert.False(ApplicationArguments.Parse(text.Split(' ')).IsSuccess);
@@ -35,5 +36,16 @@ public sealed class ApplicationArgumentsTests
         Assert.True(ApplicationArguments.Parse(["--help"]).Help);
         Assert.True(ApplicationArguments.Parse(["-h"]).Help);
         Assert.False(ApplicationArguments.Parse([]).Help);
+    }
+
+    [Theory(DisplayName = "Флаг справки нельзя сочетать с другими CLI-параметрами")]
+    [InlineData("--help --mode manual")]
+    [InlineData("--mode manual -h")]
+    public void HelpCannotBeCombinedWithOtherArguments(string arguments)
+    {
+        ApplicationArguments parsed = ApplicationArguments.Parse(arguments.Split(' '));
+
+        Assert.False(parsed.IsSuccess);
+        Assert.Contains("не сочетается с другими параметрами", parsed.Failure!.Message, StringComparison.Ordinal);
     }
 }

@@ -1018,7 +1018,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
             OperatorUiCommand denied = resolution.Command!;
             OperatorUiMode required = denied.RequiredModeFor(input);
             AddMessage("Действие недоступно в текущем режиме",
-                $"«{denied.Title}» доступно в {OperatorUiModePresentation.AccusativeLabel(required)} режиме. "
+                $"«{denied.Title}» доступно в {OperatorUiModePresentation.PrepositionalLabel(required)} режиме. "
                 + OperatorUiModePresentation.SwitchHint(required),
                 OperatorUiMessageKind.Warning);
             return;

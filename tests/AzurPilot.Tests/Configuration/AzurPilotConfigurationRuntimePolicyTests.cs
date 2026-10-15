@@ -113,12 +113,14 @@ public sealed class AzurPilotConfigurationRuntimePolicyTests
             "одновременно существуют канонический YAML и legacy JSON");
         Assert.False(failure.IsRetryable);
 
-        // Отказ называет оба источника: решение о переносе настроек принимает оператор.
+        // Отказ называет оба источника и требует оставить один.
         IReadOnlyDictionary<string, string> details = failure.Details!;
         Assert.Equal(yamlPath, details["config_path"]);
         Assert.Equal(jsonPath, details["legacy_config_path"]);
         Assert.Contains(yamlPath, failure.Message, StringComparison.Ordinal);
         Assert.Contains(jsonPath, failure.Message, StringComparison.Ordinal);
+        Assert.Contains("Оставьте один источник", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("переименуйте или удалите", failure.Message, StringComparison.Ordinal);
     }
 
     [Fact(DisplayName = "Ни одного файла: встроенные defaults схемы v3")]

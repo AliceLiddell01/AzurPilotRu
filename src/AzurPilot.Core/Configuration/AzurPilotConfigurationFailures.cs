@@ -74,8 +74,8 @@ internal static class AzurPilotConfigurationFailures
     /// источников не смешиваются и ни один из файлов не выбирается автоматически.
     /// </returns>
     /// <remarks>
-    /// Отказ не выбирает «победителя»: он сообщает оператору оба пути и инструкцию по миграции, потому
-    /// что решение о переносе настроек принимает человек, а не загрузчик.
+    /// Отказ не выбирает «победителя»: он сообщает оператору оба пути и предлагает оставить один источник,
+    /// потому что решение о конфигурации принимает человек, а не загрузчик.
     /// </remarks>
     internal static ApplicationFailure ConflictingSources(string yamlPath, string jsonPath)
         => new()
@@ -83,8 +83,8 @@ internal static class AzurPilotConfigurationFailures
             Code = ApplicationFailure.ConfigurationInvalid,
             Message = $"Найдены оба файла конфигурации: канонический «{yamlPath}» и legacy «{jsonPath}». "
                 + "Настройки двух источников не смешиваются и ни один из файлов не выбирается "
-                + "автоматически. Перенесите legacy-настройки явной миграцией в канонический YAML "
-                + $"(с резервной копией legacy-файла) и удалите «{jsonPath}», после чего повторите запуск.",
+                + $"автоматически. Оставьте один источник: переименуйте или удалите «{jsonPath}» "
+                + $"(или «{yamlPath}», если нужны legacy-настройки), после чего повторите запуск.",
             Details = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [ConfigurationPathDetailKey] = yamlPath,

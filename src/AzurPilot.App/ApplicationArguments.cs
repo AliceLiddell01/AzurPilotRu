@@ -78,6 +78,9 @@ public sealed record ApplicationArguments(
 
             switch (argument)
             {
+                case "--help" or "-h":
+                    return Failed(new ApplicationArgumentFailure(
+                        $"{argument} не сочетается с другими параметрами."));
                 case "--mode":
                     if (!TryReadValue(args, ref index, argument, out string modeValue, out ApplicationArgumentFailure? modeFailure))
                     {

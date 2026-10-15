@@ -11,7 +11,7 @@ internal static class OperatorUiModePresentation
 {
     /// <summary>Человекочитаемое название режима.</summary>
     /// <param name="mode">Режим.</param>
-    /// <returns>Название в предложном падеже для заголовка экрана.</returns>
+    /// <returns>Название в именительном падеже для заголовка экрана.</returns>
     public static string Label(OperatorUiMode mode) => mode switch
     {
         OperatorUiMode.Normal => "обычный",
@@ -20,15 +20,15 @@ internal static class OperatorUiModePresentation
         _ => "обычный",
     };
 
-    /// <summary>Название режима в винительном падеже для сообщения о недоступности.</summary>
+    /// <summary>Название режима в предложном падеже для сообщения «доступно в … режиме».</summary>
     /// <param name="mode">Требуемый режим.</param>
     /// <returns>Название режима.</returns>
-    public static string AccusativeLabel(OperatorUiMode mode) => mode switch
+    public static string PrepositionalLabel(OperatorUiMode mode) => mode switch
     {
-        OperatorUiMode.Normal => "обычный",
-        OperatorUiMode.Manual => "ручной",
-        OperatorUiMode.Diagnostic => "диагностический",
-        _ => "обычный",
+        OperatorUiMode.Normal => "обычном",
+        OperatorUiMode.Manual => "ручном",
+        OperatorUiMode.Diagnostic => "диагностическом",
+        _ => "обычном",
     };
 
     /// <summary>Как перейти в требуемый режим.</summary>

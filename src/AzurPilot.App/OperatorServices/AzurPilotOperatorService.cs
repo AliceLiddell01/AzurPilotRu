@@ -505,9 +505,17 @@ public sealed class AzurPilotOperatorService
             return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(preparation.Failure! with
             {
                 Message = preparation.Failure!.Message + " Игра не запускалась. "
-                    + (preparation.PostflightMuMuState == MuMuLifecycleState.Running
-                        ? "Новое наблюдение: MuMu продолжает работать."
-                        : "После отказа состояние MuMu не подтверждено как остановленное."),
+                    + (preparation.PostflightMuMuState switch
+                    {
+                        MuMuLifecycleState.Running => "Новое наблюдение: MuMu продолжает работать.",
+                        MuMuLifecycleState.Stopped => "Новое наблюдение: MuMu остановлен.",
+                        MuMuLifecycleState.Unknown when !preparation.MuMuMayRemainRunning =>
+                            "MuMu этим действием не менялся.",
+                        MuMuLifecycleState.Unknown => "Новое наблюдение не доказало состояние MuMu.",
+                        null when !preparation.MuMuMayRemainRunning => "MuMu этим действием не менялся.",
+                        null => "После отказа состояние MuMu не доказано наблюдением.",
+                        _ => "После отказа состояние MuMu не доказано наблюдением.",
+                    }),
             });
         }
 

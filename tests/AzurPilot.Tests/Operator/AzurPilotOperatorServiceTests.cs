@@ -67,8 +67,33 @@ public sealed class AzurPilotOperatorServiceTests
 
         Assert.True(result.IsFailure);
         Assert.Equal(ApplicationFailure.MuMuStateUnproven, result.FailureInfo!.Code);
+        Assert.Contains("MuMu этим действием не менялся", result.FailureInfo.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("подтверждено как остановленное", result.FailureInfo.Message, StringComparison.Ordinal);
         Assert.Empty(fixture.MuMuHost.MutationRequests);
         Assert.Empty(fixture.Runner.Requests);
+    }
+
+    [Theory(DisplayName = "Ошибка запуска игры сообщает фактически наблюдённое postflight состояние MuMu")]
+    [InlineData(MuMuLifecycleState.Stopped, "Новое наблюдение: MuMu остановлен.")]
+    [InlineData(MuMuLifecycleState.Unknown, "Новое наблюдение не доказало состояние MuMu.")]
+    public async Task GameStartReportsPostflightStateWhenPreparationFails(
+        MuMuLifecycleState postflightState,
+        string expectedPostflightMessage)
+    {
+        MuMuInstanceId selected = MuMuInstanceId.FromIndex("7");
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        fixture.MuMuHost.ObservationHandler = _ => MuMuLifecycleTestContext.Observed(
+            fixture.MuMuHost.ObservationCount == 1 ? MuMuLifecycleState.Running : postflightState);
+        fixture.Runner.EnqueueOutcome(0, "Android Debug Bridge version 1.0.41\nVersion 35.0.2-test\n");
+        fixture.Runner.EnqueueOutcome(0, InstanceResponse(selected, new AndroidEndpoint("127.0.0.1", 20312)));
+        fixture.Runner.EnqueueOutcome(0, "offline\n");
+
+        ApplicationResult<AzurLaneGameLifecycleOutcome> result = await fixture.Service.StartAzurLaneAsync(
+            selected, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains(expectedPostflightMessage, result.FailureInfo!.Message, StringComparison.Ordinal);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
     }
 
     [Fact(DisplayName = "Подготовка Android и запуск игры сохраняют общий correlation identifier")]

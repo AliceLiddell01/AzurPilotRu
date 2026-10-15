@@ -11,6 +11,13 @@ namespace AzurPilot.Tests.OperatorUi;
 [Trait("Category", "Operator")]
 public sealed class OperatorUiActionCatalogTests
 {
+    [Theory(DisplayName = "Сообщение о недоступном действии использует предложный падеж")]
+    [InlineData(OperatorUiMode.Normal, "обычном")]
+    [InlineData(OperatorUiMode.Manual, "ручном")]
+    [InlineData(OperatorUiMode.Diagnostic, "диагностическом")]
+    public void ModePresentationUsesPrepositionalCase(OperatorUiMode mode, string expected)
+        => Assert.Equal(expected, OperatorUiModePresentation.PrepositionalLabel(mode));
+
     [Theory(DisplayName = "Полная техническая команда передаётся из палитры в dispatch, slash и префикс остаются меню")]
     [InlineData("/screenshot", true)]
     [InlineData("/android", true)]
