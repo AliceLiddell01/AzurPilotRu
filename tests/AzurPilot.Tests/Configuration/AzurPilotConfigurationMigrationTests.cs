@@ -79,7 +79,7 @@ public sealed class AzurPilotConfigurationMigrationTests
         // Временных файлов записи не осталось: атомарная запись переносит документ на место.
         Assert.DoesNotContain(
             directory.FileNames(),
-            name => name.EndsWith(".tmp", StringComparison.Ordinal));
+            name => name.Contains(".tmp.", StringComparison.Ordinal));
     }
 
     [Fact(DisplayName = "Миграция legacy JSON v1 дополняет документ значениями defaults новых секций")]

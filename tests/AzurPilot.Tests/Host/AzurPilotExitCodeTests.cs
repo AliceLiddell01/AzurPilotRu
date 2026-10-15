@@ -109,6 +109,8 @@ public sealed class AzurPilotExitCodeTests
         Assert.Equal(26, AzurPilotExitCode.NativeFrameAnalysisFailed);
         Assert.Equal(27, AzurPilotExitCode.NativeFrameInvalid);
         Assert.Equal(28, AzurPilotExitCode.MuMuStateUnproven);
+        Assert.Equal(29, AzurPilotExitCode.InvalidArgument);
+        Assert.Equal(30, AzurPilotExitCode.LogViewerUnavailable);
     }
 
     [Fact(DisplayName = "Каждый код отказа capability имеет проекцию, а не общий internal_error")]

@@ -1187,6 +1187,13 @@ public sealed class AzurPilotOperatorUi : IDisposable
             : [(confirmation, false)];
     }
 
+    internal static bool ShouldRetainPendingConfirmation(
+        string? targetFailureCode,
+        bool inventoryReturned,
+        int instanceCount)
+        => targetFailureCode == ApplicationFailure.MuMuInstanceAmbiguous
+            || inventoryReturned && instanceCount > 0;
+
     private void ShowInstances()
     {
         _paletteMode = PaletteMode.Instances;
@@ -1339,11 +1346,20 @@ public sealed class AzurPilotOperatorUi : IDisposable
                 return;
             }
 
-            if (_controller.LastOperationFailure?.Code == ApplicationFailure.MuMuInstanceAmbiguous)
+            if (ShouldRetainPendingConfirmation(
+                _controller.LastOperationFailure?.Code,
+                inventoryReturned: false,
+                instanceCount: 0))
             {
                 // Неоднозначный target: выбор точного ID — часть того же пользовательского действия,
                 // а старт остаётся запрещённым до однозначного выбора.
                 StartOperation(OperatorUiAction.Instances);
+            }
+            else
+            {
+                // Остальной отказ завершает исходное действие: старое подтверждение не переносится
+                // на следующий пользовательский выбор экземпляра.
+                _pendingConfirmation = null;
             }
 
             return;
@@ -1352,6 +1368,19 @@ public sealed class AzurPilotOperatorUi : IDisposable
         if (inventoryChanged)
         {
             _instances = _controller.Inventory!.Instances;
+        }
+
+        if (_pendingConfirmation is not null
+            && !ShouldRetainPendingConfirmation(
+                targetFailureCode: null,
+                inventoryReturned: inventoryChanged,
+                instanceCount: _instances.Count))
+        {
+            _pendingConfirmation = null;
+        }
+
+        if (inventoryChanged)
+        {
             if (_instances.Count != 0 && !_exitRequested
                 && (_mode != OperatorUiMode.Normal || _pendingConfirmation is not null || _saveChosenTarget))
             {

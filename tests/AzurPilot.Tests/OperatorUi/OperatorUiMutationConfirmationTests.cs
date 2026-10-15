@@ -1,4 +1,5 @@
 using AzurPilot.App.OperatorUi;
+using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using Xunit;
 
@@ -36,5 +37,30 @@ public sealed class OperatorUiMutationConfirmationTests
                 includeSaveChoice: false);
 
         Assert.Equal([("Подтвердить для mumu:7", false)], choices);
+    }
+
+    [Fact(DisplayName = "Отложенное подтверждение живёт только до разрешения target и выбора экземпляра")]
+    public void PendingConfirmationEndsWhenTargetOrInventoryIsUnavailable()
+    {
+        Assert.True(AzurPilotOperatorUi.ShouldRetainPendingConfirmation(
+            ApplicationFailure.MuMuInstanceAmbiguous,
+            inventoryReturned: false,
+            instanceCount: 0));
+        Assert.False(AzurPilotOperatorUi.ShouldRetainPendingConfirmation(
+            ApplicationFailure.MuMuInstanceNotFound,
+            inventoryReturned: false,
+            instanceCount: 0));
+        Assert.False(AzurPilotOperatorUi.ShouldRetainPendingConfirmation(
+            targetFailureCode: null,
+            inventoryReturned: false,
+            instanceCount: 2));
+        Assert.False(AzurPilotOperatorUi.ShouldRetainPendingConfirmation(
+            targetFailureCode: null,
+            inventoryReturned: true,
+            instanceCount: 0));
+        Assert.True(AzurPilotOperatorUi.ShouldRetainPendingConfirmation(
+            targetFailureCode: null,
+            inventoryReturned: true,
+            instanceCount: 1));
     }
 }

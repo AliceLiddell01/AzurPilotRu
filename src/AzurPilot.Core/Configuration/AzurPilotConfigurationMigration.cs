@@ -16,9 +16,10 @@ namespace AzurPilot.Core.Configuration;
 /// </para>
 /// <list type="number">
 /// <item>legacy JSON читается прежним строгим контрактом своей версии — невалидный файл не мигрируется;</item>
-/// <item>канонический YAML записывается атомарно: сначала во временный файл в том же каталоге, затем
-/// <c>File.Move</c> без замены существующего файла, поэтому чужой YAML не перезаписывается;</item>
-/// <item>записанный YAML повторно читается загрузчиком и сверяется с ожидаемым snapshot;</item>
+/// <item>кандидат YAML записывается во временный файл в том же каталоге, читается загрузчиком и
+/// сверяется с ожидаемой конфигурацией до появления канонического имени;</item>
+/// <item>только проверенный кандидат атомарно переносится на канонический путь через <c>File.Move</c>
+/// без замены существующего файла, поэтому чужой YAML не перезаписывается;</item>
 /// <item>только после успешной проверки legacy-файл перемещается в резервную копию
 /// (<c>config.json.bak-&lt;UTC timestamp&gt;</c>): перемещение и есть backup, отдельного копирования нет;</item>
 /// <item>любая неудача на шагах записи, проверки или перемещения возвращает состояние «существует только
@@ -153,28 +154,15 @@ public static class AzurPilotConfigurationMigration
 
         AzurPilotConfiguration targetConfiguration = configuration ?? source.Configuration;
         string document = AzurPilotConfigurationYamlWriter.Write(targetConfiguration);
-        if (!TryWriteAtomically(yamlPath, document, out string? writeError))
+        if (!TryWriteAtomically(
+            yamlPath,
+            document,
+            targetConfiguration,
+            out AzurPilotConfigurationSnapshot? verified,
+            out string? writeError))
         {
             return Failure(
                 $"Не удалось записать канонический YAML «{yamlPath}»: {writeError}",
-                yamlPath);
-        }
-
-        ApplicationResult<AzurPilotConfigurationSnapshot> verified =
-            AzurPilotConfigurationLoader.Load(yamlPath);
-        bool confirmed = verified.IsSuccess
-            && verified.Value!.SourceFormat == AzurPilotConfigurationFormat.Yaml
-            && verified.Value!.Configuration == targetConfiguration;
-
-        if (!confirmed)
-        {
-            // Записанный документ не подтверждён: он удаляется, чтобы runtime-состояние вернулось к
-            // «существует только legacy JSON». Legacy-файл миграция не изменяла.
-            TryDelete(yamlPath);
-            return Failure(
-                $"Записанный канонический YAML «{yamlPath}» не подтверждён повторным чтением: "
-                + "загрузчик не воспроизвёл ожидаемую конфигурацию. Файл удалён, legacy-конфигурация не "
-                + "изменена.",
                 yamlPath);
         }
 
@@ -198,7 +186,7 @@ public static class AzurPilotConfigurationMigration
         return ApplicationResult<AzurPilotConfigurationMigrationResult>.Success(
             new AzurPilotConfigurationMigrationResult
             {
-                Snapshot = verified.Value!,
+                Snapshot = verified!.WithFilePathAfterMove(yamlPath),
                 BackupFilePath = backupPath,
             });
     }
@@ -256,18 +244,27 @@ public static class AzurPilotConfigurationMigration
         return candidate;
     }
 
-    /// <summary>Атомарно записывает канонический YAML-документ.</summary>
+    /// <summary>Проверяет временный YAML и только затем атомарно публикует его под каноническим именем.</summary>
     /// <param name="yamlPath">Абсолютный путь целевого файла.</param>
     /// <param name="document">Текст канонического документа.</param>
+    /// <param name="expected">Конфигурация, которую обязан вернуть загрузчик.</param>
+    /// <param name="snapshot">Провалидированный snapshot, привязанный к временному файлу.</param>
     /// <param name="error">Сообщение о причине неудачи записи.</param>
-    /// <returns><see langword="true"/>, если документ записан.</returns>
+    /// <returns><see langword="true"/>, если проверенный документ перенесён на целевой путь.</returns>
     /// <remarks>
-    /// Документ сначала пишется во временный файл в том же каталоге, а затем переносится на место
-    /// целевого имени без замены чужого файла. Читатель не видит частично записанный документ, а каталог создаётся при
-    /// необходимости. Временный файл удаляется при любой неудаче.
+    /// Документ сначала пишется во временный файл с расширением <c>.yaml</c> в том же каталоге и
+    /// повторно читается loader-ом. Только совпавшая конфигурация атомарно переносится на целевое имя
+    /// без замены чужого файла. Каталог создаётся при необходимости; временный файл удаляется при любой
+    /// неудаче.
     /// </remarks>
-    private static bool TryWriteAtomically(string yamlPath, string document, out string? error)
+    private static bool TryWriteAtomically(
+        string yamlPath,
+        string document,
+        AzurPilotConfiguration expected,
+        out AzurPilotConfigurationSnapshot? snapshot,
+        out string? error)
     {
+        snapshot = null;
         error = null;
 
         string? directory = Path.GetDirectoryName(yamlPath);
@@ -282,13 +279,25 @@ public static class AzurPilotConfigurationMigration
             Path.GetFileName(yamlPath)
                 + "."
                 + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)
-                + ".tmp");
+                + ".tmp.yaml");
 
         try
         {
             _ = Directory.CreateDirectory(directory);
             File.WriteAllText(tempPath, document, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            ApplicationResult<AzurPilotConfigurationSnapshot> verified =
+                AzurPilotConfigurationLoader.Load(tempPath);
+            if (verified.IsFailure
+                || verified.Value!.SourceFormat != AzurPilotConfigurationFormat.Yaml
+                || verified.Value!.Configuration != expected)
+            {
+                error = "временный YAML не подтверждён повторным чтением";
+                TryDelete(tempPath);
+                return false;
+            }
+
             File.Move(tempPath, yamlPath, overwrite: false);
+            snapshot = verified.Value!;
             return true;
         }
         catch (Exception exception) when (IsFileFailure(exception))

@@ -6,9 +6,9 @@ namespace AzurPilot.Core.Configuration;
 /// <remarks>
 /// <para>
 /// Snapshot создаётся один раз при загрузке и не обновляется: file watcher и reloadOnChange
-/// отсутствуют, поэтому изменение файла на диске не влияет на уже полученный snapshot. Создавать
-/// snapshot вручную нельзя: единственный путь его получить — успешная загрузка через
-/// <see cref="AzurPilotConfigurationLoader"/>, то есть snapshot всегда провалидирован.
+/// отсутствуют, поэтому изменение файла на диске не влияет на уже полученный snapshot. Snapshot
+/// создаётся только после успешной загрузки через <see cref="AzurPilotConfigurationLoader"/>. После
+/// атомарного переноса уже проверенного файла миграция может обновить в нём только путь к новому имени.
 /// </para>
 /// <para>
 /// Версия схемы, объявленная в источнике, и версия эффективной схемы различаются: legacy-документ JSON
@@ -86,4 +86,18 @@ public sealed class AzurPilotConfigurationSnapshot
         AzurPilotConfiguration configuration,
         int sourceSchemaVersion)
         => new(configuration, AzurPilotConfigurationSource.File, sourceFormat, filePath, sourceSchemaVersion);
+
+    /// <summary>Обновляет путь провалидированного snapshot после атомарного переноса файла.</summary>
+    /// <param name="filePath">Новое расположение того же файла.</param>
+    /// <returns>Snapshot с прежними проверенными данными и новым путём.</returns>
+    internal AzurPilotConfigurationSnapshot WithFilePathAfterMove(string filePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+        if (Source != AzurPilotConfigurationSource.File)
+        {
+            throw new InvalidOperationException("Путь можно обновить только у snapshot файловой конфигурации.");
+        }
+
+        return new(Configuration, Source, SourceFormat, filePath, SourceSchemaVersion);
+    }
 }

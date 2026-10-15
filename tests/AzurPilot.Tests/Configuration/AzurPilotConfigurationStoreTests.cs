@@ -113,6 +113,9 @@ public sealed class AzurPilotConfigurationStoreTests
         Assert.Equal(json, File.ReadAllText(directory.LegacyJsonConfigurationFilePath));
         Assert.False(File.Exists(directory.YamlConfigurationFilePath));
         Assert.Empty(directory.BackupFilePaths());
+        Assert.DoesNotContain(
+            directory.FileNames(),
+            name => name.Contains(".tmp.", StringComparison.Ordinal));
     }
 
     [Fact(DisplayName = "Ошибка переноса legacy JSON отменяет создание YAML и сохраняет исходник")]
