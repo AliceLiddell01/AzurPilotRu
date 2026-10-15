@@ -63,8 +63,8 @@ public sealed class OperatorUiSessionTests
     public void EnvironmentPreparationRequiresConfirmationForExactTarget()
     {
         OperatorUiCommand command = OperatorUiCommand.For(OperatorUiAction.EnvironmentPrepare);
-        Assert.Equal("/environment-prepare", command.Command);
-        Assert.Contains("без запуска игры", command.Title);
+        Assert.Equal("/environment-start", command.Command);
+        Assert.Contains("Запустить окружение", command.Title);
         Assert.True(command.RequiresConfirmation);
         Assert.True(command.RequiresInstance);
         Assert.True(command.IsOperation);
@@ -143,27 +143,22 @@ public sealed class OperatorUiSessionTests
         Assert.Equal(expectedY, OperatorUiScrollMath.ClampViewportY(requestedY, contentRows, viewportRows));
     }
 
-    [Fact(DisplayName = "Wheel маршрутизируется к видимой панели под указателем")]
+    [Fact(DisplayName = "Wheel маршрутизируется к видимой панели истории под указателем")]
     public void MouseWheelRoutesToVisibleScrollablePaneUnderPointer()
     {
         using View root = new();
-        View messages = new();
-        View logs = new();
+        View history = new();
         View historyLabel = new();
-        View logLabel = new();
         View palette = new();
-        _ = root.Add(messages);
-        _ = root.Add(logs);
+        _ = root.Add(history);
         _ = root.Add(palette);
-        _ = messages.Add(historyLabel);
-        _ = logs.Add(logLabel);
+        _ = history.Add(historyLabel);
 
-        Assert.Same(messages, AzurPilotOperatorUi.FindScrollablePane(historyLabel, messages, logs));
-        Assert.Same(logs, AzurPilotOperatorUi.FindScrollablePane(logLabel, messages, logs));
-        Assert.Null(AzurPilotOperatorUi.FindScrollablePane(palette, messages, logs));
+        Assert.Same(history, AzurPilotOperatorUi.FindScrollablePane(historyLabel, history));
+        Assert.Null(AzurPilotOperatorUi.FindScrollablePane(palette, history));
 
-        logs.Visible = false;
-        Assert.Null(AzurPilotOperatorUi.FindScrollablePane(logLabel, messages, logs));
+        history.Visible = false;
+        Assert.Null(AzurPilotOperatorUi.FindScrollablePane(historyLabel, history));
     }
 
     [Theory(DisplayName = "Footer помещает приоритетные клавиши и помощь в доступную ширину")]

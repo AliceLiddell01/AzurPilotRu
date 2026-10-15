@@ -383,7 +383,7 @@ public sealed class AzurPilotMuMuDiagnosticsTests
                 Failure(ApplicationFailure.MuMuInstallationNotFound)),
         };
         AzurPilotConfigurationDiagnostics legacy =
-            Capture(LegacyConfiguration, legacyHost).Configuration;
+            CaptureLegacyJson(LegacyConfiguration, legacyHost).Configuration;
 
         Assert.Equal(AzurPilotConfigurationSource.File, legacy.Source);
         Assert.Equal(LegacySchemaVersion, legacy.SourceSchemaVersion);
@@ -412,16 +412,39 @@ public sealed class AzurPilotMuMuDiagnosticsTests
         Assert.DoesNotContain("\"schemaVersion\"", projection, StringComparison.Ordinal);
     }
 
-    /// <summary>Собирает диагностический snapshot на реально построенном host-е.</summary>
-    /// <param name="configurationDocument">Документ пользовательской конфигурации.</param>
+    /// <summary>Собирает диагностический snapshot на реально построенном host-е из канонического YAML.</summary>
+    /// <param name="configurationDocument">Документ пользовательской конфигурации схемы v3.</param>
     /// <param name="muMuHost">Управляемая host-side граница MuMu.</param>
     /// <returns>Собранный диагностический snapshot.</returns>
     private static AzurPilotDiagnosticReport Capture(string configurationDocument, IMuMuHost muMuHost)
+        => CaptureCore(
+            directory => directory.WriteYamlConfiguration(configurationDocument),
+            directory => directory.YamlConfigurationFilePath,
+            muMuHost);
+
+    /// <summary>Собирает диагностический snapshot из legacy JSON-документа.</summary>
+    /// <param name="configurationDocument">Legacy JSON-документ схемы v1 или v2.</param>
+    /// <param name="muMuHost">Управляемая host-side граница MuMu.</param>
+    /// <returns>Собранный диагностический snapshot.</returns>
+    /// <remarks>
+    /// Legacy-документ читается своим строгим контрактом и нормализуется к текущей схеме в памяти: на
+    /// диск ничего не переписывается.
+    /// </remarks>
+    private static AzurPilotDiagnosticReport CaptureLegacyJson(string configurationDocument, IMuMuHost muMuHost)
+        => CaptureCore(
+            directory => directory.WriteConfiguration(configurationDocument),
+            directory => directory.ConfigurationFilePath,
+            muMuHost);
+
+    private static AzurPilotDiagnosticReport CaptureCore(
+        Func<TemporaryConfigurationDirectory, string> write,
+        Func<TemporaryConfigurationDirectory, string> path,
+        IMuMuHost muMuHost)
     {
         using TemporaryConfigurationDirectory directory = new();
-        _ = directory.WriteConfiguration(configurationDocument);
+        _ = write(directory);
         ApplicationResult<AzurPilotConfigurationSnapshot> configuration =
-            AzurPilotConfigurationLoader.Load(directory.ConfigurationFilePath);
+            AzurPilotConfigurationLoader.Load(path(directory));
         Assert.True(configuration.IsSuccess, configuration.ToString());
 
         HostApplicationBuilder builder = AzurPilotHost.CreateBuilder(configuration);
@@ -453,23 +476,24 @@ public sealed class AzurPilotMuMuDiagnosticsTests
     private static ApplicationFailure Failure(string code)
         => new() { Code = code, Message = "Ожидаемый отказ MuMu-диагностики." };
 
-    /// <summary>Документ текущей схемы v2 с заданным значением <c>mumu.instance</c>.</summary>
+    /// <summary>Канонический YAML текущей схемы с заданным значением <c>mumu.instance</c>.</summary>
     /// <param name="instance">Значение выбора экземпляра.</param>
-    /// <returns>Документ конфигурации схемы v2.</returns>
+    /// <returns>Документ конфигурации текущей схемы.</returns>
     private static string CurrentSchemaConfiguration(string instance) => $$"""
-        {
-          "schemaVersion": {{AzurPilotConfiguration.CurrentSchemaVersion.ToString(CultureInfo.InvariantCulture)}},
-          "diagnostics": {
-            "minimumLevel": "Information"
-          },
-          "mumu": {
-            "instance": "{{instance}}"
-          }
-        }
+        schemaVersion: {{AzurPilotConfiguration.CurrentSchemaVersion.ToString(CultureInfo.InvariantCulture)}}
+        ui:
+          mode: normal
+        mumu:
+          instance: "{{instance}}"
+        diagnostics:
+          minimumLevel: Information
+        logging:
+          viewer:
+            enabled: false
         """;
 
     /// <summary>
-    /// Legacy-документ схемы v1: он нормализуется к v2 в памяти, и на диск ничего не пишется.
+    /// Legacy-документ схемы v1: он нормализуется к текущей схеме в памяти, и на диск ничего не пишется.
     /// </summary>
     /// <remarks>
     /// Номер версии в документе — часть legacy-контракта v1, а не значение, которым владеет этот файл,

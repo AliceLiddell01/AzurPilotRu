@@ -21,6 +21,7 @@
     <!-- Версия пакета — владелец Directory.Packages.props. -->
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Terminal.Gui" />
+    <PackageReference Include="Spectre.Console" />
   </ItemGroup>
 
 </Project>

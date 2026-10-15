@@ -271,4 +271,20 @@ internal static partial class AzurPilotLog
         string correlationId,
         string failureCode,
         string failureMessage);
+
+    /// <summary>Отдельная лог-консоль не была открыта: причина остаётся записываемым фактом.</summary>
+    /// <param name="logger">Логгер host-а.</param>
+    /// <param name="correlationId">Correlation identifier startup.</param>
+    /// <param name="failureCode">Стабильный application-level код отказа.</param>
+    /// <param name="failureMessage">Человекочитаемое описание отказа.</param>
+    [LoggerMessage(
+        EventId = 1014,
+        Level = LogLevel.Warning,
+        Message = "Отдельная лог-консоль не открыта: код {FailureCode}; сообщение: {FailureMessage}; "
+            + "операция {CorrelationId}")]
+    public static partial void LogViewerUnavailable(
+        this ILogger logger,
+        string correlationId,
+        string failureCode,
+        string failureMessage);
 }

@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -10,21 +9,17 @@ namespace AzurPilot.Core.Configuration;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Штатный <c>JsonStringEnumConverter</c> для этой схемы не подходит: он сравнивает имена без учёта
+/// Штатный <c>JsonStringEnumConverter</c> для legacy-схемы не подходит: он сравнивает имена без учёта
 /// регистра и принимает числовую форму значения, то есть пропускал бы документ, не соответствующий
-/// схеме v1. Здесь имя уровня сравнивается с ordinal-семантикой, а числовая форма отвергается.
+/// своей схеме. Здесь имя уровня сравнивается с ordinal-семантикой, а числовая форма отвергается.
 /// </para>
 /// <para>
-/// Перечень допустимых значений берётся из самого типа <see cref="LogLevel"/>: добавление уровня в
-/// logging stack не требует правок в Core, а вторая копия списка не появляется.
+/// Перечень допустимых значений не хранится здесь: его владелец — <see cref="LogLevelNames"/>, общий с
+/// строгим YAML-ридером, поэтому вторая копия списка не появляется.
 /// </para>
 /// </remarks>
 internal sealed class StrictLogLevelJsonConverter : JsonConverter<LogLevel>
 {
-    private static readonly string[] LevelNames = Enum.GetNames<LogLevel>();
-
-    private static readonly FrozenDictionary<string, LogLevel> LevelsByName = CreateLevelsByName();
-
     /// <summary>Читает имя уровня логирования из JSON-строки.</summary>
     /// <param name="reader">Читатель JSON, позиция которого указывает на значение.</param>
     /// <param name="typeToConvert">Тип значения; всегда <see cref="LogLevel"/>.</param>
@@ -43,10 +38,11 @@ internal sealed class StrictLogLevelJsonConverter : JsonConverter<LogLevel>
         }
 
         string text = reader.GetString()!;
-        if (!LevelsByName.TryGetValue(text, out LogLevel level))
+        if (!LogLevelNames.TryParse(text, out LogLevel level))
         {
             throw new JsonException(
-                $"Значение minimumLevel «{text}» неизвестно; допустимы имена: {string.Join(", ", LevelNames)}.");
+                $"Значение minimumLevel «{text}» неизвестно; допустимы имена: "
+                + $"{string.Join(", ", LogLevelNames.All)}.");
         }
 
         return level;
@@ -60,16 +56,5 @@ internal sealed class StrictLogLevelJsonConverter : JsonConverter<LogLevel>
     {
         ArgumentNullException.ThrowIfNull(writer);
         writer.WriteStringValue(value.ToString());
-    }
-
-    private static FrozenDictionary<string, LogLevel> CreateLevelsByName()
-    {
-        Dictionary<string, LogLevel> levels = new(StringComparer.Ordinal);
-        foreach (string name in LevelNames)
-        {
-            levels.Add(name, Enum.Parse<LogLevel>(name));
-        }
-
-        return levels.ToFrozenDictionary(StringComparer.Ordinal);
     }
 }

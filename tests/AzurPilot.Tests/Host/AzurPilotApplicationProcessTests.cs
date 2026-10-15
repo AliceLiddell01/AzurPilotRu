@@ -129,22 +129,51 @@ public sealed class AzurPilotApplicationProcessTests
         Assert.All(applicationLogs, log => Assert.Equal(traceIdentifier, log.CorrelationId));
     }
 
-    [Fact(DisplayName = "Продукт не разбирает аргументы запуска: переданный путь конфигурации игнорируется")]
-    public void ApplicationIgnoresCommandLineArguments()
+    [Fact(DisplayName = "Подмена пути конфигурации не поддерживается и отклоняется как неизвестный аргумент")]
+    public void UnsupportedConfigurationPathArgumentIsRejected()
     {
         ApplicationHostProcess application = ApplicationHostProcess.CreateStaged();
         using TemporaryConfigurationDirectory directory = new();
         string configurationPath = directory.WriteConfiguration(InvalidConfiguration);
 
+        ApplicationHostRun run = application.Run("--config", configurationPath);
+
+        // Продуктового параметра подмены пути конфигурации нет: неизвестный аргумент — это отказ запуска,
+        // а не молчаливое игнорирование, иначе опечатка была бы неотличима от явного выбора.
+        Assert.Equal(AzurPilotExitCode.InvalidArgument, run.ExitCode);
+        Assert.Contains("--config", run.StandardError, StringComparison.Ordinal);
+
+        // Файл по переданному пути не читается: его путь не появляется ни в одном потоке.
+        Assert.DoesNotContain(configurationPath, run.StandardOutput, StringComparison.Ordinal);
+        Assert.DoesNotContain(configurationPath, run.StandardError, StringComparison.Ordinal);
+    }
+
+    [Fact(DisplayName = "Неверный режим интерфейса отклоняет запуск вместо подстановки обычного режима")]
+    public void InvalidModeIsRejected()
+    {
+        ApplicationHostProcess application = ApplicationHostProcess.CreateStaged();
+
+        ApplicationHostRun run = application.Run("--mode", "bogus");
+
+        Assert.Equal(AzurPilotExitCode.InvalidArgument, run.ExitCode);
+        Assert.Contains("--mode", run.StandardError, StringComparison.Ordinal);
+        Assert.Contains("bogus", run.StandardError, StringComparison.Ordinal);
+        Assert.Contains("normal", run.StandardError, StringComparison.Ordinal);
+    }
+
+    [Fact(DisplayName = "Явный режим интерфейса не меняет контракт одноразовой диагностики")]
+    public void ExplicitModeKeepsOneShotDiagnosticsContract()
+    {
+        ApplicationHostProcess application = ApplicationHostProcess.CreateStaged();
+
         ApplicationHostRun plain = application.Run();
-        ApplicationHostRun withArguments = application.Run("--config", configurationPath);
+        ApplicationHostRun manual = application.Run("--mode", "manual");
 
-        // Аргументы не влияют ни на код выхода, ни на заявленный отказ: продуктового CLI нет.
-        Assert.Equal(plain.ExitCode, withArguments.ExitCode);
-        Assert.Equal(ReadFailureCodeOrNull(plain), ReadFailureCodeOrNull(withArguments));
-
-        // Файл по переданному пути не читается: его путь не появляется в человекочитаемом итоге.
-        Assert.DoesNotContain(configurationPath, withArguments.StandardOutput, StringComparison.Ordinal);
+        // При перенаправленных потоках режим не включает TUI: контракт одноразового пути сохраняется,
+        // ANSI-последовательностей в выводе нет ни в одном режиме.
+        Assert.Equal(plain.ExitCode, manual.ExitCode);
+        Assert.DoesNotContain('\u001b', manual.StandardOutput);
+        Assert.DoesNotContain('\u001b', manual.StandardError);
     }
 
     /// <summary>Возвращает код выхода, соответствующий заявленному application-level отказу.</summary>

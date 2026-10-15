@@ -1,6 +1,8 @@
 using System.Drawing;
 using System.Text;
 using AzurPilot.App.OperatorServices;
+using AzurPilot.Core.Configuration;
+using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using Microsoft.Extensions.Logging;
 using Terminal.Gui.App;
@@ -14,8 +16,15 @@ namespace AzurPilot.App.OperatorUi;
 
 /// <summary>Интерактивная операторская поверхность поверх существующих production use cases.</summary>
 /// <remarks>
+/// <para>
 /// UI владеет только presentation-состоянием. Task исполняется вне UI thread, а все изменения views
 /// применяются одним timer callback. Выход отменяет и дожидается текущей операции до disposal терминала.
+/// </para>
+/// <para>
+/// Встроенной области журнала нет ни в одном режиме: технический поток принадлежит отдельной консоли
+/// (<c>logging.viewer.enabled</c>), а на экране остаются краткие результаты и явно запрошенные детали.
+/// Поэтому геометрия главного экрана не резервирует высоту под лог.
+/// </para>
 /// </remarks>
 public sealed class AzurPilotOperatorUi : IDisposable
 {
@@ -24,6 +33,8 @@ public sealed class AzurPilotOperatorUi : IDisposable
     private const int MaximumRenderedRows = 2048;
     /// <summary>Заголовок записи, которой UI отмечает введённую оператором команду.</summary>
     private const string OperatorEchoTitle = "Оператор";
+    /// <summary>Символ prompt-а composer: отделяет ввод от истории и не встречается в тексте сообщений.</summary>
+    private const string ComposerPromptGlyph = "\u276f";
     /// <summary>Нейтральная схема: и текст, и фон наследуются от темы терминала.</summary>
     private static readonly Scheme NeutralScheme = new(new Terminal.Gui.Drawing.Attribute("None", "None", TextStyle.None));
     private Scheme _primaryScheme = NeutralScheme;
@@ -32,35 +43,42 @@ public sealed class AzurPilotOperatorUi : IDisposable
     private Scheme _warningScheme = NeutralScheme;
     private Scheme _errorScheme = NeutralScheme;
     private Scheme _selectionScheme = NeutralScheme;
+    private Scheme _accentScheme = NeutralScheme;
+    private Scheme _disabledScheme = NeutralScheme;
     private readonly OperatorUiController _controller;
     private readonly IOperatorUiLogSource _logSource;
     private readonly OperatorUiSession _session;
+    private readonly OperatorUiMode _mode;
     private readonly List<PaletteChoice> _choices = [];
     private IApplication? _application;
     private Runnable? _window;
-    private View? _messagesView;
-    private View? _logsView;
+    private View? _historyView;
     private View? _paletteView;
     private TextField? _composer;
+    private Label? _composerPrompt;
+    private Label? _composerRule;
     private Label? _header;
     private Label? _operation;
+    private Label? _historyHeading;
     private Label? _footer;
     private Label? _sizeNotice;
     private IReadOnlyList<AzurPilotOperatorMuMuInstance> _instances = [];
-    private AzurPilotOperatorLogEntry[] _lastLogEntries = [];
     private OperatorUiMessage? _detailsMessage;
     private AzurPilotOperatorLogEntry? _detailsLogEntry;
+    private OperatorUiMessage? _settingsMessage;
     private PaletteMode _paletteMode;
+    private OperatorUiCategory? _openCategory;
+    /// <summary>Действие, подтверждение которого ожидается после разрешения target.</summary>
+    private OperatorUiAction? _pendingConfirmation;
+    /// <summary>Ожидается завершение read-only разрешения точной identity целевого экземпляра.</summary>
+    private bool _awaitingTargetResolution;
+    private bool _saveChosenTarget;
     private int _choiceIndex;
     private int _messageRows;
-    private int _logRows;
     private int _messageWrapWidth;
-    private int _logWrapWidth;
     private Size _lastSize;
     private bool _messagesDirty = true;
-    private bool _showLogs = true;
     private bool _followMessages = true;
-    private bool _followLogs = true;
     private bool _exitRequested;
     private bool _suppressCompletion;
     private bool _hasRun;
@@ -70,7 +88,9 @@ public sealed class AzurPilotOperatorUi : IDisposable
     /// </summary>
     /// <remarks>
     /// Фон везде наследуется от терминала (Color.None), поэтому сплошных плашек и инверсных полос нет,
-    /// а явные цвета выбираются по полярности фона и удерживают контраст не ниже 4.5:1.
+    /// а явные цвета выбираются по полярности фона и удерживают контраст не ниже 4.5:1. Роли несут
+    /// семантику: нейтральный основной текст, приглушённое второстепенное, зелёный успех, жёлтый
+    /// внимание, красный отказ, акцент для выбора и активного ввода, приглушённый disabled.
     /// </remarks>
     /// <param name="darkBackground">Фон терминала тёмный.</param>
     private void BuildPalette(bool darkBackground)
@@ -80,12 +100,15 @@ public sealed class AzurPilotOperatorUi : IDisposable
         string success = darkBackground ? "#7FB069" : "#217A3C";
         string warning = darkBackground ? "#C19C00" : "#8A6100";
         string error = darkBackground ? "#E06C75" : "#B3261E";
+        string disabled = darkBackground ? "#6E6E6E" : "#8C8C8C";
         _primaryScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute("None", "None", TextStyle.None));
         _mutedScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(muted, "None", TextStyle.None));
         _successScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(success, "None", TextStyle.None));
         _warningScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(warning, "None", TextStyle.None));
         _errorScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(error, "None", TextStyle.None));
         _selectionScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(accent, "None", TextStyle.Bold));
+        _accentScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(accent, "None", TextStyle.None));
+        _disabledScheme = CalmScheme(new Terminal.Gui.Drawing.Attribute(disabled, "None", TextStyle.None));
     }
 
     /// <summary>
@@ -110,19 +133,30 @@ public sealed class AzurPilotOperatorUi : IDisposable
     /// <summary>Использует уже собранный startup snapshot и общий источник логов application host.</summary>
     /// <param name="service">Владелец production use cases.</param>
     /// <param name="initialDiagnostics">Диагностика текущего startup без повторной инициализации.</param>
-    /// <param name="logSource">Потокобезопасный bounded источник логов.</param>
+    /// <param name="logSource">Потокобезопасный bounded источник логов для явно запрошенных деталей.</param>
+    /// <param name="mode">Режим интерфейса: объём доступных действий.</param>
+    /// <param name="logViewerFailure">
+    /// Отказ открытия отдельной лог-консоли либо <see langword="null"/>. Отказ просмотра не является
+    /// отказом запуска: он показывается коротким сообщением.
+    /// </param>
     public AzurPilotOperatorUi(
         AzurPilotOperatorService service,
         AzurPilotDiagnosticReport initialDiagnostics,
-        IOperatorUiLogSource logSource)
+        IOperatorUiLogSource logSource,
+        OperatorUiMode mode = OperatorUiMode.Normal,
+        ApplicationFailure? logViewerFailure = null)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(initialDiagnostics);
         ArgumentNullException.ThrowIfNull(logSource);
-        _controller = new OperatorUiController(service, initialDiagnostics);
+        _mode = mode;
+        _controller = new OperatorUiController(service, initialDiagnostics, mode, logViewerFailure);
         _session = _controller.Session;
         _logSource = logSource;
     }
+
+    /// <summary>Текущий режим интерфейса.</summary>
+    internal OperatorUiMode Mode => _mode;
 
     /// <summary>Запускает одну интерактивную сессию на вызывающем thread.</summary>
     /// <param name="cancellationToken">Запрос graceful выхода от application host.</param>
@@ -149,8 +183,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         // Неразрешённый фон темы (Color.None) считаем тёмным: это исторический вид поверхности.
         BuildPalette(terminalBackground.A == 0 || terminalBackground.IsDarkColor());
         // Корневая поверхность без декоративной границы: содержимое занимает всю доступную площадь
-        // терминала, а второго названия приложения внутри TUI нет. Схема корня наследуется composer-ом,
-        // заголовком и footer, поэтому все роли заданы явно и не дают непрозрачных полос.
+        // терминала, а второго названия приложения внутри TUI нет.
         using Runnable window = new()
         {
             Width = Dim.Fill(),
@@ -159,19 +192,24 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _window = window;
         _header = new Label { Height = 1 };
         _operation = new Label { Height = 1 };
-        _messagesView = new View { CanFocus = false };
-        _logsView = new View { CanFocus = false };
+        _historyHeading = new Label { Height = 1 };
+        _historyView = new View { CanFocus = false };
+        _composerRule = new Label { Height = 1 };
+        _composerPrompt = new Label { Height = 1, Width = 2, Text = ComposerPromptGlyph };
         _composer = new TextField { Height = 1 };
         _footer = new Label { Height = 1 };
         _paletteView = new View { CanFocus = false, Visible = false };
         _sizeNotice = new Label { Visible = false };
-        window.Add(_header, _operation, _messagesView, _logsView, _composer, _footer, _paletteView, _sizeNotice);
+        window.Add(_header, _operation, _historyHeading, _historyView, _composerRule, _composerPrompt,
+            _composer, _footer, _paletteView, _sizeNotice);
         // Все роли заданы явно, иначе производные роли дают непрозрачные полосы на строке composer.
-        foreach (View calmView in new View[] { _header, _operation, _composer, _footer })
+        foreach (View calmView in new View[] { _header, _operation, _historyHeading, _composer, _footer })
         {
             _ = calmView.SetScheme(_primaryScheme);
         }
 
+        _ = _composerRule.SetScheme(_mutedScheme);
+        _ = _historyHeading.SetScheme(_mutedScheme);
         _composer.TextChanged += (_, _) => UpdateCommandPalette();
         application.Keyboard.KeyDown += (_, key) => HandleKey(key);
         application.Mouse.MouseEvent += (_, mouse) => HandleMouse(mouse);
@@ -195,6 +233,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _controller.Dispose();
         GC.SuppressFinalize(this);
     }
+
     private bool Tick(CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested && !_exitRequested)
@@ -205,6 +244,10 @@ public sealed class AzurPilotOperatorUi : IDisposable
         if (_controller.IsOperationCompleted)
         {
             CompleteOperation();
+            if (_paletteMode != PaletteMode.Hidden)
+            {
+                RenderPalette();
+            }
         }
 
         if (_exitRequested && !_session.IsOperationActive)
@@ -214,16 +257,33 @@ public sealed class AzurPilotOperatorUi : IDisposable
         }
 
         RefreshLayout();
-        RefreshLogs();
-        _messagesDirty |= _messageWrapWidth != _messagesView!.Viewport.Width;
+        _messagesDirty |= _messageWrapWidth != _historyView!.Viewport.Width;
         if (_messagesDirty)
         {
             RenderMessages();
         }
 
-        _header!.Text = $"Экземпляр: {_session.SelectedInstance?.ToString() ?? "не выбран"}  |  / — действия";
+        _header!.Text = BuildHeaderText();
         _operation!.Text = _controller.OperationText;
+        RefreshComposerFocus();
         return true;
+    }
+
+    /// <summary>Строка состояния: выбранный target, режим и подсказка вызова палитры.</summary>
+    private string BuildHeaderText()
+    {
+        string target = _session.SelectedInstance?.ToString() ?? "не выбран";
+        return $"Экземпляр: {target}  |  Режим: {OperatorUiModePresentation.Label(_mode)}  |  / — действия";
+    }
+
+    /// <summary>Отдельная контрастная область ввода: prompt и линия-разделитель отражают фокус.</summary>
+    private void RefreshComposerFocus()
+    {
+        bool focused = _composer!.HasFocus && _composer.Enabled;
+        // Отключённый composer (открыто подтверждение) отличается и от активного, и от неактивного.
+        Scheme scheme = !_composer.Enabled ? _disabledScheme : focused ? _accentScheme : _mutedScheme;
+        _ = _composerPrompt!.SetScheme(scheme);
+        _ = _composerRule!.SetScheme(scheme);
     }
 
     private void RefreshLayout()
@@ -241,12 +301,14 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _sizeNotice.Text = $"Увеличьте терминал минимум до {MinimumWidth}×{MinimumHeight}. Ctrl+C — выход.";
         _sizeNotice.Width = Math.Max(1, size.Width);
         _sizeNotice.Height = Math.Max(1, size.Height);
-        foreach (View view in new View[] { _header!, _operation!, _messagesView!, _composer!, _footer! })
+        foreach (View view in new View[]
+        {
+            _header!, _operation!, _historyHeading!, _historyView!, _composerRule!, _composerPrompt!, _composer!, _footer!,
+        })
         {
             view.Visible = !small;
         }
 
-        _logsView!.Visible = !small && _showLogs;
         _paletteView!.Visible = !small && _paletteMode != PaletteMode.Hidden;
         if (small)
         {
@@ -255,26 +317,39 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
         _header!.X = 0; _header.Y = 0; _header.Width = size.Width;
         _operation!.X = 0; _operation.Y = 1; _operation.Width = size.Width;
-        _composer!.X = 0; _composer.Y = size.Height - 2; _composer.Width = size.Width;
+        // Sticky-заголовок панели: он не участвует в прокрутке и остаётся видимым при длинной истории.
+        _historyHeading!.X = 0; _historyHeading.Y = 2; _historyHeading.Width = size.Width;
+        _historyHeading.Text = BuildHistoryHeading(size.Width);
+        // Встроенной области журнала нет: история занимает всю высоту до области ввода.
+        int composerRuleY = Math.Max(3, size.Height - 3);
+        _historyView!.X = 0; _historyView.Y = 3;
+        _historyView.Width = size.Width;
+        _historyView.Height = Math.Max(1, composerRuleY - 3);
+        _composerRule!.X = 0; _composerRule.Y = composerRuleY; _composerRule.Width = size.Width;
+        _composerRule.Text = new string('\u2500', Math.Max(1, size.Width));
+        _composerPrompt!.X = 0; _composerPrompt.Y = composerRuleY + 1;
+        _composer!.X = 2; _composer.Y = composerRuleY + 1; _composer.Width = Math.Max(1, size.Width - 2);
         _footer!.X = 0; _footer.Y = size.Height - 1; _footer.Width = size.Width;
         _footer.Text = BuildFooterText(size.Width);
-        int contentHeight = size.Height - 4;
-        int logHeight = _showLogs ? Math.Max(4, contentHeight * 2 / 5) : 0;
-        _messagesView!.X = 0; _messagesView.Y = 2;
-        _messagesView.Width = size.Width; _messagesView.Height = contentHeight - logHeight;
-        _logsView.X = 0;
-        _logsView.Y = 2 + contentHeight - logHeight;
-        _logsView.Width = size.Width;
-        _logsView.Height = Math.Max(1, logHeight);
-        _lastLogEntries = [];
         _messagesDirty = true;
         RenderPalette();
     }
 
+    private string BuildHistoryHeading(int width)
+    {
+        string hint = _mode == OperatorUiMode.Diagnostic
+            ? " · /details — технические данные"
+            : string.Empty;
+        string heading = "\u2500\u2500 Сообщения и результаты" + hint + " ";
+        int used = heading.EnumerateRunes().Sum(static rune => Math.Max(0, rune.GetColumns()));
+        int tail = Math.Max(0, width - used);
+        return heading + new string('\u2500', tail);
+    }
+
     internal static string BuildFooterText(int width) => width switch
     {
-        >= 94 => "↑↓ история · PgUp/PgDn лента · Ctrl+End конец · F3 логи · F4 отмена · Ctrl+C выход · F2 помощь",
-        >= 70 => "PgUp/PgDn лента · F3 логи · F4 отмена · Ctrl+C выход · F2 помощь",
+        >= 94 => "↑↓ история · PgUp/PgDn · Ctrl+End конец · F4 отмена · Ctrl+C выход · F2 действия",
+        >= 70 => "PgUp/PgDn · F4 отмена · Ctrl+C выход · F2 действия",
         _ => "F4 отмена · Ctrl+C выход · F2 действия",
     };
 
@@ -311,14 +386,19 @@ public sealed class AzurPilotOperatorUi : IDisposable
                 key,
                 _composer!.Text,
                 _paletteMode,
-                _detailsMessage is not null || _detailsLogEntry is not null,
+                _detailsMessage is not null || _detailsLogEntry is not null || _settingsMessage is not null,
                 _session);
             if (transition.Effect == ComposerKeyEffect.ClearDetails)
             {
                 _detailsMessage = null;
                 _detailsLogEntry = null;
+                _settingsMessage = null;
                 _messagesDirty = true;
                 _ = _composer.SetFocus();
+            }
+            else if (transition.Effect == ComposerKeyEffect.BackToCommands)
+            {
+                ShowCommandLevel();
             }
             else if (transition.Effect == ComposerKeyEffect.OpenPalette)
             {
@@ -343,19 +423,9 @@ public sealed class AzurPilotOperatorUi : IDisposable
             key.Handled = true; return;
         }
 
-        if (key == Key.F3)
-        {
-            ToggleLogs(); key.Handled = true; return;
-        }
-
         if (key == Key.PageUp || key == Key.PageDown || key == Key.End.WithCtrl)
         {
             ScrollMessages(key); key.Handled = true; return;
-        }
-
-        if (key == Key.PageUp.WithAlt || key == Key.PageDown.WithAlt || key == Key.End.WithAlt)
-        {
-            ScrollLogs(key); key.Handled = true; return;
         }
 
         if (_paletteMode != PaletteMode.Hidden)
@@ -367,13 +437,21 @@ public sealed class AzurPilotOperatorUi : IDisposable
                 RenderPalette(); key.Handled = true; return;
             }
 
+            // Home/End перемещают по меню целиком: узкая палитра не должна делать последние пункты
+            // достижимыми только многократным нажатием стрелки.
+            if (key == Key.Home || key == Key.End)
+            {
+                _choiceIndex = key == Key.Home ? 0 : Math.Max(0, _choices.Count - 1);
+                RenderPalette(); key.Handled = true; return;
+            }
+
             if (key == Key.Tab || key == Key.Enter)
             {
                 AcceptChoice(key == Key.Tab); key.Handled = true; return;
             }
 
             // В подтверждении текст и paste не должны неявно выбирать положительный ответ.
-            if (_paletteMode is PaletteMode.Confirmation or PaletteMode.Instances)
+            if (_paletteMode is PaletteMode.Confirmation or PaletteMode.Instances or PaletteMode.Settings)
             {
                 key.Handled = true; return;
             }
@@ -407,7 +485,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
     private void UpdateCommandPalette()
     {
-        if (_suppressCompletion || _paletteMode is PaletteMode.Confirmation or PaletteMode.Instances)
+        if (_suppressCompletion || _paletteMode is PaletteMode.Confirmation or PaletteMode.Instances or PaletteMode.Settings)
         {
             return;
         }
@@ -424,37 +502,79 @@ public sealed class AzurPilotOperatorUi : IDisposable
             _ = OpenPalette(_session, _paletteMode, ComposerPaletteSource.Trigger, _composer.Text);
             OpenCommands();
         }
-        else if (_paletteMode == PaletteMode.Commands)
+        else if (_paletteMode is PaletteMode.Commands or PaletteMode.Category)
         {
             // Строка перестала быть запросом палитры: закрываем без восстановления черновика.
             ClosePalette(restoreDraft: false);
         }
     }
 
+    /// <summary>Открывает первый уровень палитры: основные действия и категории режима.</summary>
     private void OpenCommands()
     {
-        bool wasShowingDetails = _detailsMessage is not null || _detailsLogEntry is not null;
+        bool wasShowingDetails = _detailsMessage is not null || _detailsLogEntry is not null
+            || _settingsMessage is not null;
         _detailsMessage = null;
         _detailsLogEntry = null;
+        _settingsMessage = null;
         _messagesDirty |= wasShowingDetails;
         _session.CancelConfirmation();
         _composer!.Enabled = true;
         _paletteMode = PaletteMode.Commands;
+        _openCategory = null;
         _choices.Clear();
         string filter = _composer!.Text.Trim();
-        foreach (OperatorUiCommand command in OperatorUiCommand.All)
+        foreach (OperatorUiCommand command in OperatorUiCommand.PrimaryFor(_mode))
         {
-            if (filter.Length <= 1 || command.Command.Contains(filter, StringComparison.OrdinalIgnoreCase)
-                || command.Title.Contains(filter.TrimStart('/'), StringComparison.OrdinalIgnoreCase))
+            if (MatchesFilter(command, filter))
             {
-                string suffix = command.RequiresConfirmation ? " [подтверждение]" : string.Empty;
-                _choices.Add(new PaletteChoice(command.Command + " — " + command.Title + suffix, command.Action));
+                _choices.Add(new PaletteChoice(ChoiceTitle(command), command.Action));
+            }
+        }
+
+        foreach (OperatorUiCategoryDefinition category in OperatorUiCommand.CategoriesFor(_mode))
+        {
+            if (filter.Length <= 1 || OperatorUiCommand.InCategory(category.Category, _mode)
+                .Any(command => MatchesFilter(command, filter)))
+            {
+                _choices.Add(new PaletteChoice(category.Title + " \u25b8", Category: category.Category));
             }
         }
 
         _choiceIndex = 0;
         RenderPalette();
     }
+
+    /// <summary>Открывает второй уровень палитры: действия выбранной категории.</summary>
+    private void OpenCategory(OperatorUiCategory category)
+    {
+        _paletteMode = PaletteMode.Category;
+        _openCategory = category;
+        _composer!.Enabled = true;
+        _choices.Clear();
+        foreach (OperatorUiCommand command in OperatorUiCommand.InCategory(category, _mode))
+        {
+            _choices.Add(new PaletteChoice(ChoiceTitle(command), command.Action));
+        }
+
+        _choiceIndex = 0;
+        RenderPalette();
+    }
+
+    /// <summary>Возвращает палитру на первый уровень без потери черновика.</summary>
+    private void ShowCommandLevel()
+    {
+        OpenCommands();
+        _ = _composer!.SetFocus();
+    }
+
+    private static bool MatchesFilter(OperatorUiCommand command, string filter) =>
+        filter.Length <= 1
+        || command.Command.Contains(filter, StringComparison.OrdinalIgnoreCase)
+        || command.Title.Contains(filter.TrimStart('/'), StringComparison.OrdinalIgnoreCase);
+
+    private static string ChoiceTitle(OperatorUiCommand command) =>
+        command.Title + (command.RequiresConfirmation ? " [подтверждение]" : string.Empty);
 
     private void RenderPalette()
     {
@@ -475,21 +595,14 @@ public sealed class AzurPilotOperatorUi : IDisposable
                 .SelectMany(line => Wrap(line, Math.Max(1, _lastSize.Width - 2)))]
             : [];
         int desiredRows = 1 + confirmationLines.Length + _choices.Count;
+        int visibleBudget = Math.Max(4, _lastSize.Height - 6);
         int rows = _paletteMode == PaletteMode.Confirmation
-            ? Math.Min(Math.Min(Math.Max(4, _lastSize.Height - 4), 12), desiredRows)
-            : Math.Min(Math.Min(Math.Max(3, _lastSize.Height - 5), _choices.Count + 2), 10);
-        _paletteView.X = 0; _paletteView.Y = Math.Max(2, _lastSize.Height - 2 - rows);
+            ? Math.Min(Math.Min(visibleBudget, 12), desiredRows)
+            : Math.Min(Math.Min(visibleBudget, _choices.Count + 2), visibleBudget);
+        // Палитра заканчивается строкой выше линии composer-а: область ввода не перекрывается меню.
+        _paletteView.X = 0; _paletteView.Y = Math.Max(2, _lastSize.Height - 3 - rows);
         _paletteView.Width = Math.Max(1, _lastSize.Width); _paletteView.Height = rows;
-        string title = _paletteMode switch
-        {
-            PaletteMode.Hidden => string.Empty,
-            PaletteMode.Commands => "Действия · ↑↓ выбор · Tab дополнить · Enter выполнить · Esc закрыть",
-            PaletteMode.Instances => "Выберите exact MuMu ID · ↑↓ Enter · Esc отмена",
-            PaletteMode.Details => "Выберите результат или запись журнала для просмотра деталей · Esc закрыть",
-            PaletteMode.Confirmation => "Подтверждение · по умолчанию отмена",
-            _ => string.Empty,
-        };
-        _ = AddLine(_paletteView, 0, title).SetScheme(_mutedScheme);
+        _ = AddLine(_paletteView, 0, PaletteTitle()).SetScheme(_mutedScheme);
         int planRows = Math.Min(confirmationLines.Length, Math.Max(0, rows - 1 - _choices.Count));
         for (int index = 0; index < planRows; index++)
         {
@@ -502,10 +615,17 @@ public sealed class AzurPilotOperatorUi : IDisposable
             : Math.Max(0, _choiceIndex - (rows - 3));
         for (int index = first; index < Math.Min(_choices.Count, first + availableChoiceRows); index++)
         {
+            bool disabled = _choices[index].Action is OperatorUiAction action
+                && !OperatorUiCommand.For(action).CanExecute(_session.IsOperationActive);
             Label line = AddLine(_paletteView, index - first + 1,
-                (index == _choiceIndex ? "> " : "  ") + _choices[index].Title);
+                (index == _choiceIndex ? "> " : "  ") + _choices[index].Title
+                + (disabled ? " · занято" : string.Empty));
             line.Y = planRows + index - first + 1;
-            if (index == _choiceIndex)
+            if (disabled)
+            {
+                _ = line.SetScheme(_disabledScheme);
+            }
+            else if (index == _choiceIndex)
             {
                 _ = line.SetScheme(_selectionScheme);
             }
@@ -513,12 +633,58 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
         if (_choices.Count == 0)
         {
-            _ = AddLine(_paletteView, 1, "Нет подходящих команд. Esc — закрыть.");
+            _ = AddLine(_paletteView, 1, "Нет подходящих действий. Esc — закрыть.");
         }
     }
 
-    private static IReadOnlyList<string> ConfirmationPlan(OperatorUiConfirmation? confirmation)
+    private string PaletteTitle() => _paletteMode switch
     {
+        PaletteMode.Hidden => string.Empty,
+        PaletteMode.Commands => "Действия · ↑↓ выбор · Enter открыть · Esc закрыть",
+        PaletteMode.Category => OperatorUiCommand.Categories.First(category =>
+            category.Category == _openCategory).Title + " · ↑↓ выбор · Enter выполнить · Esc назад",
+        PaletteMode.Instances => "Выберите точный MuMu ID · ↑↓ Enter · Esc отмена",
+        PaletteMode.Settings => "Настройки следующего запуска · Enter сохранить · Esc закрыть",
+        PaletteMode.Details => "Выберите результат или запись журнала · Esc закрыть",
+        PaletteMode.Confirmation => "Подтверждение · по умолчанию отмена",
+        _ => string.Empty,
+    };
+
+    private IReadOnlyList<string> ConfirmationPlan(OperatorUiConfirmation? confirmation)
+    {
+        if (_mode == OperatorUiMode.Normal && confirmation is OperatorUiConfirmation normal)
+        {
+            if (normal.Action == OperatorUiAction.EnvironmentPrepare)
+            {
+                return
+                [
+                    $"Запустить MuMu {normal.Target}, если он остановлен, и подготовить Android.",
+                    "Игра запускаться не будет. Работающий MuMu не перезапускается.",
+                    "При отмене запущенный MuMu автоматически не останавливается.",
+                ];
+            }
+
+            if (normal.Action == OperatorUiAction.MuMuStop)
+            {
+                return
+                [
+                    $"Остановить MuMu {normal.Target} вместе с Android и запущенной игрой.",
+                    "Несохранённые данные внутри эмулятора могут быть потеряны.",
+                ];
+            }
+
+            if (normal.Action == OperatorUiAction.GameStart)
+            {
+                return
+                [
+                    $"Запустить Azur Lane Global/EN на {normal.Target}.",
+                    "При необходимости MuMu и Android будут подготовлены автоматически.",
+                ];
+            }
+
+            return [$"{OperatorUiCommand.For(normal.Action).Title} · {normal.Target}."];
+        }
+
         if (confirmation is not { Action: OperatorUiAction.EnvironmentPrepare } pending)
         {
             return [];
@@ -538,8 +704,35 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
     private void AcceptChoice(bool completeOnly)
     {
+        if (!completeOnly && _paletteMode == PaletteMode.Commands && IsDirectCommand(_composer!.Text))
+        {
+            // Точное имя в composer имеет приоритет над строкой категории. Иначе Enter после
+            // /screenshot или /android открывал первую категорию вместо permission/dispatch gate.
+            HidePalette();
+            SubmitComposer();
+            return;
+        }
+
+        if (_paletteMode == PaletteMode.Settings && _choices.Count != 0)
+        {
+            if (!completeOnly)
+            {
+                ApplySetting(_choices[_choiceIndex].Setting);
+            }
+
+            return;
+        }
+
         if (_choices.Count == 0)
         {
+            // Пустой список — не тупик: введённый текст всё равно доходит до правила доступа, поэтому
+            // техническая команда в обычном режиме получает объяснение, а не молчание.
+            if (_paletteMode == PaletteMode.Commands && !completeOnly)
+            {
+                HidePalette();
+                SubmitComposer();
+            }
+
             return;
         }
 
@@ -549,6 +742,16 @@ public sealed class AzurPilotOperatorUi : IDisposable
             if (!completeOnly && choice.Confirm && _session.ConfirmMutation())
             {
                 OperatorUiAction action = choice.Action!.Value;
+                if (ShouldSaveTarget(action) && _session.SelectedInstance is MuMuInstanceId target
+                    && !_controller.SaveSettings(_controller.SavedConfiguration with
+                    {
+                        MuMu = new MuMuConfiguration { Instance = target.ToString() },
+                    }))
+                {
+                    ClosePalette();
+                    return;
+                }
+
                 HidePalette(); StartOperation(action);
             }
             else
@@ -561,9 +764,27 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
         if (_paletteMode == PaletteMode.Instances)
         {
-            if (choice.Instance is MuMuInstanceId identity && _session.SelectInstance(identity))
+            bool selected = choice.Instance is MuMuInstanceId identity && _session.SelectInstance(identity);
+            if (selected && choice.Instance is MuMuInstanceId chosen)
             {
-                AddMessage("Выбор экземпляра", identity.ToString());
+                AddMessage("Выбор экземпляра", chosen.ToString());
+                if (_saveChosenTarget)
+                {
+                    _saveChosenTarget = false;
+                    _ = _controller.SaveSettings(_controller.SavedConfiguration with
+                    {
+                        MuMu = new MuMuConfiguration { Instance = chosen.ToString() },
+                    });
+                }
+            }
+
+            // Выбор точного ID завершает исходное пользовательское действие: подтверждение
+            // предъявляется сразу, а не требует повторного запуска команды.
+            if (selected && _pendingConfirmation is OperatorUiAction pending)
+            {
+                _pendingConfirmation = null;
+                ShowConfirmation(OperatorUiCommand.For(pending));
+                return;
             }
 
             ClosePalette();
@@ -579,9 +800,37 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
             _detailsMessage = choice.Message;
             _detailsLogEntry = choice.LogEntry;
+            _settingsMessage = null;
             _followMessages = true;
             _messagesDirty = true;
             HidePalette();
+            return;
+        }
+
+        if (_paletteMode == PaletteMode.Category)
+        {
+            // Enter в категории исполняет действие, Tab оставляет выбор в меню.
+            if (completeOnly)
+            {
+                return;
+            }
+
+            OperatorUiCommand categoryCommand = OperatorUiCommand.For(choice.Action!.Value);
+            _session.DiscardComposerDraft();
+            SetComposerText(categoryCommand.Command);
+            HidePalette();
+            SubmitComposer();
+            return;
+        }
+
+        if (choice.Category is OperatorUiCategory category)
+        {
+            if (completeOnly)
+            {
+                return;
+            }
+
+            OpenCategory(category);
             return;
         }
 
@@ -598,6 +847,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     private void HidePalette()
     {
         _paletteMode = PaletteMode.Hidden;
+        _openCategory = null;
         _choices.Clear();
         _paletteView!.Visible = false;
         _composer!.Enabled = true;
@@ -607,6 +857,9 @@ public sealed class AzurPilotOperatorUi : IDisposable
     {
         _session.CancelConfirmation();
         HidePalette();
+        _pendingConfirmation = null;
+        _awaitingTargetResolution = false;
+        _saveChosenTarget = false;
         if (!restoreDraft)
         {
             _session.DiscardComposerDraft();
@@ -627,6 +880,35 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _composer.InsertionPoint = text.Length;
         _suppressCompletion = false;
     }
+
+    /// <summary>
+    /// Разрешает введённую команду с учётом режима доступа.
+    /// </summary>
+    /// <remarks>
+    /// Отделено от обработчика ввода, чтобы правило доступа можно было проверить детерминированным
+    /// тестом: Terminal.Gui 2.5.0 не поставляет тестовый драйвер, а <c>Run()</c> требует терминала.
+    /// Техническая команда, введённая прямо в обычном режиме, не исполняется — она распознаётся и
+    /// отклоняется, а не выглядит как неизвестная.
+    /// </remarks>
+    /// <param name="input">Введённая оператором строка.</param>
+    /// <param name="mode">Текущий режим интерфейса.</param>
+    /// <returns>Разрешение команды: исполнение, отказ по режиму либо отсутствие такой команды.</returns>
+    internal static CommandResolution ResolveCommand(string input, OperatorUiMode mode)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        OperatorUiCommand? command = OperatorUiCommand.Match(input);
+        if (command is null)
+        {
+            return new CommandResolution(CommandResolutionKind.Unknown, null);
+        }
+
+        return command.IsAvailableIn(mode) && mode >= command.RequiredModeFor(input)
+            ? new CommandResolution(CommandResolutionKind.Available, command)
+            : new CommandResolution(CommandResolutionKind.NotAvailableInMode, command);
+    }
+
+    /// <summary>Точное имя команды, которое Enter должен передать в общий permission/dispatch gate.</summary>
+    internal static bool IsDirectCommand(string input) => OperatorUiCommand.Match(input.Trim()) is not null;
 
     /// <summary>Запоминает черновик composer и сообщает, что палитру нужно открыть.</summary>
     /// <remarks>
@@ -687,6 +969,13 @@ public sealed class AzurPilotOperatorUi : IDisposable
                     : new ComposerKeyTransition(ComposerKeyEffect.ClosePalette, null);
             }
 
+            // Esc закрывает ровно один слой: вложенная категория возвращает на первый уровень палитры,
+            // а не выбрасывает оператора из меню и не теряет черновик.
+            if (paletteMode == PaletteMode.Category)
+            {
+                return new ComposerKeyTransition(ComposerKeyEffect.BackToCommands, null);
+            }
+
             session.CancelConfirmation();
             return new ComposerKeyTransition(ComposerKeyEffect.ClosePalette, session.RestoreComposerDraft());
         }
@@ -716,11 +1005,29 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _session.DiscardComposerDraft();
         AddMessage(OperatorEchoTitle, input);
         SetComposerText(string.Empty);
-        OperatorUiCommand? command = OperatorUiCommand.All.FirstOrDefault(item =>
-            string.Equals(item.Command, input, StringComparison.OrdinalIgnoreCase));
-        if (command is null)
+        CommandResolution resolution = ResolveCommand(input, _mode);
+        if (resolution.Kind == CommandResolutionKind.Unknown)
         {
-            AddMessage("Команда не найдена", "Введите / и выберите действие из меню. /help — помощь.");
+            AddMessage("Действие не найдено", "Введите / и выберите пункт меню. /help — доступные действия.");
+            return;
+        }
+
+        // Режим — настоящее правило доступа: недоступное действие не исполняется даже при прямом вводе.
+        if (resolution.Kind == CommandResolutionKind.NotAvailableInMode)
+        {
+            OperatorUiCommand denied = resolution.Command!;
+            OperatorUiMode required = denied.RequiredModeFor(input);
+            AddMessage("Действие недоступно в текущем режиме",
+                $"«{denied.Title}» доступно в {OperatorUiModePresentation.AccusativeLabel(required)} режиме. "
+                + OperatorUiModePresentation.SwitchHint(required),
+                OperatorUiMessageKind.Warning);
+            return;
+        }
+
+        OperatorUiCommand command = resolution.Command!;
+        if (!command.CanExecute(_session.IsOperationActive))
+        {
+            AddMessage("Операция выполняется", "Дождитесь завершения операции; F4 — запрос отмены.", OperatorUiMessageKind.Warning);
             return;
         }
 
@@ -736,26 +1043,21 @@ public sealed class AzurPilotOperatorUi : IDisposable
             return;
         }
 
-        if (command.Action == OperatorUiAction.Logs)
-        {
-            ToggleLogs();
-            return;
-        }
-
         if (command.Action == OperatorUiAction.Details)
         {
             ShowDetails();
             return;
         }
 
+        if (command.Action == OperatorUiAction.Settings)
+        {
+            ShowSettings();
+            return;
+        }
+
         if (command.Action == OperatorUiAction.Help)
         {
-            AddMessage("Помощь", string.Join('\n', OperatorUiCommand.All.Select(item => item.Command + " — " + item.Title))
-                + "\n↑↓ — история с сохранением draft. PgUp/PgDn — лента; Ctrl+End — конец."
-                + "\nAlt+PgUp/PgDn — логи; Alt+End — конец логов."
-                + "\n/details открывает технические детали результата или записи журнала; Esc возвращает назад."
-                + "\nCtrl+C отменяет действующую операцию; /exit отменяет и дожидается её завершения."
-                + "\nComposer однострочный: многострочная вставка сохраняет первую строку.");
+            ShowHelp();
             return;
         }
 
@@ -777,6 +1079,16 @@ public sealed class AzurPilotOperatorUi : IDisposable
             return;
         }
 
+        // «Запустить окружение» не требует ручных /instances и /select: точная identity целевого
+        // экземпляра разрешается по конфигурации до единого подтверждения опасного действия.
+        if (command.RequiresConfirmation && _session.SelectedInstance is null)
+        {
+            _pendingConfirmation = command.Action;
+            _awaitingTargetResolution = true;
+            StartOperation(OperatorUiAction.ResolveTarget);
+            return;
+        }
+
         if (command.RequiresConfirmation)
         {
             ShowConfirmation(command);
@@ -787,33 +1099,81 @@ public sealed class AzurPilotOperatorUi : IDisposable
         }
     }
 
+    private void ShowHelp()
+    {
+        List<string> lines = [.. OperatorUiCommand.PrimaryFor(_mode)
+            .Where(command => command.ShowInPalette)
+            .Select(command => command.Command + " — " + command.Title)];
+        IReadOnlyList<OperatorUiCategoryDefinition> categories = [.. OperatorUiCommand.CategoriesFor(_mode)];
+        if (categories.Count != 0)
+        {
+            lines.Add(string.Empty);
+            lines.Add("Дополнительные действия по категориям:");
+            foreach (OperatorUiCategoryDefinition category in categories)
+            {
+                lines.Add("  " + category.Title + ": "
+                    + string.Join(", ", OperatorUiCommand.InCategory(category.Category, _mode)
+                        .Select(command => command.Command)));
+            }
+        }
+
+        lines.Add(string.Empty);
+        lines.Add("↑↓ — история с сохранением черновика. PgUp/PgDn — лента; Ctrl+End — конец.");
+        lines.Add("F2 или / — палитра действий; Esc закрывает текущий слой.");
+        lines.Add("F4 или Ctrl+C во время операции — запрос отмены; /exit отменяет и дожидается её.");
+        if (_mode == OperatorUiMode.Diagnostic)
+        {
+            lines.Add("/details открывает технические детали результата или записи журнала; Esc возвращает назад.");
+        }
+
+        lines.Add("Composer однострочный: многострочная вставка сохраняет первую строку.");
+        AddMessage("Помощь", string.Join('\n', lines));
+    }
+
+    /// <summary>
+    /// Предъявляет единое подтверждение mutation над уже доказанной точной identity.
+    /// </summary>
+    /// <param name="command">Подтверждаемое действие.</param>
     private void ShowConfirmation(OperatorUiCommand command)
     {
         if (!_session.RequestConfirmation(command.Action))
         {
             AddMessage("Действие недоступно", _session.IsOperationActive
-                ? "Дождитесь завершения текущей операции; /cancel — запрос отмены."
-                : "Сначала выберите конкретный экземпляр через /instances.");
+                ? "Дождитесь завершения текущей операции; F4 — запрос отмены."
+                : "Сначала выберите конкретный экземпляр.",
+                OperatorUiMessageKind.Warning);
             return;
         }
 
         _paletteMode = PaletteMode.Confirmation;
+        _openCategory = null;
         _composer!.Enabled = false;
         _choices.Clear();
+        // По умолчанию выделена отмена: подтверждение mutation нельзя получить случайным Enter.
         _choices.Add(new PaletteChoice("Отмена"));
         MuMuInstanceId target = _session.PendingConfirmation!.Target;
         string confirmationChoice = command.Action == OperatorUiAction.EnvironmentPrepare
             ? $"Подтвердить для {target}"
             : $"Подтвердить для {target}: {command.Title}";
-        _choices.Add(new PaletteChoice(confirmationChoice,
-            command.Action, Confirm: true));
+        if (ShouldSaveTarget(command.Action))
+        {
+            confirmationChoice += " и сохранить выбор";
+        }
+
+        _choices.Add(new PaletteChoice(confirmationChoice, command.Action, Confirm: true));
         _choiceIndex = 0;
         RenderPalette();
     }
 
+    private bool ShouldSaveTarget(OperatorUiAction action) => _mode == OperatorUiMode.Normal
+        && action is OperatorUiAction.EnvironmentPrepare or OperatorUiAction.GameStart
+        && _session.SelectedInstance is MuMuInstanceId target
+        && _controller.SavedConfiguration.MuMu.Instance != target.ToString();
+
     private void ShowInstances()
     {
         _paletteMode = PaletteMode.Instances;
+        _openCategory = null;
         _composer!.Enabled = false;
         _session.CancelConfirmation();
         _choices.Clear();
@@ -828,6 +1188,74 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
         _choiceIndex = 0;
         RenderPalette();
+    }
+
+    /// <summary>Показывает действующую эффективную конфигурацию без второго источника истины.</summary>
+    private void ShowSettings()
+    {
+        OperatorUiMessage settings = _controller.DescribeSettings(_mode);
+        _settingsMessage = settings;
+        _detailsMessage = null;
+        _detailsLogEntry = null;
+        _followMessages = true;
+        _messagesDirty = true;
+        _paletteMode = PaletteMode.Settings;
+        _composer!.Enabled = false;
+        _choices.Clear();
+        _choices.Add(new PaletteChoice("Выбрать и сохранить точный экземпляр MuMu", Setting: SettingAction.Target));
+        _choices.Add(new PaletteChoice("Сохранить YAML / перенести legacy JSON с резервной копией", Setting: SettingAction.Save));
+        _choices.Add(new PaletteChoice("Режим следующего запуска: normal", Setting: SettingAction.Normal));
+        _choices.Add(new PaletteChoice("Режим следующего запуска: manual", Setting: SettingAction.Manual));
+        _choices.Add(new PaletteChoice("Режим следующего запуска: diagnostic", Setting: SettingAction.Diagnostic));
+        _choices.Add(new PaletteChoice(_controller.SavedConfiguration.Logging.Viewer.Enabled
+            ? "Отключить отдельную лог-консоль" : "Включить отдельную лог-консоль", Setting: SettingAction.Viewer));
+        _choices.Add(new PaletteChoice("Открыть отдельную лог-консоль снова", Setting: SettingAction.ReopenViewer));
+        _choiceIndex = 0;
+        RenderPalette();
+    }
+
+    private void ApplySetting(SettingAction? setting)
+    {
+        if (_session.IsOperationActive)
+        {
+            AddMessage("Настройки", "Дождитесь завершения текущей операции.", OperatorUiMessageKind.Warning);
+            ClosePalette();
+            return;
+        }
+
+        ClosePalette();
+        _settingsMessage = null;
+        if (setting == SettingAction.Target)
+        {
+            _saveChosenTarget = true;
+            StartOperation(OperatorUiAction.Instances);
+            return;
+        }
+
+        if (setting == SettingAction.ReopenViewer)
+        {
+            StartOperation(OperatorUiAction.ReopenLogViewer);
+            return;
+        }
+
+        AzurPilotConfiguration configuration = _controller.SavedConfiguration;
+        configuration = setting switch
+        {
+            SettingAction.Normal => configuration with { Ui = new UiConfiguration { Mode = OperatorUiMode.Normal } },
+            SettingAction.Manual => configuration with { Ui = new UiConfiguration { Mode = OperatorUiMode.Manual } },
+            SettingAction.Diagnostic => configuration with { Ui = new UiConfiguration { Mode = OperatorUiMode.Diagnostic } },
+            SettingAction.Viewer => configuration with
+            {
+                Logging = new LoggingConfiguration
+                {
+                    Viewer = new LogViewerConfiguration { Enabled = !configuration.Logging.Viewer.Enabled },
+                },
+            },
+            SettingAction.Save or SettingAction.Target or SettingAction.ReopenViewer or null => configuration,
+            _ => configuration,
+        };
+        _ = _controller.SaveSettings(configuration);
+        _messagesDirty = true;
     }
 
     private void ShowDetails()
@@ -845,7 +1273,9 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
         _detailsMessage = null;
         _detailsLogEntry = null;
+        _settingsMessage = null;
         _paletteMode = PaletteMode.Details;
+        _openCategory = null;
         _composer!.Enabled = false;
         _session.CancelConfirmation();
         _choices.Clear();
@@ -880,10 +1310,33 @@ public sealed class AzurPilotOperatorUi : IDisposable
     {
         bool inventoryChanged = _controller.CompleteOperation();
         _messagesDirty = true;
+        if (_awaitingTargetResolution)
+        {
+            _awaitingTargetResolution = false;
+            if (_session.SelectedInstance is MuMuInstanceId)
+            {
+                // Identity доказана production-резолвером: предъявляем её в едином подтверждении.
+                OperatorUiAction action = _pendingConfirmation ?? OperatorUiAction.EnvironmentPrepare;
+                _pendingConfirmation = null;
+                ShowConfirmation(OperatorUiCommand.For(action));
+                return;
+            }
+
+            if (_controller.LastOperationFailure?.Code == ApplicationFailure.MuMuInstanceAmbiguous)
+            {
+                // Неоднозначный target: выбор точного ID — часть того же пользовательского действия,
+                // а старт остаётся запрещённым до однозначного выбора.
+                StartOperation(OperatorUiAction.Instances);
+            }
+
+            return;
+        }
+
         if (inventoryChanged)
         {
             _instances = _controller.Inventory!.Instances;
-            if (_instances.Count != 0 && !_exitRequested)
+            if (_instances.Count != 0 && !_exitRequested
+                && (_mode != OperatorUiMode.Normal || _pendingConfirmation is not null || _saveChosenTarget))
             {
                 ShowInstances();
             }
@@ -895,6 +1348,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _controller.CancelOperation();
         _messagesDirty = true;
     }
+
     private void RequestExit()
     {
         _exitRequested = true;
@@ -909,13 +1363,6 @@ public sealed class AzurPilotOperatorUi : IDisposable
         }
     }
 
-    private void ToggleLogs()
-    {
-        _showLogs = !_showLogs;
-        _lastSize = Size.Empty;
-        RefreshLayout();
-    }
-
     private void AddMessage(
         string title,
         string text,
@@ -928,37 +1375,50 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
     private void RenderMessages()
     {
-        if (!_messagesView!.Visible || _messagesView.Viewport.Width <= 0)
+        if (!_historyView!.Visible || _historyView.Viewport.Width <= 0)
         {
             return;
         }
 
         List<string> lines = [];
         Dictionary<int, Scheme> schemes = [];
-        if (_detailsMessage is OperatorUiMessage selected)
+        if (_settingsMessage is OperatorUiMessage settings)
         {
-            lines.Add("── Технические детали · Esc возвращает к истории ──");
+            lines.Add("\u2500\u2500 Настройки \u00b7 Esc возвращает к истории \u2500\u2500");
+            schemes[0] = _mutedScheme;
+            schemes[lines.Count] = MessageScheme(settings.Kind);
+            lines.Add(settings.Title);
+            lines.AddRange(Wrap(settings.Text, _historyView.Viewport.Width));
+            if (!string.IsNullOrWhiteSpace(settings.Details))
+            {
+                lines.Add(string.Empty);
+                lines.Add("Действующая конфигурация");
+                lines.AddRange(Wrap(settings.Details, _historyView.Viewport.Width));
+            }
+        }
+        else if (_detailsMessage is OperatorUiMessage selected)
+        {
+            lines.Add("\u2500\u2500 Технические детали \u00b7 Esc возвращает к истории \u2500\u2500");
             schemes[0] = _mutedScheme;
             schemes[lines.Count] = MessageScheme(selected.Kind);
             lines.Add(selected.Title);
-            lines.AddRange(Wrap(selected.Text, _messagesView.Viewport.Width));
+            lines.AddRange(Wrap(selected.Text, _historyView.Viewport.Width));
             lines.Add(string.Empty);
             lines.Add("Технические данные");
-            lines.AddRange(Wrap(selected.Details ?? "Для этого сообщения детали отсутствуют.", _messagesView.Viewport.Width));
+            lines.AddRange(Wrap(selected.Details ?? "Для этого сообщения детали отсутствуют.", _historyView.Viewport.Width));
         }
         else if (_detailsLogEntry is AzurPilotOperatorLogEntry logEntry)
         {
-            lines.Add("── Технические детали журнала · Esc возвращает к истории ──");
+            lines.Add("\u2500\u2500 Технические детали журнала \u00b7 Esc возвращает к истории \u2500\u2500");
             schemes[0] = _mutedScheme;
             schemes[lines.Count] = LogLevelScheme(logEntry.Level);
-            lines.Add($"{OperatorUiLogPresentation.LevelLabel(logEntry.Level)} · {OperatorUiLogPresentation.FormatSummaryHeader(logEntry)}");
+            lines.Add($"{OperatorUiLogPresentation.LevelLabel(logEntry.Level)} \u00b7 {OperatorUiLogPresentation.FormatSummaryHeader(logEntry)}");
             lines.Add(string.Empty);
             lines.AddRange(OperatorUiLogPresentation.FormatTechnicalDetails(logEntry)
-                .SelectMany(line => Wrap(line, _messagesView.Viewport.Width)));
+                .SelectMany(line => Wrap(line, _historyView.Viewport.Width)));
         }
         else
         {
-            lines.Add("── Сообщения и результаты · /details — технические данные ──");
             schemes[0] = _mutedScheme;
             foreach (OperatorUiMessage message in _session.SnapshotMessages())
             {
@@ -973,7 +1433,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
                 {
                     // Смысл результата несёт сам заголовок; дублирующая метка статуса не добавляется.
                     lines.Add(message.Title);
-                    lines.AddRange(Wrap(message.Text, _messagesView.Viewport.Width));
+                    lines.AddRange(Wrap(message.Text, _historyView.Viewport.Width));
                     schemes[row] = MessageScheme(message.Kind);
                 }
 
@@ -981,44 +1441,9 @@ public sealed class AzurPilotOperatorUi : IDisposable
             }
         }
 
-        _messageWrapWidth = _messagesView.Viewport.Width;
-        _messageRows = RenderLines(_messagesView, lines, _followMessages, schemes);
+        _messageWrapWidth = _historyView.Viewport.Width;
+        _messageRows = RenderLines(_historyView, lines, _followMessages, schemes);
         _messagesDirty = false;
-    }
-
-    private void RefreshLogs()
-    {
-        if (!_logsView!.Visible || _logsView.Viewport.Width <= 0)
-        {
-            return;
-        }
-
-        AzurPilotOperatorLogEntry[] snapshot = [.. _logSource.ReadSnapshot().TakeLast(128)];
-        if (snapshot.SequenceEqual(_lastLogEntries) && _logWrapWidth == _logsView.Viewport.Width)
-        {
-            return;
-        }
-
-        _lastLogEntries = snapshot;
-        _logWrapWidth = _logsView.Viewport.Width;
-        List<string> lines = ["── Журнал · /details — полная запись · Alt+PgUp/PgDn ──"];
-        Dictionary<int, Scheme> schemes = [];
-        foreach (AzurPilotOperatorLogEntry entry in snapshot)
-        {
-            int row = lines.Count;
-            // Компактная однострочная запись вместо повторяющегося «заголовок + блок».
-            string compact = OperatorUiLogPresentation.FormatSummaryHeader(entry)
-                + " — " + OperatorUiLogPresentation.SummaryMessage(entry);
-            lines.AddRange(Wrap(compact, _logsView.Viewport.Width));
-            // Схема уровня применяется ко всем физическим строкам записи, иначе цвет меняется посреди фразы.
-            Scheme entryScheme = LogLevelScheme(entry.Level);
-            for (int wrapped = row; wrapped < lines.Count; wrapped++)
-            {
-                schemes[wrapped] = entryScheme;
-            }
-        }
-
-        _logRows = RenderLines(_logsView, lines, _followLogs, schemes);
     }
 
     private static int RenderLines(
@@ -1133,15 +1558,8 @@ public sealed class AzurPilotOperatorUi : IDisposable
     private void ScrollMessages(Key key)
     {
         _followMessages = key == Key.End.WithCtrl;
-        int change = key == Key.PageUp ? -_messagesView!.Viewport.Height : _messagesView!.Viewport.Height;
-        Scroll(_messagesView, _messageRows, _followMessages ? int.MaxValue : _messagesView.Viewport.Y + change);
-    }
-
-    private void ScrollLogs(Key key)
-    {
-        _followLogs = key == Key.End.WithAlt;
-        int change = key == Key.PageUp.WithAlt ? -_logsView!.Viewport.Height : _logsView!.Viewport.Height;
-        Scroll(_logsView, _logRows, _followLogs ? int.MaxValue : _logsView.Viewport.Y + change);
+        int change = key == Key.PageUp ? -_historyView!.Viewport.Height : _historyView!.Viewport.Height;
+        Scroll(_historyView, _messageRows, _followMessages ? int.MaxValue : _historyView.Viewport.Y + change);
     }
 
     private void HandleMouse(Mouse mouse)
@@ -1151,38 +1569,26 @@ public sealed class AzurPilotOperatorUi : IDisposable
             return;
         }
 
-        View? pane = FindScrollablePane(mouse.View, _messagesView, _logsView);
+        View? pane = FindScrollablePane(mouse.View, _historyView);
         if (pane is null)
         {
             return;
         }
 
-        bool messages = ReferenceEquals(pane, _messagesView);
-        int rows = messages ? _messageRows : _logRows;
-        Scroll(pane, rows, pane.Viewport.Y + delta);
-        bool atEnd = pane.Viewport.Y >= Math.Max(0, rows - pane.Viewport.Height);
-        if (messages)
-        {
-            _followMessages = atEnd;
-        }
-        else
-        {
-            _followLogs = atEnd;
-        }
-
+        Scroll(pane, _messageRows, pane.Viewport.Y + delta);
+        _followMessages = pane.Viewport.Y >= Math.Max(0, _messageRows - pane.Viewport.Height);
         mouse.Handled = true;
     }
 
-    internal static View? FindScrollablePane(View? view, View? messagesView, View? logsView)
+    /// <summary>Находит видимую прокручиваемую панель под указателем.</summary>
+    /// <param name="view">View, получивший mouse event.</param>
+    /// <param name="historyView">Панель истории.</param>
+    /// <returns>Панель истории, если указатель внутри неё и она видима.</returns>
+    internal static View? FindScrollablePane(View? view, View? historyView)
     {
-        if (messagesView is { Visible: true } messages && IsWithin(view, messages))
+        if (historyView is { Visible: true } history && IsWithin(view, history))
         {
-            return messages;
-        }
-
-        if (logsView is { Visible: true } logs && IsWithin(view, logs))
-        {
-            return logs;
+            return history;
         }
 
         return null;
@@ -1209,16 +1615,44 @@ public sealed class AzurPilotOperatorUi : IDisposable
         pane.Viewport = new Rectangle(0, OperatorUiScrollMath.ClampViewportY(y, rows, viewport.Height), viewport.Width, viewport.Height);
     }
 
-    private sealed record PaletteChoice(string Title, OperatorUiAction? Action = null, MuMuInstanceId? Instance = null,
-        bool Confirm = false, OperatorUiMessage? Message = null, AzurPilotOperatorLogEntry? LogEntry = null);
+    private sealed record PaletteChoice(
+        string Title,
+        OperatorUiAction? Action = null,
+        MuMuInstanceId? Instance = null,
+        bool Confirm = false,
+        OperatorUiMessage? Message = null,
+        AzurPilotOperatorLogEntry? LogEntry = null,
+        OperatorUiCategory? Category = null,
+        SettingAction? Setting = null);
+
+    private enum SettingAction { Target, Save, Normal, Manual, Diagnostic, Viewer, ReopenViewer }
+
+    /// <summary>Результат разрешения введённой команды.</summary>
+    internal enum CommandResolutionKind
+    {
+        /// <summary>Такой команды в каталоге нет.</summary>
+        Unknown,
+        /// <summary>Команда существует, но недоступна в текущем режиме.</summary>
+        NotAvailableInMode,
+        /// <summary>Команда доступна и может исполняться.</summary>
+        Available,
+    }
+
+    /// <summary>Разрешение введённой команды и её описание.</summary>
+    /// <param name="Kind">Итог разрешения.</param>
+    /// <param name="Command">Найденная команда либо <see langword="null"/>.</param>
+    internal readonly record struct CommandResolution(CommandResolutionKind Kind, OperatorUiCommand? Command);
+
     /// <summary>Состояние палитры действий.</summary>
     internal enum PaletteMode
     {
         Hidden,
         Commands,
+        Category,
         Instances,
         Details,
         Confirmation,
+        Settings,
     }
 
     /// <summary>Источник открытия палитры действий.</summary>
@@ -1241,6 +1675,8 @@ public sealed class AzurPilotOperatorUi : IDisposable
         OpenPalette,
         /// <summary>Закрыть палитру.</summary>
         ClosePalette,
+        /// <summary>Вернуться с вложенного уровня палитры на первый.</summary>
+        BackToCommands,
         /// <summary>Закрыть технические детали.</summary>
         ClearDetails,
     }

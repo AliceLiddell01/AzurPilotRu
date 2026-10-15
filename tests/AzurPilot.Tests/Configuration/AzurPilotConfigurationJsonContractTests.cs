@@ -7,11 +7,15 @@ using Xunit;
 namespace AzurPilot.Tests.Configuration;
 
 /// <summary>
-/// Доказывает строгую семантику JSON-контракта: запрет unmapped members, duplicate properties, неверного
-/// регистра, нарушения required/nullable contract и числовой формы уровня логирования. Документы этого
-/// класса объявляют legacy-схему v1, поэтому проверки одновременно доказывают, что допуск v1 как
-/// legacy-входа не ослабил строгость его собственного контракта.
+/// Доказывает строгую семантику JSON-контракта legacy-схем: запрет unmapped members, duplicate
+/// properties, неверного регистра, нарушения required/nullable contract и числовой формы уровня
+/// логирования. Документы этого класса объявляют legacy-схему v1, поэтому проверки одновременно
+/// доказывают, что допуск v1 как legacy-входа не ослабил строгость его собственного контракта.
 /// </summary>
+/// <remarks>
+/// JSON — не канонический формат: канонический документ схемы v3 существует только в YAML, поэтому
+/// документ с текущим номером версии в JSON-файле получает отказ о неподдерживаемой схеме.
+/// </remarks>
 [Trait("Category", "Configuration")]
 public sealed class AzurPilotConfigurationJsonContractTests
 {
@@ -84,7 +88,7 @@ public sealed class AzurPilotConfigurationJsonContractTests
         _ = ConfigurationTestAssertions.AssertFailure(result, ApplicationFailure.ConfigurationInvalid, scenario);
     }
 
-    [Fact(DisplayName = "Неподдерживаемый schemaVersion отклоняется отдельным стабильным кодом")]
+    [Fact(DisplayName = "Текущая версия схемы в JSON-файле отклоняется: JSON v3 не существует")]
     public void UnsupportedSchemaVersionIsRejectedWithStableCode()
     {
         using TemporaryConfigurationDirectory directory = new();
@@ -96,7 +100,7 @@ public sealed class AzurPilotConfigurationJsonContractTests
         ApplicationFailure failure = ConfigurationTestAssertions.AssertFailure(
             result,
             ApplicationFailure.ConfigurationSchemaUnsupported,
-            "schemaVersion 3");
+            "schemaVersion 3 в JSON");
         Assert.NotEqual(ApplicationFailure.ConfigurationInvalid, failure.Code);
 
         IReadOnlyDictionary<string, string> details = failure.Details!;

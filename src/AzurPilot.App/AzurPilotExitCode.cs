@@ -110,6 +110,20 @@ public static class AzurPilotExitCode
     /// <summary>Строгая подготовка отклонена до mutation из-за недоказанного состояния MuMu.</summary>
     public const int MuMuStateUnproven = 28;
 
+    /// <summary>Аргумент командной строки отсутствует, неизвестен или имеет недопустимое значение.</summary>
+    /// <remarks>
+    /// Неверный режим запуска — это отказ запуска, а не молчаливая подстановка значения по умолчанию:
+    /// иначе опечатка в <c>--mode</c> выглядела бы как явно выбранный обычный режим.
+    /// </remarks>
+    public const int InvalidArgument = 29;
+
+    /// <summary>Отдельная лог-консоль не может быть открыта в этой среде.</summary>
+    /// <remarks>
+    /// Код существует для полноты проекции: отказ просмотра журнала не завершает интерактивную сессию,
+    /// поэтому на практике он отображается сообщением, а не кодом выхода процесса.
+    /// </remarks>
+    public const int LogViewerUnavailable = 30;
+
     /// <summary>Возвращает код выхода для application-level отказа.</summary>
     /// <param name="failure">Ожидаемый отказ application boundary.</param>
     /// <returns>Код выхода процесса, соответствующий коду отказа.</returns>
@@ -147,6 +161,7 @@ public static class AzurPilotExitCode
             ApplicationFailure.DiagnosticRegionUnsupported => DiagnosticRegionUnsupported,
             ApplicationFailure.NativeFrameAnalysisFailed => NativeFrameAnalysisFailed,
             ApplicationFailure.NativeFrameInvalid => NativeFrameInvalid,
+            ApplicationFailure.LogViewerUnavailable => LogViewerUnavailable,
             _ => InternalError,
         };
     }

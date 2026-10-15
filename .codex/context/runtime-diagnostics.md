@@ -13,7 +13,9 @@
 ## Logging
 
 - Project-owned runtime logging использует `Microsoft.Extensions.Logging`.
-- Structured logs идут в `stderr`; обычный human/machine presentation output — в `stdout`.
+- При одноразовой диагностике structured logs идут в `stderr`, presentation — в `stdout`.
+  Интерактивная сессия пишет в bounded buffer и опциональный read-only viewer; console provider
+  не пишет поверх Terminal.Gui. Lifetime и повторное открытие viewer принадлежат application host.
 - Устойчивые события имеют стабильные structured properties; произвольные большие внешние payload не
   логируются.
 - Секреты, полный config, machine-specific paths и полный stdout/stderr внешних tools в logs не попадают.

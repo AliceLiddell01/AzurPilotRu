@@ -3,6 +3,7 @@ using AzurPilot.App.OperatorServices;
 using AzurPilot.App.Diagnostics;
 using AzurPilot.Core.Android;
 using AzurPilot.Core.Android.Orchestration;
+using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Windows;
@@ -16,20 +17,59 @@ public sealed class OperatorUiController : IDisposable
     private readonly AzurPilotOperatorService _service;
     private CancellationTokenSource? _cancellation;
     private Task<OperationPresentation>? _activeTask;
+    private AzurPilotDiagnosticReport _lastDiagnostics;
+    private string _operationText = "Операция: нет";
+    private string? _progressText;
+    private AzurPilotConfigurationSnapshot _savedConfiguration;
     private bool _disposed;
 
     /// <summary>Создаёт coordinator с существующим startup snapshot.</summary>
     /// <param name="service">Production use cases.</param>
     /// <param name="initialDiagnostics">Уже собранная диагностика.</param>
-    public OperatorUiController(AzurPilotOperatorService service, AzurPilotDiagnosticReport initialDiagnostics)
+    /// <param name="mode">Режим интерфейса: объём доступных действий и подробность состояния.</param>
+    /// <param name="logViewerFailure">Отказ открытия отдельной лог-консоли либо <see langword="null"/>.</param>
+    public OperatorUiController(
+        AzurPilotOperatorService service,
+        AzurPilotDiagnosticReport initialDiagnostics,
+        OperatorUiMode mode = OperatorUiMode.Normal,
+        ApplicationFailure? logViewerFailure = null)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(initialDiagnostics);
         _service = service;
-        Session.AddMessage("AzurPilot", "Введите / для меню действий. Выберите конкретный экземпляр через /instances.");
-        OperationPresentation diagnostic = DescribeDiagnostics(initialDiagnostics);
-        Session.AddMessage("Диагностика запуска", diagnostic.Summary, diagnostic.Kind, diagnostic.Details);
+        _lastDiagnostics = initialDiagnostics;
+        _savedConfiguration = service.Configuration;
+        if (initialDiagnostics.MuMu.SelectedInstanceId is string selected && MuMuInstanceValue.IsValid(selected))
+        {
+            _ = Session.SelectInstance(MuMuInstanceId.FromIndex(selected[MuMuInstanceValue.ProviderPrefix.Length..]));
+        }
+
+        Session.AddMessage("AzurPilot", WelcomeText(mode));
+        // В обычном режиме состояние среды — это не предупреждение об отказе: остановленный MuMu
+        // описывается как рабочее состояние с доступным действием, а не как ряд failure-кодов.
+        OperationPresentation diagnostic = mode == OperatorUiMode.Normal
+            ? DescribeEnvironmentState(initialDiagnostics)
+            : DescribeDiagnostics(initialDiagnostics);
+        Session.AddMessage(
+            mode == OperatorUiMode.Normal ? "Состояние среды" : "Диагностика запуска",
+            diagnostic.Summary,
+            diagnostic.Kind,
+            diagnostic.Details);
+        if (logViewerFailure is ApplicationFailure viewerFailure)
+        {
+            // Короткое сообщение вместо молчания: журнал не перенаправляется на экран TUI, но причина
+            // отказа просмотра остаётся видимой и записанной в runtime log.
+            Session.AddMessage(
+                "Отдельная лог-консоль",
+                viewerFailure.Message,
+                OperatorUiMessageKind.Warning,
+                $"Код: {viewerFailure.Code}\nПовтор имеет смысл: {Fact(viewerFailure.IsRetryable)}");
+        }
     }
+
+    private static string WelcomeText(OperatorUiMode mode) => mode == OperatorUiMode.Normal
+        ? "Введите / для меню действий. Основное действие — «Запустить окружение»."
+        : "Введите / для меню действий текущего режима. Технические команды доступны по категориям.";
 
     /// <summary>Чистое presentation-состояние с operation и confirmation gates.</summary>
     public OperatorUiSession Session { get; } = new();
@@ -38,10 +78,17 @@ public sealed class OperatorUiController : IDisposable
     public AzurPilotOperatorMuMuInventory? Inventory { get; private set; }
 
     /// <summary>Краткий статус текущей либо последней операции.</summary>
-    public string OperationText { get; private set; } = "Операция: нет";
+    public string OperationText
+    {
+        get => Volatile.Read(ref _progressText) ?? _operationText;
+        private set => _operationText = value;
+    }
 
     /// <summary>Task завершён и результат готов к применению к Session.</summary>
     public bool IsOperationCompleted => _activeTask?.IsCompleted == true;
+
+    /// <summary>Отказ последней завершённой операции; <see langword="null"/> при успехе или отмене.</summary>
+    public ApplicationFailure? LastOperationFailure { get; private set; }
 
     /// <summary>Запускает service use case только после успешного gate.</summary>
     /// <param name="action">Service action.</param>
@@ -59,6 +106,7 @@ public sealed class OperatorUiController : IDisposable
         }
 
         _cancellation = new CancellationTokenSource();
+        Volatile.Write(ref _progressText, null);
         CancellationToken token = _cancellation.Token;
         string title = OperatorUiCommand.For(action).Title;
         OperationText = $"Выполняется: {title} · {target?.ToString() ?? "приложение"} · F4 отмена";
@@ -115,11 +163,15 @@ public sealed class OperatorUiController : IDisposable
         }
 
         bool inventoryChanged = false;
+        MuMuInstanceId? resolvedTarget = null;
         try
         {
             OperationPresentation result = _activeTask.GetAwaiter().GetResult();
+            Volatile.Write(ref _progressText, null);
             OperationText = result.Cancelled ? "Операция: отменена"
                 : result.Success ? "Операция: завершена" : "Операция: отказ";
+            LastOperationFailure = result.Failure;
+            resolvedTarget = result.ResolvedTarget;
             string title = result.Cancelled ? "Отмена" : result.Kind switch
             {
                 OperatorUiMessageKind.Success => "Готово",
@@ -144,18 +196,28 @@ public sealed class OperatorUiController : IDisposable
         catch (OperationCanceledException)
         {
             OperationText = "Операция: отменена";
+            LastOperationFailure = null;
             Session.AddMessage("Отмена", "Операция завершила обработку отмены.", OperatorUiMessageKind.Warning);
         }
         catch (Exception exception)
         {
             OperationText = "Операция: ошибка";
+            LastOperationFailure = null;
             Session.AddMessage("Ошибка", "Неожиданная ошибка операции. Проверьте технические детали.",
                 OperatorUiMessageKind.Error,
                 $"Тип: {exception.GetType().FullName}\nСообщение: {exception.Message}");
         }
         finally
         {
+            Volatile.Write(ref _progressText, null);
             Session.CompleteOperation();
+            // Доказанная identity применяется к сессии только после освобождения operation slot:
+            // до этого момента смена target запрещена контрактом сессии.
+            if (resolvedTarget is MuMuInstanceId target)
+            {
+                _ = Session.SelectInstance(target);
+            }
+
             _activeTask = null;
             _cancellation?.Dispose();
             _cancellation = null;
@@ -186,7 +248,9 @@ public sealed class OperatorUiController : IDisposable
         switch (action)
         {
             case OperatorUiAction.Diagnostics:
-                return DescribeDiagnostics(_service.RefreshDiagnostics());
+                return DescribeDiagnostics(Remember(_service.RefreshDiagnostics()));
+            case OperatorUiAction.Status:
+                return DescribeEnvironmentState(Remember(_service.RefreshDiagnostics()));
             case OperatorUiAction.Instances:
                 ApplicationResult<AzurPilotOperatorMuMuInventory> inventory = _service.DiscoverMuMuInstances();
                 if (inventory.IsFailure)
@@ -240,7 +304,12 @@ public sealed class OperatorUiController : IDisposable
                     ));
             case OperatorUiAction.EnvironmentPrepare:
                 return DescribeEnvironmentPreparation(await _service.PrepareSelectedAndroidAsync(
-                    target!.Value, cancellationToken).ConfigureAwait(false));
+                    target!.Value, cancellationToken, PreparationProgress()).ConfigureAwait(false));
+            case OperatorUiAction.ResolveTarget:
+                return ResolveConfiguredTarget();
+            case OperatorUiAction.ReopenLogViewer:
+                return Present(await _service.ReopenLogViewerAsync(cancellationToken).ConfigureAwait(false),
+                    _ => ("Отдельная лог-консоль подключена.", "Read-only consumer application host; MuMu не изменялся."));
             case OperatorUiAction.GameObserve:
                 return Present(_service.ObserveAzurLane(target!.Value), observation =>
                     (
@@ -258,7 +327,9 @@ public sealed class OperatorUiController : IDisposable
                 ApplicationResult<AzurLaneGameLifecycleOutcome> game;
                 if (action == OperatorUiAction.GameStart)
                 {
-                    game = await _service.StartAzurLaneAsync(target!.Value, cancellationToken).ConfigureAwait(false);
+                    game = await _service.StartAzurLaneAsync(target!.Value, cancellationToken, PreparationProgress(),
+                        () => Volatile.Write(ref _progressText, "Запуск игры · F4 отмена"))
+                        .ConfigureAwait(false);
                 }
                 else if (action == OperatorUiAction.GameStop)
                 {
@@ -287,7 +358,7 @@ public sealed class OperatorUiController : IDisposable
                     ));
             case OperatorUiAction.SelectInstance:
             case OperatorUiAction.Cancel:
-            case OperatorUiAction.Logs:
+            case OperatorUiAction.Settings:
             case OperatorUiAction.Details:
             case OperatorUiAction.Help:
             case OperatorUiAction.Exit:
@@ -328,7 +399,7 @@ public sealed class OperatorUiController : IDisposable
         if (outcome.IsSuccess)
         {
             AndroidTransportPreparationOutcome readiness = outcome.AndroidPreparation!;
-            string summary = $"Android для {outcome.InstanceId} готов: transport, shell и загрузка проверены. "
+            string summary = $"Окружение готово. Android для {outcome.InstanceId} готов: transport, shell и загрузка проверены. "
                 + $"{muMuSummary} Azur Lane не запускалась.";
             string details = $"Target: {outcome.InstanceId}\nЭтап: {outcome.Stage}\n"
                 + $"Исходное состояние MuMu: {outcome.InitialMuMuState}\n{muMuSummary}\n"
@@ -341,10 +412,18 @@ public sealed class OperatorUiController : IDisposable
         }
 
         ApplicationFailure? failure = outcome.Failure;
-        string reason = failure?.Message ?? "Подготовка не подтвердила готовность Android.";
-        string partialState = outcome.MuMuMayRemainRunning
-            ? "MuMu может остаться запущенным; автоматическая остановка не выполняется."
-            : "Запуск MuMu не подтверждён.";
+        string reason = failure?.Code == ApplicationFailure.OperationCancelled
+            ? "Подготовка отменена пользователем."
+            : failure?.Message ?? "Подготовка не подтвердила готовность Android.";
+        string partialState = outcome.PostflightMuMuState switch
+        {
+            MuMuLifecycleState.Running => "Новое наблюдение: MuMu продолжает работать. Для остановки выберите «Остановить окружение».",
+            MuMuLifecycleState.Stopped => "Новое наблюдение: MuMu остановлен.",
+            MuMuLifecycleState.Unknown => "Новое наблюдение: состояние MuMu не доказано, он может остаться запущенным. Автоматической остановки нет.",
+            _ => outcome.MuMuMayRemainRunning
+                ? "MuMu может остаться запущенным; новое наблюдение не доказало его состояние. Автоматической остановки нет."
+                : "Запуск MuMu не подтверждён.",
+        };
         string failedSummary = $"Подготовка {outcome.InstanceId} остановлена на этапе "
             + $"{DescribePreparationStage(outcome.Stage)}: {reason} {partialState} Azur Lane не запускалась.";
         string failedDetails = $"Target: {outcome.InstanceId}\nЭтап: {outcome.Stage}\n"
@@ -368,7 +447,8 @@ public sealed class OperatorUiController : IDisposable
             failedSummary,
             kind,
             failedDetails,
-            Cancelled: failure?.Code == ApplicationFailure.OperationCancelled);
+            Cancelled: failure?.Code == ApplicationFailure.OperationCancelled,
+            Failure: failure);
     }
 
     private static string DescribePreparationStage(AzurPilotOperatorAndroidPreparationStage stage) => stage switch
@@ -377,9 +457,53 @@ public sealed class OperatorUiController : IDisposable
         AzurPilotOperatorAndroidPreparationStage.ObserveMuMu => "наблюдения MuMu",
         AzurPilotOperatorAndroidPreparationStage.StartMuMu => "запуска MuMu",
         AzurPilotOperatorAndroidPreparationStage.PrepareAndroid => "подготовки Android",
+        AzurPilotOperatorAndroidPreparationStage.CheckAndroidBoot => "проверки загрузки Android",
         AzurPilotOperatorAndroidPreparationStage.Completed => "проверки готовности",
         _ => "неизвестном этапе",
     };
+
+    private SynchronousProgress<AzurPilotOperatorAndroidPreparationStage> PreparationProgress() =>
+        new SynchronousProgress<AzurPilotOperatorAndroidPreparationStage>(stage =>
+        {
+            string text = stage switch
+            {
+                AzurPilotOperatorAndroidPreparationStage.ResolveMuMu => "Проверка целевого экземпляра",
+                AzurPilotOperatorAndroidPreparationStage.ObserveMuMu => "Проверка состояния MuMu",
+                AzurPilotOperatorAndroidPreparationStage.StartMuMu => "Запуск MuMu",
+                AzurPilotOperatorAndroidPreparationStage.PrepareAndroid => "Подключение Android",
+                AzurPilotOperatorAndroidPreparationStage.CheckAndroidBoot => "Проверка загрузки Android",
+                AzurPilotOperatorAndroidPreparationStage.Completed => "Окружение готово",
+                _ => "Подготовка окружения",
+            };
+            Volatile.Write(ref _progressText, text + " · F4 отмена");
+        });
+
+    /// <summary>Настройки, записанные для следующего запуска; текущий DI snapshot остаётся прежним.</summary>
+    internal AzurPilotConfiguration SavedConfiguration => _savedConfiguration.Configuration;
+
+    /// <summary>Явно сохраняет настройку и сообщает фактический результат записи.</summary>
+    internal bool SaveSettings(AzurPilotConfiguration configuration)
+    {
+        if (Session.IsOperationActive)
+        {
+            Session.AddMessage("Настройки", "Дождитесь завершения операции.", OperatorUiMessageKind.Warning);
+            return false;
+        }
+
+        ApplicationResult<AzurPilotConfigurationSnapshot> saved = _service.SaveConfiguration(_savedConfiguration, configuration,
+            out string? backupPath);
+        if (saved.IsFailure)
+        {
+            Session.AddMessage("Настройки не сохранены", saved.FailureInfo!.Message, OperatorUiMessageKind.Error);
+            return false;
+        }
+
+        _savedConfiguration = saved.Value!;
+        Session.AddMessage("Настройки сохранены", "Выбор будет восстановлен при следующем запуске. "
+            + "Режим и лог-консоль применяются после перезапуска."
+            + (backupPath is null ? string.Empty : $"\nРезервная копия: {backupPath}"), OperatorUiMessageKind.Success);
+        return true;
+    }
 
     private static OperationPresentation Failure(ApplicationFailure failure)
     {
@@ -390,7 +514,7 @@ public sealed class OperatorUiController : IDisposable
             : $"Причина отказа: {failure.Message}\n"
                 + (failure.IsRetryable
                     ? "Следующий шаг: устраните указанную причину и повторите действие."
-                    : "Следующий шаг: проверьте состояние через /diagnostics и откройте /details.");
+                    : "Подробности доступны при запуске с --mode diagnostic: /diagnostics и /details.");
         return new OperationPresentation(
             false,
             summary,
@@ -398,7 +522,102 @@ public sealed class OperatorUiController : IDisposable
             $"Код: {failure.Code}\nПовтор имеет смысл: {Fact(failure.IsRetryable)}"
             + (failure.Details is null ? string.Empty : "\n" + string.Join('\n', failure.Details.Take(16)
                 .Select(pair => $"{pair.Key}: {OperatorUiSession.CleanText(pair.Value, 256)}"))),
-            Cancelled: cancelled);
+            Cancelled: cancelled,
+            Failure: failure);
+    }
+
+    /// <summary>Строит семантику выбора целевого экземпляра из действующей конфигурации.</summary>
+    /// <returns>Семантика выбора либо отказ недопустимого значения конфигурации.</returns>
+    private ApplicationResult<MuMuInstanceSelection> ConfiguredSelection()
+    {
+        string configured = _lastDiagnostics.MuMu.ConfiguredInstance;
+        if (MuMuInstanceValue.IsAuto(configured))
+        {
+            return ApplicationResult<MuMuInstanceSelection>.Success(MuMuInstanceSelection.Auto());
+        }
+
+        if (MuMuInstanceValue.IsValid(configured))
+        {
+            return ApplicationResult<MuMuInstanceSelection>.Success(MuMuInstanceSelection.Explicit(
+                MuMuInstanceId.FromIndex(configured[MuMuInstanceValue.ProviderPrefix.Length..])));
+        }
+
+        return ApplicationResult<MuMuInstanceSelection>.Failure(new ApplicationFailure
+        {
+            Code = ApplicationFailure.ConfigurationInvalid,
+            Message = $"Значение mumu.instance «{configured}» не поддерживается схемой конфигурации.",
+            IsRetryable = false,
+            Details = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["mumu_instance"] = configured,
+            },
+        });
+    }
+
+    /// <summary>
+    /// Разрешает точную identity целевого экземпляра без mutation: шаг перед единым подтверждением.
+    /// </summary>
+    /// <returns>Представление доказанной identity либо объяснение, почему старт не разрешён.</returns>
+    private OperationPresentation ResolveConfiguredTarget()
+    {
+        ApplicationResult<MuMuInstanceSelection> selection = ConfiguredSelection();
+        if (selection.IsFailure)
+        {
+            return Failure(selection.FailureInfo!);
+        }
+
+        MuMuInstanceSelection value = selection.Value!;
+        ApplicationResult<MuMuInstanceId> resolved = _service.ResolveTarget(value);
+        if (resolved.IsFailure)
+        {
+            return DescribeTargetResolutionFailure(resolved.FailureInfo!, value);
+        }
+
+        MuMuInstanceId target = resolved.Value!;
+        string how = value.IsAutomatic
+            ? "автоматически: обнаружен ровно один экземпляр"
+            : "по сохранённому mumu.instance";
+        return new OperationPresentation(
+            true,
+            $"Целевой экземпляр {target} определён {how}.",
+            OperatorUiMessageKind.Information,
+            $"Target: {target}\nСпособ выбора: {how}\n"
+            + $"Значение mumu.instance: {_lastDiagnostics.MuMu.ConfiguredInstance}",
+            ResolvedTarget: target,
+            Failure: null);
+    }
+
+    /// <summary>Объясняет оператору, почему старт не разрешён, и что делать дальше.</summary>
+    /// <param name="failure">Отказ разрешения target.</param>
+    /// <param name="selection">Использованная семантика выбора.</param>
+    /// <returns>Представление отказа с пользовательским следующим шагом.</returns>
+    private static OperationPresentation DescribeTargetResolutionFailure(
+        ApplicationFailure failure,
+        MuMuInstanceSelection selection)
+    {
+        string nextStep = failure.Code switch
+        {
+            ApplicationFailure.MuMuInstanceAmbiguous =>
+                "Обнаружено несколько экземпляров MuMu, поэтому автоматический выбор не выполняется. "
+                + "Выберите точный ID в списке и сохраните его в mumu.instance, чтобы следующий запуск "
+                + "обошёлся без выбора.",
+            ApplicationFailure.MuMuInstanceNotFound =>
+                "Ни один экземпляр MuMu не обнаружен. Проверьте, что нужный экземпляр создан в MuMuPlayer.",
+            ApplicationFailure.MuMuInstallationNotFound or ApplicationFailure.MuMuInstallationAmbiguous =>
+                "Установка MuMuPlayer не разрешена однозначно. Проверьте установку и повторите запуск.",
+            _ => "Проверьте состояние MuMu и повторите запуск окружения.",
+        };
+        string how = selection.IsAutomatic
+            ? "автоматический (mumu.instance = auto)"
+            : "явный (mumu.instance)";
+        return new OperationPresentation(
+            false,
+            $"Запуск окружения не выполнен: {failure.Message}\n{nextStep}",
+            OperatorUiMessageKind.Warning,
+            $"Код: {failure.Code}\nСпособ выбора: {how}\n"
+            + (failure.Details is null ? string.Empty : string.Join('\n', failure.Details.Take(16)
+                .Select(pair => $"{pair.Key}: {OperatorUiSession.CleanText(pair.Value, 256)}"))),
+            Failure: failure);
     }
 
     private static string Fact(bool? value) => value.HasValue ? (value.Value ? "да" : "нет") : "не наблюдалось";
@@ -412,9 +631,9 @@ public sealed class OperatorUiController : IDisposable
             + $"MuMu — {DescribeMuMuDiagnostics(report.MuMu)}; Android — {DescribeAndroidDiagnostics(report.Android)};\n"
             + $"Azur Lane Global/EN — {DescribeGameDiagnostics(report.AzurLane)}.";
         string nextStep = report.MuMu.SelectedInstanceId is null
-            ? "Следующий шаг: выберите точный экземпляр через /instances."
+            ? "Следующий шаг: запустите окружение — точный экземпляр разрешается из mumu.instance."
             : !androidReady
-                ? "Следующий шаг: проверьте /android; подготовка доступна отдельной подтверждаемой командой /environment-prepare."
+                ? "Следующий шаг: проверьте /android; подготовка доступна действием «Запустить окружение»."
                 : "Следующий шаг: используйте /android или /game для повторного наблюдения.";
         string fullDetails = $"Сборка: {report.Application.AssemblyName} {report.Application.AssemblyVersion}\n"
             + $"Runtime: {report.Application.RuntimeIdentifier}; OS: {report.Application.OperatingSystem}; "
@@ -444,6 +663,86 @@ public sealed class OperatorUiController : IDisposable
             warning ? OperatorUiMessageKind.Warning : OperatorUiMessageKind.Success, fullDetails);
     }
 
+    /// <summary>Запоминает последний наблюдённый отчёт для экрана настроек.</summary>
+    /// <param name="report">Отчёт текущего наблюдения.</param>
+    /// <returns>Тот же отчёт.</returns>
+    private AzurPilotDiagnosticReport Remember(AzurPilotDiagnosticReport report)
+    {
+        _lastDiagnostics = report;
+        return report;
+    }
+
+    /// <summary>
+    /// Краткое состояние среды для обычного режима: готовность и возможное действие пользователя.
+    /// </summary>
+    /// <remarks>
+    /// Нормальное состояние <c>MuMu = Stopped</c> — это не отказ: недоступный до запуска ADB endpoint
+    /// относится к диагностическим подробностям, а не к пользовательскому экрану. Технические
+    /// failure-коды и correlation identifier здесь не показываются.
+    /// </remarks>
+    /// <param name="report">Отчёт текущего наблюдения.</param>
+    /// <returns>Краткое представление состояния.</returns>
+    private static OperationPresentation DescribeEnvironmentState(AzurPilotDiagnosticReport report)
+    {
+        string summary = $"MuMu — {DescribeMuMuDiagnostics(report.MuMu)}; "
+            + $"Android — {DescribeAndroidDiagnostics(report.Android)}; "
+            + $"Azur Lane Global/EN — {DescribeGameDiagnostics(report.AzurLane)}.";
+        if (!report.MuMu.IsInstallationDiscovered)
+        {
+            return new OperationPresentation(true,
+                summary + "\nУстановка MuMuPlayer не обнаружена: запуск окружения недоступен.",
+                OperatorUiMessageKind.Warning);
+        }
+
+        if (report.MuMu.LifecycleState == MuMuLifecycleState.Stopped)
+        {
+            return new OperationPresentation(true,
+                "MuMu остановлен. Можно запустить окружение.",
+                OperatorUiMessageKind.Information);
+        }
+
+        if (report.MuMu.LifecycleState == MuMuLifecycleState.Running)
+        {
+            return IsAndroidReady(report.Android)
+                ? new OperationPresentation(true,
+                    summary + "\nОкружение готово: можно запустить игру.",
+                    OperatorUiMessageKind.Success)
+                : new OperationPresentation(true,
+                    summary + "\nMuMu работает; Android ещё не готов. Запустите окружение для подготовки Android.",
+                    OperatorUiMessageKind.Information);
+        }
+
+        return new OperationPresentation(true,
+            summary + "\nТочное состояние MuMu не доказано. Запустите окружение, чтобы получить его.",
+            OperatorUiMessageKind.Information);
+    }
+
+    /// <summary>Описывает действующую эффективную конфигурацию и реально доступную настройку.</summary>
+    /// <param name="mode">Режим интерфейса, в котором открыт экран настроек.</param>
+    /// <returns>Сообщение с реальными значениями конфигурации.</returns>
+    internal OperatorUiMessage DescribeSettings(OperatorUiMode mode)
+    {
+        AzurPilotConfigurationDiagnostics configuration = _lastDiagnostics.Configuration;
+        string source = configuration.Source == AzurPilotConfigurationSource.BuiltInDefaults
+            ? "встроенные значения по умолчанию (файла нет)"
+            : configuration.FilePath ?? "файл";
+        string instance = string.IsNullOrWhiteSpace(_lastDiagnostics.MuMu.ConfiguredInstance)
+            ? "не задан"
+            : _lastDiagnostics.MuMu.ConfiguredInstance;
+        string text = "Действующая конфигурация применяется один раз при запуске; hot reload нет.\n"
+            + $"Источник: {source}\n"
+            + $"Схема: эффективная v{configuration.SchemaVersion}, объявленная v{configuration.SourceSchemaVersion}\n"
+            + $"Минимальный уровень журнала: {OperatorUiLogPresentation.LevelLabel(configuration.MinimumLevel)}\n"
+            + $"Режим интерфейса: {OperatorUiModePresentation.Label(mode)} "
+            + $"(запуск: --mode {OperatorUiModePresentation.Argument(mode)})\n"
+            + $"MuMu instance: {instance}\n"
+            + $"Расположение конфигурации: {AzurPilotConfigurationPath.GetDefaultRuntimePath()}\n"
+            + $"Следующий запуск: {OperatorUiModePresentation.Argument(SavedConfiguration.Ui.Mode)}, "
+            + $"экземпляр {SavedConfiguration.MuMu.Instance}, "
+            + $"отдельная лог-консоль: {(SavedConfiguration.Logging.Viewer.Enabled ? "включена" : "выключена")}.";
+        return new OperatorUiMessage("Настройки", text);
+    }
+
     private static string DescribeInstance(AzurPilotOperatorMuMuInstance instance)
         => $"{instance.Instance.Id} · {instance.Instance.DisplayName}: "
             + (instance.Observation is null ? "состояние не доказано" : DescribeMuMuState(instance.Observation.State))
@@ -470,15 +769,18 @@ public sealed class OperatorUiController : IDisposable
         OperatorUiAction.MuMuStop or OperatorUiAction.GameStop => "остановка",
         OperatorUiAction.MuMuRestart or OperatorUiAction.GameRestart => "перезапуск",
         OperatorUiAction.Diagnostics => "диагностика приложения",
+        OperatorUiAction.Status => "состояние среды",
         OperatorUiAction.Instances => "поиск экземпляров",
         OperatorUiAction.SelectInstance => "выбор экземпляра",
         OperatorUiAction.AndroidObserve => "наблюдение Android",
         OperatorUiAction.AndroidPrepare => "подготовка Android",
         OperatorUiAction.EnvironmentPrepare => "подготовка MuMu и Android",
+        OperatorUiAction.ResolveTarget => "определение целевого экземпляра",
         OperatorUiAction.GameObserve => "наблюдение Azur Lane",
         OperatorUiAction.Screenshot => "снимок экрана",
         OperatorUiAction.Cancel => "отмена",
-        OperatorUiAction.Logs => "показ логов",
+        OperatorUiAction.Settings => "настройки",
+        OperatorUiAction.ReopenLogViewer => "открытие отдельной лог-консоли",
         OperatorUiAction.Details => "просмотр деталей",
         OperatorUiAction.Help => "помощь",
         OperatorUiAction.Exit => "завершение работы",
@@ -589,5 +891,7 @@ public sealed class OperatorUiController : IDisposable
         OperatorUiMessageKind Kind,
         string? Details = null,
         AzurPilotOperatorMuMuInventory? Inventory = null,
-        bool Cancelled = false);
+        bool Cancelled = false,
+        MuMuInstanceId? ResolvedTarget = null,
+        ApplicationFailure? Failure = null);
 }

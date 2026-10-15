@@ -8,8 +8,9 @@ using Xunit;
 namespace AzurPilot.Tests.Configuration;
 
 /// <summary>
-/// Доказывает правила legacy-входа схемы v1: валидный документ v1 допускается и нормализуется к схеме v2
-/// только в памяти, строгая валидация v1 сохраняется, а migration/repair/update точки входа не появляются.
+/// Доказывает правила legacy-входа схемы v1: валидный документ v1 допускается и нормализуется к
+/// эффективной схеме v3 только в памяти, строгая валидация v1 сохраняется, а migration/repair/update
+/// точки входа у загрузчика не появляются.
 /// </summary>
 [Trait("Category", "Configuration")]
 public sealed class AzurPilotConfigurationLegacyV1Tests
@@ -20,7 +21,10 @@ public sealed class AzurPilotConfigurationLegacyV1Tests
     /// </summary>
     private const int LegacySchemaVersion = 1;
 
-    [Fact(DisplayName = "Валидный документ v1 нормализуется к v2 в памяти, а файл на диске не меняется")]
+    /// <summary>Публичная поверхность загрузчика: только чтение, без migration/repair/update.</summary>
+    private static readonly string[] LoaderPublicMethodNames = ["Load", "LoadRuntime", "LoadFromSources"];
+
+    [Fact(DisplayName = "Валидный документ v1 нормализуется к v3 в памяти, а файл на диске не меняется")]
     public void ValidLegacyDocumentIsNormalizedInMemoryOnly()
     {
         using TemporaryConfigurationDirectory directory = new();
@@ -34,9 +38,10 @@ public sealed class AzurPilotConfigurationLegacyV1Tests
         Assert.True(result.IsSuccess, $"Валидный legacy-документ v1 обязан читаться, получено {result}.");
         AzurPilotConfigurationSnapshot snapshot = result.Value!;
         Assert.Equal(AzurPilotConfigurationSource.File, snapshot.Source);
+        Assert.Equal(AzurPilotConfigurationFormat.Json, snapshot.SourceFormat);
         Assert.Equal(path, snapshot.FilePath);
 
-        // Source schema — v1, effective schema — v2: это и есть нормализация в памяти.
+        // Source schema — v1, effective schema — v3: это и есть нормализация в памяти.
         Assert.Equal(LegacySchemaVersion, snapshot.SourceSchemaVersion);
         Assert.Equal(AzurPilotConfiguration.CurrentSchemaVersion, snapshot.EffectiveSchemaVersion);
         Assert.Equal(AzurPilotConfiguration.CurrentSchemaVersion, snapshot.Configuration.SchemaVersion);
@@ -45,6 +50,9 @@ public sealed class AzurPilotConfigurationLegacyV1Tests
         // Прочитанные значения сохранены, а новые обязательные значения пришли от владельца defaults.
         Assert.Equal(LogLevel.Warning, snapshot.Configuration.Diagnostics.MinimumLevel);
         Assert.Equal(MuMuInstanceValue.AutoValue, snapshot.Configuration.MuMu.Instance);
+        AzurPilotConfiguration defaults = AzurPilotConfigurationDefaults.Create();
+        Assert.Equal(defaults.Ui.Mode, snapshot.Configuration.Ui.Mode);
+        Assert.Equal(defaults.Logging.Viewer.Enabled, snapshot.Configuration.Logging.Viewer.Enabled);
 
         // Нормализация не касается диска: файл побитово тот же, новых файлов не появилось.
         Assert.Equal(documentBefore, File.ReadAllBytes(path));
@@ -75,16 +83,30 @@ public sealed class AzurPilotConfigurationLegacyV1Tests
     {
         MethodInfo[] publicMethods = typeof(AzurPilotConfigurationLoader)
             .GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly);
+        string[] publicNames = [.. publicMethods.Select(method => method.Name)];
 
-        // Нормализация v1→v2 выполняется в памяти, поэтому единственная публичная операция загрузчика —
-        // Load: команды migration/repair/update (и любая запись файла) не заводятся.
-        Assert.NotEmpty(publicMethods);
-        Assert.All(publicMethods, method => Assert.Equal("Load", method.Name));
+        // Публичная поверхность загрузчика — только чтение: Load (явный файл), LoadRuntime (оба
+        // runtime-пути) и LoadFromSources (та же политика с явными путями). Ни migration, ни repair, ни
+        // запись файла загрузчику не принадлежат.
+        Assert.NotEmpty(publicNames);
+        Assert.All(
+            publicNames,
+            name => Assert.Contains(name, LoaderPublicMethodNames));
+
+        // Единственный владелец миграции — отдельный тип, и его операция не вызывается загрузкой.
+        MethodInfo[] migrationMethods = typeof(AzurPilotConfigurationMigration)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly);
+        Assert.NotEmpty(migrationMethods);
+        Assert.All(
+            migrationMethods,
+            method => Assert.StartsWith("Migrate", method.Name, StringComparison.Ordinal));
     }
 
     [Theory(DisplayName = "Строгая валидация legacy-схемы v1 сохраняется")]
     [InlineData("секция mumu в документе v1", """{"schemaVersion":1,"diagnostics":{"minimumLevel":"Information"},"mumu":{"instance":"auto"}}""")]
     [InlineData("секция mumu с допустимым значением в документе v1", """{"schemaVersion":1,"diagnostics":{"minimumLevel":"Information"},"mumu":{"instance":"mumu:1"}}""")]
+    [InlineData("секция ui в документе v1", """{"schemaVersion":1,"diagnostics":{"minimumLevel":"Information"},"ui":{"mode":"normal"}}""")]
+    [InlineData("секция logging в документе v1", """{"schemaVersion":1,"diagnostics":{"minimumLevel":"Information"},"logging":{"viewer":{"enabled":false}}}""")]
     [InlineData("секция diagnostics в документе v1 с неизвестным свойством", """{"schemaVersion":1,"diagnostics":{"minimumLevel":"Information","extra":1}}""")]
     [InlineData("неизвестное property в корне документа v1", """{"schemaVersion":1,"diagnostics":{"minimumLevel":"Information"},"unknown":true}""")]
     [InlineData("отсутствует required diagnostics в документе v1", """{"schemaVersion":1}""")]
@@ -124,6 +146,8 @@ public sealed class AzurPilotConfigurationLegacyV1Tests
     }
 
     /// <summary>Собирает legacy-документ схемы v1: только версия и секция диагностики.</summary>
+    /// <param name="minimumLevel">Имя уровня логирования.</param>
+    /// <returns>Текст legacy-документа v1.</returns>
     private static string LegacySchemaDocument(string minimumLevel)
         => $$$"""
             {

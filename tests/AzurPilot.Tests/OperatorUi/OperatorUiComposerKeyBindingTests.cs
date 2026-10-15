@@ -285,6 +285,9 @@ public sealed class OperatorUiComposerKeyBindingTests
             case ComposerKeyEffect.ClosePalette:
                 palette = PaletteMode.Hidden;
                 break;
+            case ComposerKeyEffect.BackToCommands:
+                palette = PaletteMode.Commands;
+                break;
             case ComposerKeyEffect.ClearDetails:
             case ComposerKeyEffect.NotHandled:
             default:

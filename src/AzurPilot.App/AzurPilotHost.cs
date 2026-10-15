@@ -3,6 +3,7 @@ using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
+using AzurPilot.App.LogViewer;
 using AzurPilot.App.OperatorServices;
 using AzurPilot.Windows;
 using AzurPilot.Windows.Android;
@@ -55,36 +56,52 @@ public static class AzurPilotHost
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        return CreateBuilder(configuration, operatorLogBuffer: null);
+        return CreateBuilder(configuration, operatorLogBuffer: null, externalLoggerProvider: null);
     }
 
     private static HostApplicationBuilder CreateBuilder(
         ApplicationResult<AzurPilotConfigurationSnapshot> configuration,
-        AzurPilotOperatorLogBuffer? operatorLogBuffer)
+        AzurPilotOperatorLogBuffer? operatorLogBuffer,
+        ILoggerProvider? externalLoggerProvider)
     {
         HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(
             new HostApplicationBuilderSettings { DisableDefaults = true });
 
-        ConfigureLogging(builder, configuration, operatorLogBuffer);
+        ConfigureLogging(builder, configuration, operatorLogBuffer, externalLoggerProvider);
         RegisterRuntimeServices(builder, configuration);
+        if (externalLoggerProvider is AzurPilotLogViewerSession viewerSession)
+        {
+            _ = builder.Services.AddSingleton(viewerSession);
+        }
+
         return builder;
     }
 
     /// <summary>Запускает долгоживущий application host на время интерактивной операторской сессии.</summary>
-    /// <param name="runSession">UI callback, вызываемый после startup-диагностики при живом host-е.</param>
+    /// <param name="runSession">
+    /// UI callback, вызываемый после startup-диагностики при живом host-е; получает эффективный режим
+    /// интерфейса, уже разрешённый из явного аргумента запуска и пользовательской конфигурации.
+    /// </param>
     /// <param name="configurationPath">Путь конфигурации или runtime-путь по умолчанию.</param>
+    /// <param name="modeOverride">
+    /// Режим интерфейса из явного аргумента запуска. Явный аргумент имеет приоритет над сохранённым
+    /// значением конфигурации; <see langword="null"/> означает, что режим берётся из конфигурации.
+    /// </param>
     /// <param name="cancellationToken">Токен отмены запуска и сессии.</param>
     /// <returns>Startup-итог и признак того, что UI session была запущена.</returns>
     public static async Task<AzurPilotInteractiveRunResult> RunInteractiveAsync(
         Func<AzurPilotOperatorService, AzurPilotDiagnosticReport, AzurPilotOperatorLogBuffer,
-            CancellationToken, Task> runSession,
+            OperatorUiMode, ApplicationFailure?, CancellationToken, Task> runSession,
         string? configurationPath = null,
+        OperatorUiMode? modeOverride = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(runSession);
 
         AzurPilotOperation operation = AzurPilotOperation.Start("azurpilot.interactive.startup");
         AzurPilotOperatorLogBuffer logBuffer = new();
+        AzurPilotLogViewerSession? logViewer = null;
+        ApplicationFailure? logViewerFailure = null;
         IHost? host = null;
         bool hostStarted = false;
         bool sessionStarted = false;
@@ -97,13 +114,26 @@ public static class AzurPilotHost
             ApplicationResult<AzurPilotConfigurationSnapshot> configuration;
             try
             {
-                string path = configurationPath ?? AzurPilotConfigurationPath.GetDefaultRuntimePath();
                 using (operation.StartStep(AzurPilotOperation.ConfigurationActivityName))
                 {
-                    configuration = AzurPilotConfigurationLoader.Load(path);
+                    configuration = configurationPath is null
+                        ? AzurPilotConfigurationLoader.LoadRuntime()
+                        : AzurPilotConfigurationLoader.Load(configurationPath);
                 }
 
-                host = CreateBuilder(configuration, logBuffer).Build();
+                // Отдельная лог-консоль открывается до сборки host-а: её провайдер — часть logging stack,
+                // а не второй владелец логирования. Отказ открытия окна не мешает запуску.
+                if (configuration.IsSuccess && configuration.Value!.Configuration.Logging.Viewer.Enabled)
+                {
+                    logViewer = new AzurPilotLogViewerSession(configuration.Value.Configuration.Diagnostics.MinimumLevel);
+                    ApplicationResult<bool> viewer = await logViewer.OpenAsync(cancellationToken).ConfigureAwait(false);
+                    if (viewer.IsFailure)
+                    {
+                        logViewerFailure = viewer.FailureInfo;
+                    }
+                }
+
+                host = CreateBuilder(configuration, logBuffer, logViewer).Build();
             }
             catch (Exception exception)
             {
@@ -115,6 +145,15 @@ public static class AzurPilotHost
 
             logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger(AzurPilotLog.Category);
             logger.StartupStarted(operation.CorrelationId);
+
+            if (logViewerFailure is ApplicationFailure viewerFailure)
+            {
+                // Отказ просмотра журнала — записываемый факт, а не причина отказа запуска.
+                logger.LogViewerUnavailable(
+                    operation.CorrelationId,
+                    viewerFailure.Code,
+                    viewerFailure.Message);
+            }
 
             if (configuration.IsFailure)
             {
@@ -150,10 +189,14 @@ public static class AzurPilotHost
             operation.Dispose();
             operationDisposed = true;
             sessionStarted = true;
+            // Явный аргумент запуска приоритетнее сохранённого значения конфигурации.
+            OperatorUiMode effectiveMode = modeOverride ?? snapshot.Configuration.Ui.Mode;
             await runSession(
                 host.Services.GetRequiredService<AzurPilotOperatorService>(),
                 startupResult.Diagnostics,
                 logBuffer,
+                effectiveMode,
+                logViewerFailure,
                 cancellationToken).ConfigureAwait(false);
 
             hostStarted = false;
@@ -204,6 +247,13 @@ public static class AzurPilotHost
                 logBuffer.Dispose();
             }
 
+            // Отдельная лог-консоль завершается вместе с сессией: канал закрывается, viewer выходит сам,
+            // поэтому осиротевших процессов не остаётся.
+            if (logViewer is not null)
+            {
+                await logViewer.DisposeAsync().ConfigureAwait(false);
+            }
+
             if (!operationDisposed)
             {
                 operation.Dispose();
@@ -231,11 +281,12 @@ public static class AzurPilotHost
         IHost host;
         try
         {
-            string path = configurationPath ?? AzurPilotConfigurationPath.GetDefaultRuntimePath();
 
             using (operation.StartStep(AzurPilotOperation.ConfigurationActivityName))
             {
-                configuration = AzurPilotConfigurationLoader.Load(path);
+                configuration = configurationPath is null
+                    ? AzurPilotConfigurationLoader.LoadRuntime()
+                    : AzurPilotConfigurationLoader.Load(configurationPath);
             }
 
             host = CreateBuilder(configuration).Build();
@@ -295,10 +346,14 @@ public static class AzurPilotHost
     /// <param name="builder">Построитель host-а.</param>
     /// <param name="configuration">Результат загрузки конфигурации.</param>
     /// <param name="operatorLogBuffer">In-memory provider интерактивного режима или <see langword="null"/>.</param>
+    /// <param name="externalLoggerProvider">
+    /// Read-only провайдер отдельной лог-консоли либо <see langword="null"/>, если она не открыта.
+    /// </param>
     private static void ConfigureLogging(
         HostApplicationBuilder builder,
         ApplicationResult<AzurPilotConfigurationSnapshot> configuration,
-        AzurPilotOperatorLogBuffer? operatorLogBuffer)
+        AzurPilotOperatorLogBuffer? operatorLogBuffer,
+        ILoggerProvider? externalLoggerProvider)
     {
         if (operatorLogBuffer is null)
         {
@@ -317,6 +372,12 @@ public static class AzurPilotHost
         {
             // Интерактивный экран получает тот же structured logging через bounded in-memory buffer.
             _ = builder.Logging.AddProvider(operatorLogBuffer);
+        }
+
+        if (externalLoggerProvider is not null)
+        {
+            // Отдельная лог-консоль — второй consumer того же потока, а не второй владелец логирования.
+            _ = builder.Logging.AddProvider(externalLoggerProvider);
         }
 
         // Штатные сообщения lifetime generic host («Application started», «Content root path») описывают

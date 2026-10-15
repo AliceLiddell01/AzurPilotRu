@@ -1,7 +1,7 @@
 namespace AzurPilot.Core.Configuration;
 
 /// <summary>
-/// Immutable snapshot загруженной конфигурации вместе с её источником и версиями схемы.
+/// Immutable snapshot загруженной конфигурации вместе с её источником, форматом и версиями схемы.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -11,9 +11,9 @@ namespace AzurPilot.Core.Configuration;
 /// <see cref="AzurPilotConfigurationLoader"/>, то есть snapshot всегда провалидирован.
 /// </para>
 /// <para>
-/// Версия схемы, объявленная в источнике, и версия эффективной схемы различаются: legacy-документ v1
-/// нормализуется к v2 в памяти, поэтому snapshot несёт обе версии и позволяет отличить нормализованный
-/// legacy-вход от документа v2, не дампя саму конфигурацию.
+/// Версия схемы, объявленная в источнике, и версия эффективной схемы различаются: legacy-документ JSON
+/// нормализуется к v3 в памяти, поэтому snapshot несёт обе версии и позволяет отличить нормализованный
+/// legacy-вход от канонического YAML, не дампя саму конфигурацию.
 /// </para>
 /// </remarks>
 public sealed class AzurPilotConfigurationSnapshot
@@ -21,11 +21,13 @@ public sealed class AzurPilotConfigurationSnapshot
     private AzurPilotConfigurationSnapshot(
         AzurPilotConfiguration configuration,
         AzurPilotConfigurationSource source,
+        AzurPilotConfigurationFormat sourceFormat,
         string? filePath,
         int sourceSchemaVersion)
     {
         Configuration = configuration;
         Source = source;
+        SourceFormat = sourceFormat;
         FilePath = filePath;
         SourceSchemaVersion = sourceSchemaVersion;
     }
@@ -36,14 +38,24 @@ public sealed class AzurPilotConfigurationSnapshot
     /// <summary>Источник конфигурации: встроенные defaults или файл.</summary>
     public AzurPilotConfigurationSource Source { get; }
 
+    /// <summary>Формат файла, из которого прочитана конфигурация.</summary>
+    /// <value>
+    /// <see cref="AzurPilotConfigurationFormat.None"/> для встроенных defaults,
+    /// <see cref="AzurPilotConfigurationFormat.Yaml"/> для канонического YAML схемы v3 и
+    /// <see cref="AzurPilotConfigurationFormat.Json"/> для нормализованного legacy JSON.
+    /// </value>
+    public AzurPilotConfigurationFormat SourceFormat { get; }
+
     /// <summary>Полный путь файла, из которого прочитана конфигурация.</summary>
     /// <value>Путь существующего файла либо <see langword="null"/> для встроенных defaults.</value>
     public string? FilePath { get; }
 
     /// <summary>Версия схемы, которую объявил источник конфигурации.</summary>
     /// <value>
-    /// Версия из документа (для legacy-входа — <see cref="AzurPilotConfigurationV1.LegacySchemaVersion"/>)
-    /// либо <see cref="AzurPilotConfiguration.CurrentSchemaVersion"/> для встроенных defaults.
+    /// Версия из документа (для legacy JSON — <see cref="AzurPilotConfigurationV1.LegacySchemaVersion"/>
+    /// или <see cref="AzurPilotConfigurationV2.LegacySchemaVersion"/>) либо
+    /// <see cref="AzurPilotConfiguration.CurrentSchemaVersion"/> для встроенных defaults и канонического
+    /// YAML.
     /// </value>
     public int SourceSchemaVersion { get; }
 
@@ -64,12 +76,14 @@ public sealed class AzurPilotConfigurationSnapshot
         => new(
             AzurPilotConfigurationDefaults.Create(),
             AzurPilotConfigurationSource.BuiltInDefaults,
+            AzurPilotConfigurationFormat.None,
             filePath: null,
             sourceSchemaVersion: AzurPilotConfiguration.CurrentSchemaVersion);
 
     internal static AzurPilotConfigurationSnapshot FromFile(
         string filePath,
+        AzurPilotConfigurationFormat sourceFormat,
         AzurPilotConfiguration configuration,
         int sourceSchemaVersion)
-        => new(configuration, AzurPilotConfigurationSource.File, filePath, sourceSchemaVersion);
+        => new(configuration, AzurPilotConfigurationSource.File, sourceFormat, filePath, sourceSchemaVersion);
 }

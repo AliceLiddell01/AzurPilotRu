@@ -25,6 +25,49 @@ namespace AzurPilot.Tests.OperatorServices;
 [Trait("Category", "Operator")]
 public sealed class AzurPilotOperatorServiceTests
 {
+    [Fact(DisplayName = "Этапы подготовки следуют реальным production шагам, проверка загрузки не угадывается UI")]
+    public async Task PreparationReportsActualStagesInOrder()
+    {
+        MuMuInstanceId selected = MuMuInstanceId.FromIndex("7");
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
+        EnqueueAndroidReady(fixture, selected, new AndroidEndpoint("127.0.0.1", 20312));
+        List<AzurPilotOperatorAndroidPreparationStage> stages = [];
+
+        AzurPilotOperatorAndroidPreparationOutcome result = await fixture.Service.PrepareSelectedAndroidAsync(
+            selected, TestContext.Current.CancellationToken,
+            new SynchronousProgress<AzurPilotOperatorAndroidPreparationStage>(stage =>
+            {
+                if (stage == AzurPilotOperatorAndroidPreparationStage.CheckAndroidBoot)
+                {
+                    Assert.DoesNotContain(fixture.Runner.Requests, request => request.Request.Arguments.Contains("getprop"));
+                }
+
+                stages.Add(stage);
+            }));
+
+        Assert.True(result.IsSuccess);
+        Assert.Contains(AzurPilotOperatorAndroidPreparationStage.CheckAndroidBoot, stages);
+        Assert.DoesNotContain(AzurPilotOperatorAndroidPreparationStage.StartMuMu, stages);
+        Assert.True(stages.IndexOf(AzurPilotOperatorAndroidPreparationStage.ObserveMuMu)
+            < stages.IndexOf(AzurPilotOperatorAndroidPreparationStage.CheckAndroidBoot));
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+    }
+
+    [Fact(DisplayName = "Запуск игры из Unknown не мутирует MuMu, Android и игру")]
+    public async Task GameStartFromUnknownFailsBeforeAnyMutation()
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Unknown);
+
+        ApplicationResult<AzurLaneGameLifecycleOutcome> result = await fixture.Service.StartAzurLaneAsync(
+            MuMuInstanceId.FromIndex("7"), TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ApplicationFailure.MuMuStateUnproven, result.FailureInfo!.Code);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+        Assert.Empty(fixture.Runner.Requests);
+    }
     private static readonly string[] AndroidReadinessProperties =
     [
         "sys.boot_completed",
@@ -144,7 +187,8 @@ public sealed class AzurPilotOperatorServiceTests
         Assert.False(result.IsSuccess);
         Assert.Equal(AzurPilotOperatorAndroidPreparationStage.StartMuMu, result.Stage);
         Assert.Equal(ApplicationFailure.MuMuStateUnproven, result.Failure!.Code);
-        Assert.Equal(2, fixture.MuMuHost.ObservationCount);
+        Assert.Equal(3, fixture.MuMuHost.ObservationCount);
+        Assert.Equal(MuMuLifecycleState.Unknown, result.PostflightMuMuState);
         Assert.Null(result.MuMuStartOutcome);
         Assert.Empty(fixture.MuMuHost.MutationRequests);
         Assert.Empty(fixture.Runner.Requests);
@@ -460,7 +504,7 @@ public sealed class AzurPilotOperatorServiceTests
         Assert.Equal(OperatorUiMessageKind.Error, result.Kind);
         Assert.Contains("mumu:7", result.Text);
         Assert.Contains("подготовки Android", result.Text);
-        Assert.Contains("MuMu может остаться запущенным", result.Text);
+        Assert.Contains("Новое наблюдение: MuMu продолжает работать", result.Text);
         Assert.Contains("Azur Lane не запускалась", result.Text);
         Assert.Contains(ApplicationFailure.AndroidTransportNotReady, result.Details);
         MuMuMutationRequest mutation = Assert.Single(fixture.MuMuHost.MutationRequests);
@@ -524,13 +568,13 @@ public sealed class AzurPilotOperatorServiceTests
             },
         };
 
-        using OperatorUiController controller = new(fixture.Service, diagnostics);
+        using OperatorUiController controller = new(fixture.Service, diagnostics, OperatorUiMode.Diagnostic);
 
         OperatorUiMessage summary = controller.Session.SnapshotMessages()[^1];
         Assert.Equal(OperatorUiMessageKind.Warning, summary.Kind);
         Assert.Contains("Android — транспорт доступен; shell недоступен, загрузка выполняется", summary.Text);
         Assert.DoesNotContain("Android — готов", summary.Text);
-        Assert.Contains("/environment-prepare", summary.Text);
+        Assert.Contains("Запустить окружение", summary.Text);
     }
 
     private static OperatorFixture CreateFixture(params MuMuInstance[] instances)
@@ -596,7 +640,8 @@ public sealed class AzurPilotOperatorServiceTests
             readiness,
             gameState,
             gameLifecycle,
-            activeScreenshotHost);
+            activeScreenshotHost,
+            configuration);
 
         return new OperatorFixture(muMuHost, runner, observingScreenshotHost, service);
     }

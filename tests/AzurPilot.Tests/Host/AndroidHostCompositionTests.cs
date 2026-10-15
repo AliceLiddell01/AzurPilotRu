@@ -109,7 +109,8 @@ public sealed class AndroidHostCompositionTests
         // Application-level diagnostics и operator surface не меняют число managed boundaries.
         Assert.All(exported, type => Assert.True(
             type.Namespace is "AzurPilot.App" or "AzurPilot.App.Diagnostics"
-                or "AzurPilot.App.OperatorServices" or "AzurPilot.App.OperatorUi"));
+                or "AzurPilot.App.OperatorServices" or "AzurPilot.App.OperatorUi"
+                or "AzurPilot.App.LogViewer"));
     }
 
     private static IHost BuildHost()

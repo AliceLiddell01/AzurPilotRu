@@ -1,29 +1,71 @@
 using System.Text;
+using System.Text.Json;
 using AzurPilot.App;
+using AzurPilot.App.LogViewer;
 using AzurPilot.App.OperatorUi;
 
-// Точка входа приложения: запускает application host и печатает человекочитаемый итог. Вся
-// runtime-логика (composition, диагностика, логирование) живёт в AzurPilotHost, поэтому здесь нет ни
-// DI-регистраций, ни сбора диагностики, ни настройки логгеров.
+// Точка входа приложения: разбирает минимальный CLI, запускает application host и печатает
+// человекочитаемый итог. Вся runtime-логика (composition, диагностика, логирование) живёт в
+// AzurPilotHost, поэтому здесь нет ни DI-регистраций, ни сбора диагностики, ни настройки логгеров.
 //
-// Аргументы запуска не разбираются: продуктового CLI в этой задаче нет, и пользовательской опции,
-// подменяющей путь конфигурации, тоже. Runtime-путь по умолчанию остаётся за единственным владельцем
-// AzurPilotConfigurationPath, а явный путь — код-параметр composition, которым пользуются тесты.
+// Без аргументов поведение прежнее: интерактивный TUI при подключённом терминале либо одноразовая
+// диагностика при перенаправленных потоках. Явный --mode имеет приоритет над ui.mode конфигурации.
 
 Console.OutputEncoding = Encoding.UTF8;
+
+ApplicationArguments arguments = ApplicationArguments.Parse(args);
+if (arguments.Failure is ApplicationArgumentFailure argumentFailure)
+{
+    if (Console.IsInputRedirected || Console.IsOutputRedirected)
+    {
+        Console.Error.WriteLine(JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["LogLevel"] = "Error",
+            ["Category"] = "AzurPilot.App",
+            ["Message"] = string.Join(' ', argumentFailure.ReportLines()),
+        }));
+    }
+    else
+    {
+        foreach (string line in argumentFailure.ReportLines())
+        {
+            Console.Error.WriteLine(line);
+        }
+    }
+
+    return ApplicationArguments.ExitCodeFor();
+}
+
+if (arguments.Help)
+{
+    Console.WriteLine("Использование: AzurPilot.App [--mode normal|manual|diagnostic]");
+    Console.WriteLine("Без аргументов: ui.mode из config.yaml; по умолчанию normal.");
+    Console.WriteLine("При перенаправлении stdin или stdout: одноразовая read-only диагностика.");
+    return AzurPilotExitCode.Success;
+}
+
+if (arguments.LogViewer)
+{
+    // Отдельная лог-консоль — собственный процесс того же приложения: он не собирает application host,
+    // не открывает TUI и не управляет состоянием MuMu, Android или игры.
+    return await AzurPilotLogViewerHost.RunAsync(args).ConfigureAwait(false);
+}
 
 if (!Console.IsInputRedirected && !Console.IsOutputRedirected)
 {
     AzurPilotInteractiveRunResult interactive = await AzurPilotHost.RunInteractiveAsync(
-        static (service, initialDiagnostics, logBuffer, cancellationToken) =>
+        static (service, initialDiagnostics, logBuffer, mode, logViewerFailure, cancellationToken) =>
         {
             using AzurPilotOperatorUi ui = new(
                 service,
                 initialDiagnostics,
-                new OperatorUiLogSourceAdapter(logBuffer.Snapshot));
+                new OperatorUiLogSourceAdapter(logBuffer.Snapshot),
+                mode,
+                logViewerFailure);
             ui.Run(cancellationToken);
             return Task.CompletedTask;
-        }).ConfigureAwait(false);
+        },
+        modeOverride: arguments.Mode).ConfigureAwait(false);
 
     if (!interactive.InteractiveSessionStarted || interactive.Startup.ExitCode != AzurPilotExitCode.Success)
     {

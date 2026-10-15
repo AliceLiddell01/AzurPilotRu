@@ -13,9 +13,13 @@ namespace AzurPilot.Core.Configuration;
 /// </para>
 /// <para>
 /// Контракт существует только для чтения legacy-входа: он не сериализуется обратно, файл v1 не
-/// переписывается и не создаётся, migration/repair/update-команды не вводятся. Строгость к v1 не
-/// ослабляется: секция <c>mumu</c> для этого контракта — неизвестное свойство, поэтому документ
-/// v1 с ней невалиден.
+/// переписывается и не создаётся. Строгость к v1 не ослабляется: секция <c>mumu</c> для этого контракта
+/// — неизвестное свойство, поэтому документ v1 с ней невалиден.
+/// </para>
+/// <para>
+/// Явная миграция legacy-файла в канонический YAML выполняется отдельным владельцем
+/// <see cref="AzurPilotConfigurationMigration"/> и только по явному действию оператора: загрузка файла
+/// сама по себе ничего не мигрирует.
 /// </para>
 /// </remarks>
 internal sealed record AzurPilotConfigurationV1
@@ -31,12 +35,12 @@ internal sealed record AzurPilotConfigurationV1
     [JsonPropertyName("diagnostics")]
     public required DiagnosticsConfiguration Diagnostics { get; init; }
 
-    /// <summary>Нормализует legacy-документ v1 к эффективной схеме v2 в памяти.</summary>
-    /// <returns>Конфигурация схемы v2: прочитанная диагностика и встроенное значение новой секции.</returns>
+    /// <summary>Нормализует legacy-документ v1 к эффективной схеме v3 в памяти.</summary>
+    /// <returns>Конфигурация схемы v3: прочитанная диагностика и встроенные значения новых секций.</returns>
     /// <remarks>
     /// Нормализация выполняется только в памяти и не касается файла. Значения, которых в схеме v1 не
-    /// было, берутся у единственного владельца встроенных defaults, поэтому второй копии значения
-    /// <c>mumu.instance = "auto"</c> не появляется.
+    /// было, берутся у единственного владельца встроенных defaults, поэтому второй копии значений
+    /// <c>ui.mode</c>, <c>mumu.instance</c> и <c>logging.viewer.enabled</c> не появляется.
     /// </remarks>
     internal AzurPilotConfiguration ToCurrentSchema()
         => AzurPilotConfigurationDefaults.Create() with { Diagnostics = Diagnostics };

@@ -7,14 +7,29 @@ using Xunit;
 namespace AzurPilot.Tests.Configuration;
 
 /// <summary>
-/// Доказывает поведение загрузчика конфигурации: встроенные defaults при отсутствии файла, полное
-/// чтение валидного файла, неизменяемость snapshot и явные отказы вместо исключений.
+/// Доказывает поведение загрузчика конфигурации: встроенные defaults при отсутствии файла, полное чтение
+/// валидного файла, неизменяемость snapshot, выбор контракта по расширению и явные отказы вместо
+/// исключений.
 /// </summary>
 [Trait("Category", "Configuration")]
 public sealed class AzurPilotConfigurationLoaderTests
 {
     private const string ValidWarningDocument =
         """{"schemaVersion":1,"diagnostics":{"minimumLevel":"Warning"}}""";
+
+    private const string CanonicalYamlDocument =
+        """
+        schemaVersion: 3
+        ui:
+          mode: manual
+        mumu:
+          instance: "mumu:3"
+        diagnostics:
+          minimumLevel: Warning
+        logging:
+          viewer:
+            enabled: true
+        """;
 
     [Fact(DisplayName = "Отсутствующий файл конфигурации даёт snapshot встроенных defaults")]
     public void MissingFileProducesBuiltInDefaultsSnapshot()
@@ -30,30 +45,103 @@ public sealed class AzurPilotConfigurationLoaderTests
         Assert.True(snapshot.IsBuiltInDefaults);
         Assert.Null(snapshot.FilePath);
 
+        // Формат источника различает «файла нет» и «прочитан документ»: у defaults формата нет.
+        Assert.Equal(AzurPilotConfigurationFormat.None, snapshot.SourceFormat);
+
         // Значения приходят из единственного владельца defaults, а не из второй копии в загрузчике.
         Assert.Equal(AzurPilotConfigurationDefaults.Create(), snapshot.Configuration);
         Assert.Equal(AzurPilotConfiguration.CurrentSchemaVersion, snapshot.Configuration.SchemaVersion);
+        Assert.Equal(OperatorUiMode.Normal, snapshot.Configuration.Ui.Mode);
         Assert.Equal(LogLevel.Information, snapshot.Configuration.Diagnostics.MinimumLevel);
+        Assert.False(snapshot.Configuration.Logging.Viewer.Enabled);
 
         // Загрузка не создаёт файл: отсутствие файла остаётся валидным сценарием и не имеет side effects.
         Assert.False(File.Exists(directory.MissingConfigurationFilePath));
     }
 
-    [Fact(DisplayName = "Валидный файл schema v1 читается полностью и сохраняет путь в snapshot")]
-    public void ValidFileIsLoadedAndPathIsPreserved()
+    [Fact(DisplayName = "Отсутствующий канонический YAML даёт snapshot встроенных defaults")]
+    public void MissingYamlFileProducesBuiltInDefaultsSnapshot()
+    {
+        using TemporaryConfigurationDirectory directory = new();
+
+        ApplicationResult<AzurPilotConfigurationSnapshot> result =
+            AzurPilotConfigurationLoader.Load(directory.MissingYamlConfigurationFilePath);
+
+        Assert.True(result.IsSuccess, $"Отсутствие файла — валидный сценарий, получено {result}.");
+        Assert.Equal(AzurPilotConfigurationFormat.None, result.Value!.SourceFormat);
+        Assert.True(result.Value!.IsBuiltInDefaults);
+        Assert.False(File.Exists(directory.MissingYamlConfigurationFilePath));
+    }
+
+    [Fact(DisplayName = "Валидный legacy JSON v1 читается и нормализуется к v3 в памяти")]
+    public void ValidLegacyJsonFileIsLoadedAndPathIsPreserved()
     {
         using TemporaryConfigurationDirectory directory = new();
         string path = directory.WriteConfiguration(ValidWarningDocument);
 
         ApplicationResult<AzurPilotConfigurationSnapshot> result = AzurPilotConfigurationLoader.Load(path);
 
-        Assert.True(result.IsSuccess, $"Валидный файл schema v1 обязан загружаться, получено {result}.");
+        Assert.True(result.IsSuccess, $"Валидный legacy-файл v1 обязан загружаться, получено {result}.");
         AzurPilotConfigurationSnapshot snapshot = result.Value!;
         Assert.Equal(AzurPilotConfigurationSource.File, snapshot.Source);
+        Assert.Equal(AzurPilotConfigurationFormat.Json, snapshot.SourceFormat);
         Assert.False(snapshot.IsBuiltInDefaults);
         Assert.Equal(path, snapshot.FilePath);
+        Assert.Equal(AzurPilotConfigurationV1SchemaVersion, snapshot.SourceSchemaVersion);
+        Assert.True(snapshot.IsLegacySchemaNormalized);
         Assert.Equal(AzurPilotConfiguration.CurrentSchemaVersion, snapshot.Configuration.SchemaVersion);
         Assert.Equal(LogLevel.Warning, snapshot.Configuration.Diagnostics.MinimumLevel);
+    }
+
+    [Fact(DisplayName = "Валидный канонический YAML читается полностью и сохраняет путь в snapshot")]
+    public void ValidYamlFileIsLoadedCompletely()
+    {
+        using TemporaryConfigurationDirectory directory = new();
+        string path = directory.WriteYamlConfiguration(CanonicalYamlDocument);
+
+        ApplicationResult<AzurPilotConfigurationSnapshot> result = AzurPilotConfigurationLoader.Load(path);
+
+        Assert.True(result.IsSuccess, $"Валидный канонический YAML обязан загружаться, получено {result}.");
+        AzurPilotConfigurationSnapshot snapshot = result.Value!;
+        Assert.Equal(AzurPilotConfigurationSource.File, snapshot.Source);
+        Assert.Equal(AzurPilotConfigurationFormat.Yaml, snapshot.SourceFormat);
+        Assert.Equal(path, snapshot.FilePath);
+        Assert.Equal(AzurPilotConfiguration.CurrentSchemaVersion, snapshot.SourceSchemaVersion);
+        Assert.False(snapshot.IsLegacySchemaNormalized);
+
+        Assert.Equal(OperatorUiMode.Manual, snapshot.Configuration.Ui.Mode);
+        Assert.Equal("mumu:3", snapshot.Configuration.MuMu.Instance);
+        Assert.Equal(LogLevel.Warning, snapshot.Configuration.Diagnostics.MinimumLevel);
+        Assert.True(snapshot.Configuration.Logging.Viewer.Enabled);
+    }
+
+    [Fact(DisplayName = "Формат определяется расширением: короткое .yml читается как канонический YAML")]
+    public void ShortYamlExtensionIsAccepted()
+    {
+        using TemporaryConfigurationDirectory directory = new();
+        string path = Path.Combine(directory.Root, "config.yml");
+        File.WriteAllText(path, CanonicalYamlDocument);
+
+        ApplicationResult<AzurPilotConfigurationSnapshot> result = AzurPilotConfigurationLoader.Load(path);
+
+        Assert.True(result.IsSuccess, $"Расширение .yml обязано поддерживаться, получено {result}.");
+        Assert.Equal(AzurPilotConfigurationFormat.Yaml, result.Value!.SourceFormat);
+    }
+
+    [Fact(DisplayName = "Неподдерживаемое расширение даёт configuration_invalid, а не исключение")]
+    public void UnsupportedExtensionIsRejectedAsFailure()
+    {
+        using TemporaryConfigurationDirectory directory = new();
+        string path = Path.Combine(directory.Root, "config.txt");
+        File.WriteAllText(path, CanonicalYamlDocument);
+
+        ApplicationResult<AzurPilotConfigurationSnapshot> result = AzurPilotConfigurationLoader.Load(path);
+
+        ApplicationFailure failure = ConfigurationTestAssertions.AssertFailure(
+            result,
+            ApplicationFailure.ConfigurationInvalid,
+            "неподдерживаемое расширение файла конфигурации");
+        Assert.Equal(path, failure.Details!["config_path"]);
     }
 
     [Fact(DisplayName = "Изменение файла после загрузки не меняет уже полученный snapshot")]
@@ -131,6 +219,22 @@ public sealed class AzurPilotConfigurationLoaderTests
         Assert.Equal(path, failure.Details!["config_path"]);
     }
 
+    [Fact(DisplayName = "Нечитаемый канонический YAML тоже даёт отказ, а не defaults")]
+    public void UnreadableYamlFileIsRejectedAsFailure()
+    {
+        using TemporaryConfigurationDirectory directory = new();
+        string path = directory.WriteYamlConfiguration(CanonicalYamlDocument);
+        using FileStream locked = new(path, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        ApplicationResult<AzurPilotConfigurationSnapshot> result = AzurPilotConfigurationLoader.Load(path);
+
+        ApplicationFailure failure = ConfigurationTestAssertions.AssertFailure(
+            result,
+            ApplicationFailure.ConfigurationInvalid,
+            "занятый канонический YAML");
+        Assert.Equal(path, failure.Details!["config_path"]);
+    }
+
     [Fact(DisplayName = "UTF-8 BOM допускается: это кодировка, а не нарушение схемы")]
     public void ByteOrderMarkIsAccepted()
     {
@@ -154,6 +258,9 @@ public sealed class AzurPilotConfigurationLoaderTests
         _ = Assert.Throws<ArgumentNullException>(() => AzurPilotConfigurationLoader.Load(null!));
         _ = Assert.Throws<ArgumentException>(() => AzurPilotConfigurationLoader.Load("   "));
         _ = Assert.Throws<ArgumentException>(
-            () => AzurPilotConfigurationLoader.Load(Path.Combine("config", "config.json")));
+            () => AzurPilotConfigurationLoader.Load(Path.Combine("config", "config.yaml")));
     }
+
+    /// <summary>Версия legacy-схемы v1: владелец числа — legacy-контракт внутри Core.</summary>
+    private const int AzurPilotConfigurationV1SchemaVersion = 1;
 }

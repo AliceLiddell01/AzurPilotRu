@@ -30,6 +30,8 @@ public sealed class MuMuHostCompositionTests
     /// </remarks>
     private static readonly string[] ExpectedPublicTypes =
     [
+        "ApplicationArgumentFailure",
+        "ApplicationArguments",
         "AzurPilotAndroidDiagnostics",
         "AzurPilotApplicationDiagnostics",
         "AzurPilotAzurLaneDiagnostics",
@@ -39,6 +41,10 @@ public sealed class MuMuHostCompositionTests
         "AzurPilotExitCode",
         "AzurPilotHost",
         "AzurPilotInteractiveRunResult",
+        "AzurPilotLogViewerEvent",
+        "AzurPilotLogViewerHost",
+        "AzurPilotLogViewerPublisher",
+        "AzurPilotLogViewerSession",
         "AzurPilotMuMuDiagnostics",
         "AzurPilotNativeDiagnostics",
         "AzurPilotOperatorAndroidPreparationOutcome",
@@ -53,6 +59,8 @@ public sealed class MuMuHostCompositionTests
         "AzurPilotStartupResult",
         "IOperatorUiLogSource",
         "OperatorUiAction",
+        "OperatorUiCategory",
+        "OperatorUiCategoryDefinition",
         "OperatorUiCommand",
         "OperatorUiConfirmation",
         "OperatorUiController",
@@ -131,6 +139,7 @@ public sealed class MuMuHostCompositionTests
         // Presentation и use cases выделены в пространства имён внутри AzurPilot.App.
         Assert.All(exported, type => Assert.True(
             type.Namespace is "AzurPilot.App" or "AzurPilot.App.Diagnostics"
-                or "AzurPilot.App.OperatorServices" or "AzurPilot.App.OperatorUi"));
+                or "AzurPilot.App.OperatorServices" or "AzurPilot.App.OperatorUi"
+                or "AzurPilot.App.LogViewer"));
     }
 }

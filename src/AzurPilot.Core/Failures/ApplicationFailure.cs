@@ -131,6 +131,15 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <summary>Код отказа: deadline lifecycle-операции игры достигнут без требуемого состояния.</summary>
     public const string AzurLaneLifecycleTimeout = "azurlane_lifecycle_timeout";
 
+    /// <summary>
+    /// Код отказа: отдельная лог-консоль не может быть открыта в этой среде.
+    /// </summary>
+    /// <remarks>
+    /// Отказ просмотра журнала не является отказом запуска: интерактивный экран продолжает работать, а
+    /// журнал не перенаправляется на него. Код существует, чтобы причина отказа была машинно читаемой.
+    /// </remarks>
+    public const string LogViewerUnavailable = "log_viewer_unavailable";
+
     private static readonly FrozenSet<string> AllowedCodes =
         new[]
         {
@@ -162,6 +171,7 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
             AzurLaneLauncherAmbiguous,
             AzurLaneLifecyclePostconditionNotMet,
             AzurLaneLifecycleTimeout,
+            LogViewerUnavailable,
         }.ToFrozenSet(StringComparer.Ordinal);
 
     private readonly FrozenDictionary<string, string>? _details;
@@ -182,7 +192,8 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <see cref="AndroidTransportNotReady"/>, <see cref="AndroidNotReady"/>,
     /// <see cref="AzurLanePackageMissing"/>, <see cref="AzurLaneStateUnknown"/>,
     /// <see cref="AzurLaneLauncherUnresolved"/>, <see cref="AzurLaneLauncherAmbiguous"/>,
-    /// <see cref="AzurLaneLifecyclePostconditionNotMet"/>, <see cref="AzurLaneLifecycleTimeout"/>. Любое
+    /// <see cref="AzurLaneLifecyclePostconditionNotMet"/>, <see cref="AzurLaneLifecycleTimeout"/>,
+    /// <see cref="LogViewerUnavailable"/>. Любое
     /// другое значение — ошибка программирования и приводит к <see cref="ArgumentException"/> при создании
     /// отказа.
     /// </value>
