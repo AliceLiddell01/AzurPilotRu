@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using AzurPilot.App;
 using AzurPilot.App.Diagnostics;
 using AzurPilot.App.OperatorServices;
@@ -68,6 +70,55 @@ public sealed class AzurPilotOperatorServiceTests
         Assert.Empty(fixture.MuMuHost.MutationRequests);
         Assert.Empty(fixture.Runner.Requests);
     }
+
+    [Fact(DisplayName = "Подготовка Android и запуск игры сохраняют общий correlation identifier")]
+    public async Task GameStartUsesOneCorrelationIdentityAcrossPreparationAndLifecycle()
+    {
+        MuMuInstanceId selected = MuMuInstanceId.FromIndex("7");
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
+        EnqueueAndroidReady(fixture, selected, new AndroidEndpoint("127.0.0.1", 20312));
+        ConcurrentQueue<Activity> activities = new();
+
+        using ActivityListener listener = new()
+        {
+            ShouldListenTo = static source => string.Equals(
+                source.Name, AzurPilotOperation.SourceName, StringComparison.Ordinal),
+            Sample = static (ref _) =>
+                ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStarted = activity =>
+            {
+                if (activity.OperationName is "azurpilot.operator.azurlane.start"
+                    or "azurpilot.operator.android.prepare_selected"
+                    or "azurpilot.operator.azurlane.lifecycle")
+                {
+                    activities.Enqueue(activity);
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        ApplicationResult<AzurLaneGameLifecycleOutcome> result = await fixture.Service.StartAzurLaneAsync(
+            selected,
+            CancellationToken.None,
+            onGameStarting: () => fixture.MuMuHost.InstancesResult =
+                ApplicationResult<IReadOnlyList<MuMuInstance>>.Success([]));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ApplicationFailure.MuMuInstanceNotFound, result.FailureInfo!.Code);
+        Activity gameStart = Assert.Single(activities, activity =>
+            activity.OperationName == "azurpilot.operator.azurlane.start");
+        Activity preparation = Assert.Single(activities, activity =>
+            activity.OperationName == "azurpilot.operator.android.prepare_selected");
+        Activity lifecycle = Assert.Single(activities, activity =>
+            activity.OperationName == "azurpilot.operator.azurlane.lifecycle");
+
+        Assert.Equal(gameStart.TraceId, preparation.TraceId);
+        Assert.Equal(gameStart.TraceId, lifecycle.TraceId);
+        Assert.Equal(gameStart.SpanId, preparation.ParentSpanId);
+        Assert.Equal(gameStart.SpanId, lifecycle.ParentSpanId);
+    }
+
     private static readonly string[] AndroidReadinessProperties =
     [
         "sys.boot_completed",

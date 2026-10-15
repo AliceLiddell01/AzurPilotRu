@@ -8,7 +8,7 @@ namespace AzurPilot.Core.Failures;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Контракт фиксирован: допустимы ровно двадцать восемь кодов — <see cref="ConfigurationInvalid"/>,
+/// Контракт фиксирован: допустимы ровно двадцать девять кодов — <see cref="ConfigurationInvalid"/>,
 /// <see cref="ConfigurationSchemaUnsupported"/>, <see cref="NativeUnavailable"/>,
 /// <see cref="NativeIncompatible"/>, <see cref="NativeFrameInvalid"/>, <see cref="OperationCancelled"/>,
 /// <see cref="InternalError"/>, восемь
@@ -23,7 +23,8 @@ namespace AzurPilot.Core.Failures;
 /// <see cref="AzurLaneLauncherUnresolved"/>, <see cref="AzurLaneLauncherAmbiguous"/>,
 /// <see cref="AzurLaneLifecyclePostconditionNotMet"/> и <see cref="AzurLaneLifecycleTimeout"/>, а также
 /// три отказа screenshot/region diagnostics: <see cref="AndroidScreenshotCaptureFailed"/>,
-/// <see cref="DiagnosticRegionUnsupported"/> и <see cref="NativeFrameAnalysisFailed"/>. Каталог кодов
+/// <see cref="DiagnosticRegionUnsupported"/> и <see cref="NativeFrameAnalysisFailed"/>, а также
+/// <see cref="LogViewerUnavailable"/> для недоступной отдельной лог-консоли. Каталог кодов
 /// под отсутствующие capability (OCR, ввод, gameplay, REPL и подобные) намеренно не заводится: код
 /// появляется вместе с реальной capability.
 /// </para>

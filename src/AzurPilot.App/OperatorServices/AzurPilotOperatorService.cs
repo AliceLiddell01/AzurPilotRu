@@ -103,6 +103,7 @@ public sealed class AzurPilotOperatorService
     private const string SelectedAndroidPrepareActivity = "azurpilot.operator.android.prepare_selected";
     private const string GameObserveActivity = "azurpilot.operator.azurlane.observe";
     private const string GameLifecycleActivity = "azurpilot.operator.azurlane.lifecycle";
+    private const string GameStartActivity = "azurpilot.operator.azurlane.start";
     private const string ScreenshotActivity = "azurpilot.operator.screenshot";
     private const string ResolveTargetActivity = "azurpilot.operator.target.resolve";
 
@@ -167,10 +168,13 @@ public sealed class AzurPilotOperatorService
     public ApplicationResult<AzurPilotConfigurationSnapshot> SaveConfiguration(
         AzurPilotConfigurationSnapshot expected, AzurPilotConfiguration configuration, out string? backupPath)
     {
-        string yamlPath = _configuration.FilePath is string source
-            ? Path.Combine(Path.GetDirectoryName(source)!, Path.GetFileName(AzurPilotConfigurationPath.GetDefaultRuntimePath()))
-            : AzurPilotConfigurationPath.GetDefaultRuntimePath();
-        string jsonPath = Path.Combine(Path.GetDirectoryName(yamlPath)!, "config.json");
+        string defaultYamlPath = AzurPilotConfigurationPath.GetDefaultRuntimePath();
+        string defaultJsonPath = AzurPilotConfigurationPath.GetLegacyJsonRuntimePath();
+        string configurationDirectory = _configuration.FilePath is string source
+            ? Path.GetDirectoryName(source)!
+            : Path.GetDirectoryName(defaultYamlPath)!;
+        string yamlPath = Path.Combine(configurationDirectory, Path.GetFileName(defaultYamlPath));
+        string jsonPath = Path.Combine(configurationDirectory, Path.GetFileName(defaultJsonPath));
         return AzurPilotConfigurationStore.Save(yamlPath, jsonPath, expected, configuration, out backupPath);
     }
 
@@ -504,6 +508,7 @@ public sealed class AzurPilotOperatorService
         IProgress<AzurPilotOperatorAndroidPreparationStage>? progress = null,
         Action? onGameStarting = null)
     {
+        using AzurPilotOperation operation = AzurPilotOperation.Start(GameStartActivity);
         AzurPilotOperatorAndroidPreparationOutcome preparation = await PrepareSelectedAndroidAsync(
             instanceId, cancellationToken, progress).ConfigureAwait(false);
         if (!preparation.IsSuccess)

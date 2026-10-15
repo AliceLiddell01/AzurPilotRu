@@ -180,7 +180,7 @@ public static class AzurPilotHost
             // Снимок и результат startup готовы до UI, но сам host останется запущен до её закрытия.
             startupResult = await InspectStartedHostAsync(host, logger, operation, cancellationToken)
                 .ConfigureAwait(false);
-            if (startupResult.Diagnostics is null)
+            if (!startupResult.IsSuccess || startupResult.Diagnostics is null)
             {
                 return new AzurPilotInteractiveRunResult(startupResult, InteractiveSessionStarted: false);
             }

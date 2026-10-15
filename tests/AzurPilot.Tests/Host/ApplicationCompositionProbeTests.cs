@@ -119,6 +119,21 @@ public sealed class ApplicationCompositionProbeTests
         Assert.DoesNotContain(run.Logs, log => log.State.ContainsKey(AbiVersionProperty));
     }
 
+    [Fact(DisplayName = "Интерактивная сессия не запускается при отказе native boundary")]
+    public void InteractiveSessionDoesNotStartWhenNativeRuntimeIsUnavailable()
+    {
+        using ApplicationCompositionProbe probe = ApplicationCompositionProbe.CreateWithoutNativeRuntime();
+        using TemporaryConfigurationDirectory directory = new();
+
+        ApplicationProbeRun run = probe.RunInteractive(directory.WriteConfiguration(InformationConfiguration));
+
+        Assert.Equal(0, run.ProbeExitCode);
+        Assert.Equal(AzurPilotExitCode.NativeUnavailable, run.ApplicationExitCode);
+        Assert.Equal(ApplicationFailure.NativeUnavailable, run.ReadFailureCode());
+        Assert.Contains("Проба: interactive session started=false", run.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("Проба: interactive callback invoked=false", run.StandardOutput, StringComparison.Ordinal);
+    }
+
     [Fact(DisplayName = "Проба с fixture несовместимого ABI сообщает application-level native_incompatible")]
     public void ProbeWithIncompatibleAbiFixtureReportsNativeIncompatible()
     {

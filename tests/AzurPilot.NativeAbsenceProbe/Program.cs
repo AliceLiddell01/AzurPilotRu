@@ -25,6 +25,8 @@ using AzurPilot.Windows;
 // application-level доказательства (код выхода, application failure, здоровый snapshot) получаются в
 // процессе с полностью управляемым каталогом запуска и без зависимости от пользовательского
 // %LOCALAPPDATA%\AzurPilot\config.json.
+// Режим --interactive-composition <путь> вызывает интерактивный startup с тестовым callback вместо UI
+// и сообщает, была ли сессия открыта.
 //
 // Кроме самого исключения проба прогоняет его через production-маппер
 // NativeBoundaryFailureMapper и печатает полученный стабильный application-level код отказа: тесты
@@ -124,6 +126,11 @@ if (args.Length == 1 && string.Equals(args[0], "--disposed-frame", StringCompari
 if (args.Length == 2 && string.Equals(args[0], "--application-composition", StringComparison.Ordinal))
 {
     return await RunApplicationCompositionAsync(args[1]).ConfigureAwait(false);
+}
+
+if (args.Length == 2 && string.Equals(args[0], "--interactive-composition", StringComparison.Ordinal))
+{
+    return await RunInteractiveCompositionAsync(args[1]).ConfigureAwait(false);
 }
 
 if (args.Length != 0)
@@ -355,6 +362,41 @@ static async Task<int> RunApplicationCompositionAsync(string configurationPath)
         Console.WriteLine($"Проба: application failure code={result.FailureInfo.Code}");
     }
 
+    return 0;
+}
+
+// Выполняет интерактивный startup без UI: callback отмечает, была ли открыта сессия.
+// Это позволяет проверить production startup gate при native failure в отдельном процессе,
+// где native runtime действительно отсутствует.
+static async Task<int> RunInteractiveCompositionAsync(string configurationPath)
+{
+    bool sessionCallbackInvoked = false;
+    AzurPilotInteractiveRunResult result;
+    try
+    {
+        result = await AzurPilotHost.RunInteractiveAsync(
+            (_, _, _, _, _, _) =>
+            {
+                sessionCallbackInvoked = true;
+                return Task.CompletedTask;
+            },
+            configurationPath).ConfigureAwait(false);
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine(
+            $"Проба: interactive composition завершилась исключением {exception.GetType().Name}: {exception.Message}");
+        return 1;
+    }
+
+    Console.WriteLine($"Проба: application exit code={result.Startup.ExitCode}");
+    if (result.Startup.FailureInfo is not null)
+    {
+        Console.WriteLine($"Проба: application failure code={result.Startup.FailureInfo.Code}");
+    }
+
+    Console.WriteLine($"Проба: interactive session started={(result.InteractiveSessionStarted ? "true" : "false")}");
+    Console.WriteLine($"Проба: interactive callback invoked={(sessionCallbackInvoked ? "true" : "false")}");
     return 0;
 }
 

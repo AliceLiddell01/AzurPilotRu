@@ -36,6 +36,7 @@ internal sealed class ApplicationCompositionProbe : IDisposable
     private const string OpenCvRuntimePattern = "opencv_world*.dll";
     private const string SymbolsExtension = ".pdb";
     private const string ApplicationCompositionOption = "--application-composition";
+    private const string InteractiveCompositionOption = "--interactive-composition";
     private const string ApplicationExitCodePrefix = "Проба: application exit code=";
     private const int ProcessTimeoutMilliseconds = 60_000;
 
@@ -82,6 +83,15 @@ internal sealed class ApplicationCompositionProbe : IDisposable
     /// <param name="configurationPath">Абсолютный путь временного файла конфигурации.</param>
     /// <returns>Код выхода пробы, код выхода приложения и прочитанные structured записи.</returns>
     internal ApplicationProbeRun Run(string configurationPath)
+        => Run(configurationPath, interactive: false);
+
+    /// <summary>Выполняет интерактивный startup с callback вместо пользовательского UI.</summary>
+    /// <param name="configurationPath">Абсолютный путь временного файла конфигурации.</param>
+    /// <returns>Код выхода пробы, код выхода приложения и прочитанные structured записи.</returns>
+    internal ApplicationProbeRun RunInteractive(string configurationPath)
+        => Run(configurationPath, interactive: true);
+
+    private ApplicationProbeRun Run(string configurationPath, bool interactive)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(configurationPath);
 
@@ -97,7 +107,7 @@ internal sealed class ApplicationCompositionProbe : IDisposable
         };
         startInfo.ArgumentList.Add("exec");
         startInfo.ArgumentList.Add(Path.Combine(_root, ProbeAssemblyFileName));
-        startInfo.ArgumentList.Add(ApplicationCompositionOption);
+        startInfo.ArgumentList.Add(interactive ? InteractiveCompositionOption : ApplicationCompositionOption);
         startInfo.ArgumentList.Add(configurationPath);
 
         using Process process = Process.Start(startInfo)

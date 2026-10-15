@@ -125,7 +125,7 @@ public sealed class OperatorUiSessionTests
         Assert.Equal(expectedDelta, delta);
     }
 
-    [Theory(DisplayName = "Нев-wheel мышь не меняет scroll position")]
+    [Theory(DisplayName = "События мыши без колеса не меняют позицию прокрутки")]
     [InlineData(MouseFlags.None)]
     [InlineData(MouseFlags.LeftButtonClicked)]
     public void NonWheelMouseHasNoScrollDelta(MouseFlags flags)
