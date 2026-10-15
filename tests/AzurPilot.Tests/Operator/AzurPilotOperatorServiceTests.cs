@@ -196,6 +196,11 @@ public sealed class AzurPilotOperatorServiceTests
         Assert.False(result.IsSuccess);
         Assert.Equal(AzurPilotOperatorAndroidPreparationStage.ObserveMuMu, result.Stage);
         Assert.Equal(ApplicationFailure.MuMuStateUnproven, result.Failure!.Code);
+        ApplicationFailure expectedFailure = MuMuFailures.StateUnprovenBeforeOperatorPreparation(
+            MuMuInstanceId.FromIndex("7"), MuMuLifecycleState.Unknown);
+        Assert.Equal(expectedFailure.Message, result.Failure.Message);
+        Assert.Equal(expectedFailure.IsRetryable, result.Failure.IsRetryable);
+        Assert.Equal(expectedFailure.Details!.OrderBy(pair => pair.Key), result.Failure.Details!.OrderBy(pair => pair.Key));
         Assert.Equal(MuMuLifecycleState.Unknown, result.InitialMuMuState);
         Assert.False(result.MuMuStartRequested);
         Assert.Equal(1, fixture.MuMuHost.ObservationCount);
@@ -626,6 +631,23 @@ public sealed class AzurPilotOperatorServiceTests
         Assert.Contains("Android — транспорт доступен; shell недоступен, загрузка выполняется", summary.Text);
         Assert.DoesNotContain("Android — готов", summary.Text);
         Assert.Contains("Запустить окружение", summary.Text);
+    }
+
+    [Fact(DisplayName = "Разрешение target использует snapshot конфигурации, а не диагностическую проекцию")]
+    public async Task ControllerResolvesConfiguredTargetFromServiceConfiguration()
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        using OperatorUiController controller = new(fixture.Service, InitialDiagnostics());
+
+        Assert.True(controller.TryStartOperation(OperatorUiAction.ResolveTarget));
+        await controller.WaitForOperationAsync();
+        Assert.False(controller.CompleteOperation());
+
+        Assert.Null(controller.LastOperationFailure);
+        OperatorUiMessage result = controller.Session.SnapshotMessages()[^1];
+        Assert.Contains("автоматически", result.Text);
+        Assert.Contains("mumu:7", result.Text);
+        Assert.DoesNotContain("mumu.instance", result.Text);
     }
 
     private static OperatorFixture CreateFixture(params MuMuInstance[] instances)

@@ -18,8 +18,9 @@
   UI передаёт только `MuMuInstanceId`; resolver связывает identity и Android endpoint. Запрещены
   default-first и пользовательский endpoint. Неоднозначный или недоказанный target не мутирует.
 - Read-only observation не подготавливает ADB и не запускает ресурсы. Пользовательский запрос mutation
-  требует одного default-cancel подтверждения; зависимые этапы подготовки MuMu/Android не требуют
-  новых подтверждений. Все этапы проходят через текущие orchestration, gates и postconditions.
+  требует default-cancel подтверждения; когда выбранный target отличается от сохранённого, оператор
+  может подтвердить mutation с сохранением target или без него. Зависимые этапы подготовки MuMu/Android
+  не требуют новых подтверждений. Все этапы проходят через текущие orchestration, gates и postconditions.
 - Screenshot action использует production capture и scanner для `FullFrame` и `Center`; native frame
   остаётся внутри одного disposable capture и не попадает в UI state.
 - Один UI event loop изменяет presentation state. История и log provider bounded; background logging

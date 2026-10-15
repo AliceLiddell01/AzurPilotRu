@@ -742,7 +742,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
             if (!completeOnly && choice.Confirm && _session.ConfirmMutation())
             {
                 OperatorUiAction action = choice.Action!.Value;
-                if (ShouldSaveTarget(action) && _session.SelectedInstance is MuMuInstanceId target
+                if (choice.SaveTarget && _session.SelectedInstance is MuMuInstanceId target
                     && !_controller.SaveSettings(_controller.SavedConfiguration with
                     {
                         MuMu = new MuMuConfiguration { Instance = target.ToString() },
@@ -1152,15 +1152,12 @@ public sealed class AzurPilotOperatorUi : IDisposable
         // По умолчанию выделена отмена: подтверждение mutation нельзя получить случайным Enter.
         _choices.Add(new PaletteChoice("Отмена"));
         MuMuInstanceId target = _session.PendingConfirmation!.Target;
-        string confirmationChoice = command.Action == OperatorUiAction.EnvironmentPrepare
-            ? $"Подтвердить для {target}"
-            : $"Подтвердить для {target}: {command.Title}";
-        if (ShouldSaveTarget(command.Action))
+        foreach ((string title, bool saveTarget) in MutationConfirmationChoices(
+            command.Action, command.Title, target, ShouldSaveTarget(command.Action)))
         {
-            confirmationChoice += " и сохранить выбор";
+            _choices.Add(new PaletteChoice(title, command.Action, Confirm: true, SaveTarget: saveTarget));
         }
 
-        _choices.Add(new PaletteChoice(confirmationChoice, command.Action, Confirm: true));
         _choiceIndex = 0;
         RenderPalette();
     }
@@ -1169,6 +1166,26 @@ public sealed class AzurPilotOperatorUi : IDisposable
         && action is OperatorUiAction.EnvironmentPrepare or OperatorUiAction.GameStart
         && _session.SelectedInstance is MuMuInstanceId target
         && _controller.SavedConfiguration.MuMu.Instance != target.ToString();
+
+    /// <summary>Строит подтверждение mutation с отдельным выбором сохранения конфигурации.</summary>
+    /// <param name="action">Подтверждаемое действие.</param>
+    /// <param name="actionTitle">Название действия для оператора.</param>
+    /// <param name="target">Точная identity, предъявленная для подтверждения.</param>
+    /// <param name="includeSaveChoice">Нужно ли предлагать сохранение отличающегося target.</param>
+    /// <returns>Варианты подтверждения; вариант без сохранения всегда первый.</returns>
+    internal static IReadOnlyList<(string Title, bool SaveTarget)> MutationConfirmationChoices(
+        OperatorUiAction action,
+        string actionTitle,
+        MuMuInstanceId target,
+        bool includeSaveChoice)
+    {
+        string confirmation = action == OperatorUiAction.EnvironmentPrepare
+            ? $"Подтвердить для {target}"
+            : $"Подтвердить для {target}: {actionTitle}";
+        return includeSaveChoice
+            ? [(confirmation, false), (confirmation + " и сохранить выбор", true)]
+            : [(confirmation, false)];
+    }
 
     private void ShowInstances()
     {
@@ -1623,7 +1640,8 @@ public sealed class AzurPilotOperatorUi : IDisposable
         OperatorUiMessage? Message = null,
         AzurPilotOperatorLogEntry? LogEntry = null,
         OperatorUiCategory? Category = null,
-        SettingAction? Setting = null);
+        SettingAction? Setting = null,
+        bool SaveTarget = false);
 
     private enum SettingAction { Target, Save, Normal, Manual, Diagnostic, Viewer, ReopenViewer }
 

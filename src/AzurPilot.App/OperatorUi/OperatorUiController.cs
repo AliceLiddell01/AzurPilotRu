@@ -530,7 +530,7 @@ public sealed class OperatorUiController : IDisposable
     /// <returns>Семантика выбора либо отказ недопустимого значения конфигурации.</returns>
     private ApplicationResult<MuMuInstanceSelection> ConfiguredSelection()
     {
-        string configured = _lastDiagnostics.MuMu.ConfiguredInstance;
+        string configured = _service.Configuration.Configuration.MuMu.Instance;
         if (MuMuInstanceValue.IsAuto(configured))
         {
             return ApplicationResult<MuMuInstanceSelection>.Success(MuMuInstanceSelection.Auto());
@@ -582,7 +582,7 @@ public sealed class OperatorUiController : IDisposable
             $"Целевой экземпляр {target} определён {how}.",
             OperatorUiMessageKind.Information,
             $"Target: {target}\nСпособ выбора: {how}\n"
-            + $"Значение mumu.instance: {_lastDiagnostics.MuMu.ConfiguredInstance}",
+            + $"Значение mumu.instance: {_service.Configuration.Configuration.MuMu.Instance}",
             ResolvedTarget: target,
             Failure: null);
     }

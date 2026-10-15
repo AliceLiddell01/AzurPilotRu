@@ -37,9 +37,23 @@ public static class AzurPilotConfigurationStore
 
         if (current.Value!.Configuration != expected.Configuration
             || current.Value.SourceFormat != expected.SourceFormat
-            || current.Value.Source != expected.Source)
+            || current.Value.Source != expected.Source
+            || !string.Equals(current.Value.FilePath, expected.FilePath, StringComparison.Ordinal))
         {
             return Invalid("Конфигурация изменилась вне приложения. Перезапустите приложение перед сохранением.");
+        }
+
+        if (current.Value.SourceFormat == AzurPilotConfigurationFormat.Json)
+        {
+            ApplicationResult<AzurPilotConfigurationMigrationResult> migrated =
+                AzurPilotConfigurationMigration.SaveLegacyJsonAsYaml(jsonPath, yamlPath, current.Value, configuration);
+            if (migrated.IsFailure)
+            {
+                return ApplicationResult<AzurPilotConfigurationSnapshot>.Failure(migrated.FailureInfo!);
+            }
+
+            backupPath = migrated.Value!.BackupFilePath;
+            return ApplicationResult<AzurPilotConfigurationSnapshot>.Success(migrated.Value.Snapshot);
         }
 
         string? directory = Path.GetDirectoryName(yamlPath);
@@ -55,18 +69,7 @@ public static class AzurPilotConfigurationStore
                 return Invalid("Настройки не соответствуют канонической схеме; исходный файл сохранён.");
             }
 
-            if (current.Value.SourceFormat == AzurPilotConfigurationFormat.Json)
-            {
-                ApplicationResult<AzurPilotConfigurationMigrationResult> migrated =
-                    AzurPilotConfigurationMigration.MigrateLegacyJsonToYaml(jsonPath, yamlPath);
-                if (migrated.IsFailure)
-                {
-                    return ApplicationResult<AzurPilotConfigurationSnapshot>.Failure(migrated.FailureInfo!);
-                }
-
-                backupPath = migrated.Value!.BackupFilePath;
-            }
-            else if (current.Value.SourceFormat == AzurPilotConfigurationFormat.Yaml)
+            if (current.Value.SourceFormat == AzurPilotConfigurationFormat.Yaml)
             {
                 backupPath = yamlPath + $".bak-{Guid.NewGuid():N}";
                 File.Copy(yamlPath, backupPath, overwrite: false);

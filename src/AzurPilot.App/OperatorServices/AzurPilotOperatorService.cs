@@ -399,18 +399,7 @@ public sealed class AzurPilotOperatorService
             {
                 return outcome with
                 {
-                    Failure = new ApplicationFailure
-                    {
-                        Code = ApplicationFailure.MuMuStateUnproven,
-                        Message = "Состояние выбранного MuMu не доказано: подготовка Android не выполнялась.",
-                        IsRetryable = true,
-                        Details = new Dictionary<string, string>(StringComparer.Ordinal)
-                        {
-                            ["instance_id"] = instanceId.ToString(),
-                            ["phase"] = "operator_preflight",
-                            ["mutation_attempted"] = "false",
-                        },
-                    },
+                    Failure = MuMuFailures.StateUnprovenBeforeOperatorPreparation(instanceId, initial),
                 };
             }
 

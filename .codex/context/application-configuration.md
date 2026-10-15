@@ -23,6 +23,7 @@
 - Номер текущей схемы принадлежит `AzurPilotConfiguration.CurrentSchemaVersion`.
 - Defaults принадлежат `AzurPilotConfigurationDefaults`.
 - JSON contract/converters принадлежат `AzurPilotConfigurationJson` и типам значений.
+- YAML reader/writer принадлежат `AzurPilotYamlConfigurationReader` и `AzurPilotConfigurationYamlWriter`; wire-name UI mode — `OperatorUiModeNames`.
 - Не копируй допустимые значения/грамматику в новый prose-owner, если они выражены типом/конвертером.
 
 Каноническая схема принадлежит корневому типу; legacy JSON v1/v2 нормализуется только в памяти.

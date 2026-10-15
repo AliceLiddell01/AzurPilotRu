@@ -65,6 +65,30 @@ public static class AzurPilotConfigurationMigration
     public static ApplicationResult<AzurPilotConfigurationMigrationResult> MigrateLegacyJsonToYaml(
         string legacyJsonPath,
         string yamlPath)
+        => MigrateLegacyJsonToYamlCore(legacyJsonPath, yamlPath, expected: null, configuration: null);
+
+    /// <summary>Сохраняет новые настройки из legacy JSON в YAML и переносит JSON в резервную копию.</summary>
+    /// <param name="legacyJsonPath">Абсолютный путь legacy JSON-файла.</param>
+    /// <param name="yamlPath">Абсолютный путь создаваемого YAML-файла.</param>
+    /// <param name="expected">Snapshot legacy-источника, прочитанный вызывающей стороной.</param>
+    /// <param name="configuration">Настройки, которые должны стать действующим YAML.</param>
+    /// <returns>Проверенный snapshot новых настроек и путь резервной копии либо отказ без смены источника.</returns>
+    internal static ApplicationResult<AzurPilotConfigurationMigrationResult> SaveLegacyJsonAsYaml(
+        string legacyJsonPath,
+        string yamlPath,
+        AzurPilotConfigurationSnapshot expected,
+        AzurPilotConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        ArgumentNullException.ThrowIfNull(configuration);
+        return MigrateLegacyJsonToYamlCore(legacyJsonPath, yamlPath, expected, configuration);
+    }
+
+    private static ApplicationResult<AzurPilotConfigurationMigrationResult> MigrateLegacyJsonToYamlCore(
+        string legacyJsonPath,
+        string yamlPath,
+        AzurPilotConfigurationSnapshot? expected,
+        AzurPilotConfiguration? configuration)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(legacyJsonPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(yamlPath);
@@ -116,7 +140,19 @@ public static class AzurPilotConfigurationMigration
                 legacyJsonPath);
         }
 
-        string document = AzurPilotConfigurationYamlWriter.Write(source.Configuration);
+        if (expected is not null
+            && (expected.Configuration != source.Configuration
+                || expected.SourceFormat != source.SourceFormat
+                || expected.Source != source.Source
+                || !string.Equals(expected.FilePath, source.FilePath, StringComparison.Ordinal)))
+        {
+            return Failure(
+                $"Legacy JSON «{legacyJsonPath}» изменился вне приложения. Повторите чтение перед сохранением.",
+                legacyJsonPath);
+        }
+
+        AzurPilotConfiguration targetConfiguration = configuration ?? source.Configuration;
+        string document = AzurPilotConfigurationYamlWriter.Write(targetConfiguration);
         if (!TryWriteAtomically(yamlPath, document, out string? writeError))
         {
             return Failure(
@@ -128,7 +164,7 @@ public static class AzurPilotConfigurationMigration
             AzurPilotConfigurationLoader.Load(yamlPath);
         bool confirmed = verified.IsSuccess
             && verified.Value!.SourceFormat == AzurPilotConfigurationFormat.Yaml
-            && verified.Value!.Configuration == source.Configuration;
+            && verified.Value!.Configuration == targetConfiguration;
 
         if (!confirmed)
         {

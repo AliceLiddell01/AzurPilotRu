@@ -115,6 +115,25 @@ public sealed class AzurPilotConfigurationStoreTests
         Assert.Empty(directory.BackupFilePaths());
     }
 
+    [Fact(DisplayName = "Ошибка переноса legacy JSON отменяет создание YAML и сохраняет исходник")]
+    public void FailedLegacyBackupMoveLeavesOriginalJsonAsTheOnlySource()
+    {
+        using TemporaryConfigurationDirectory directory = new();
+        string json = """{"schemaVersion":2,"mumu":{"instance":"mumu:7"},"diagnostics":{"minimumLevel":"Warning"}}""";
+        _ = directory.WriteConfiguration(json);
+        AzurPilotConfigurationSnapshot original = Load(directory);
+        using FileStream sourceLock = new(
+            directory.LegacyJsonConfigurationFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        ApplicationResult<AzurPilotConfigurationSnapshot> result =
+            Save(directory, original, WithTarget(original.Configuration, "mumu:8"));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(json, File.ReadAllText(directory.LegacyJsonConfigurationFilePath));
+        Assert.False(File.Exists(directory.YamlConfigurationFilePath));
+        Assert.Empty(directory.BackupFilePaths());
+    }
+
     private static AzurPilotConfiguration WithTarget(AzurPilotConfiguration configuration, string target)
         => configuration with { MuMu = new MuMuConfiguration { Instance = target } };
 
