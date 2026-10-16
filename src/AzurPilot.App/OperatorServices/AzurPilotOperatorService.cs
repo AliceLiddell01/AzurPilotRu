@@ -431,7 +431,6 @@ public sealed class AzurPilotOperatorService
     {
         AzurPilotOperatorAndroidPreparationOutcome outcome = await PrepareSelectedAndroidCoreAsync(
             instanceId, cancellationToken, progress, onOutcome).ConfigureAwait(false);
-        onOutcome?.Invoke(outcome);
         if (!outcome.IsSuccess && outcome.MuMuMayRemainRunning)
         {
             // Отмена ожидания не доказывает остановку MuMu. Новое read-only наблюдение не использует
@@ -594,7 +593,6 @@ public sealed class AzurPilotOperatorService
         using AzurPilotOperation operation = AzurPilotOperation.Start(GameStartActivity);
         AzurPilotOperatorAndroidPreparationOutcome preparation = await PrepareSelectedAndroidUnderLeaseAsync(
             instanceId, cancellationToken, progress, onPreparationCompleted).ConfigureAwait(false);
-        onPreparationCompleted?.Invoke(preparation);
         if (!preparation.IsSuccess)
         {
             return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(preparation.Failure! with
