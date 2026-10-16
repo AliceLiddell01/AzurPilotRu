@@ -12,12 +12,14 @@ verification/acceptance, troubleshooting и других деталей, кот�
 - `architecture/mumu-lifecycle.md` — подробная архитектура MuMu integration/lifecycle.
 - `architecture/android-game-lifecycle.md` — Android/ADB readiness и lifecycle Azur Lane Global/EN.
 - `architecture/screenshot-diagnostics.md` — точный Android PNG capture, geometry named regions и native RGB scan.
+- `architecture/operator-tui.md` — устройство интерактивной операторской поверхности AzurPilot.
 - `reference/application-configuration.md` — схема и загрузка пользовательской конфигурации.
 - `reference/application-failures.md` — модель application failures и их проекция.
 - `operations/runtime-diagnostics.md` — composition, logging, correlation и diagnostic snapshot.
 - `testing/verification.md` — что доказывают CI, native/managed tests и real acceptance.
 - `testing/android-acceptance.md` — подробности real/managed проверки Android/game lifecycle.
 - `testing/screenshot-acceptance.md` — локальные PNG samples и read-only live screenshot acceptance.
+- `testing/operator-tui-acceptance.md` — приёмка самого TUI на Windows и live MuMu.
 
 ## Чем `docs/` отличается от agent context
 

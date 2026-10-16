@@ -90,11 +90,14 @@ runtime-диагностический snapshot и реальные Windows-во
 [application-configuration.md](../reference/application-configuration.md),
 [application-failures.md](../reference/application-failures.md), [runtime-diagnostics.md](../operations/runtime-diagnostics.md),
 [mumu-lifecycle.md](mumu-lifecycle.md) и [android-game-lifecycle.md](android-game-lifecycle.md); здесь они
-не повторяются. Пользовательских опций запуска и командной строки у приложения нет: startup вычисляет
-runtime-путь конфигурации сам. Границы остаются прежними: `AzurPilot.Core` владеет контрактами
+не повторяются. TUI — отдельная интерактивная пользовательская поверхность поверх этих capabilities;
+его lifetime, presentation boundary и non-TTY поведение описаны в [operator-tui.md](operator-tui.md).
+Пользовательский запуск ограничен выбором режима TUI через `--mode normal|manual|diagnostic` и справкой
+`--help`; подменить runtime-путь конфигурации нельзя, startup вычисляет его сам. Границы остаются прежними:
+`AzurPilot.Core` владеет контрактами
 конфигурации, отказов, MuMu и Android, не зависящими от Windows, `AzurPilot.Windows` — проекцией ошибок
-платформенной/native boundary, MuMu-adapter и Android-adapter, `AzurPilot.App` — composition и
-диагностикой.
+платформенной/native boundary, MuMu-adapter и Android-adapter, `AzurPilot.App` — composition,
+диагностикой, operator use cases и TUI.
 
 ## Правило зависимостей
 

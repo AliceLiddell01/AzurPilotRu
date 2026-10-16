@@ -4,9 +4,16 @@ using System.Text.Json.Serialization;
 namespace AzurPilot.Core.Configuration;
 
 /// <summary>
-/// Единственный владелец JSON-контракта конфигурации: строгие опции и source-generated метаданные.
+/// Единственный владелец JSON-контракта legacy-документов конфигурации: строгие опции и
+/// source-generated метаданные.
 /// </summary>
 /// <remarks>
+/// <para>
+/// JSON — не канонический формат: канонический документ схемы v3 существует только в YAML, поэтому
+/// метаданные заводятся ровно для legacy-контрактов <see cref="AzurPilotConfigurationV1"/> и
+/// <see cref="AzurPilotConfigurationV2"/>. Эффективная схема через JSON не читается: документ
+/// <c>schemaVersion: 3</c> в JSON-файле отвергается как неподдерживаемая схема.
+/// </para>
 /// <para>
 /// Строгая семантика строится на <see cref="JsonSerializerOptions.Strict"/>. Фактически это означает:
 /// <c>UnmappedMemberHandling = Disallow</c> (неизвестное свойство — ошибка),
@@ -20,9 +27,9 @@ namespace AzurPilot.Core.Configuration;
 /// дополнительно документирует camelCase-имена.
 /// </para>
 /// <para>
-/// Строгость применяется к каждой поддерживаемой source schema: у эффективной схемы v2 и у
-/// legacy-схемы v1 свой контракт, поэтому неизвестное свойство для v1 (в том числе секция
-/// <c>mumu</c>) и неизвестное свойство для v2 отвергаются, а не игнорируются.
+/// Строгость применяется к каждой поддерживаемой legacy-схеме её собственным контрактом: неизвестное
+/// свойство для v1 (в том числе секция <c>mumu</c>) и неизвестное свойство для v2 отвергаются, а не
+/// игнорируются.
 /// </para>
 /// <para>
 /// Метаданные типов приходят из source-generated контекста, поэтому reflection resolver из
@@ -55,7 +62,7 @@ internal static class AzurPilotConfigurationJson
     }
 }
 
-/// <summary>Source-generated метаданные эффективной схемы v2 и legacy-контракта v1.</summary>
-[JsonSerializable(typeof(AzurPilotConfiguration))]
+/// <summary>Source-generated метаданные legacy-контрактов JSON: схем v1 и v2.</summary>
 [JsonSerializable(typeof(AzurPilotConfigurationV1))]
+[JsonSerializable(typeof(AzurPilotConfigurationV2))]
 internal sealed partial class AzurPilotConfigurationJsonContext : JsonSerializerContext;

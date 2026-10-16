@@ -14,6 +14,14 @@
     <!-- Application host приложения: стандартный generic host (Host.CreateEmptyApplicationBuilder),
          на котором стоит composition root AzurPilot.App. -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <!-- Windows terminal operator surface; только AzurPilot.App владеет интерактивным UI. -->
+    <PackageVersion Include="Terminal.Gui" Version="2.5.0" />
+    <!-- Человекочитаемый YAML-формат пользовательской конфигурации: строгий разбор документа
+         принадлежит AzurPilot.Core, потому что владельцем схемы остаётся Core. -->
+    <PackageVersion Include="YamlDotNet" Version="18.1.0" />
+    <!-- Rich-like отрисовка отдельной лог-консоли: цвета, уровни и подсветка значений. Пакет
+         используется только процессом viewer-а, а не интерактивным Terminal.Gui экраном. -->
+    <PackageVersion Include="Spectre.Console" Version="0.57.2" />
   </ItemGroup>
 
   <ItemGroup>

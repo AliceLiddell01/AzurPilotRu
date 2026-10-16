@@ -1,4 +1,5 @@
 using AzurPilot.App;
+using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Tests.Configuration;
 using Microsoft.Extensions.Logging;
@@ -49,10 +50,11 @@ public sealed class AzurPilotApplicationProcessTests
         // stdout — поверхность человекочитаемого итога: ни одной записи structured runtime log.
         Assert.NotEmpty(run.StandardOutput.Trim());
         Assert.Empty(StructuredLogRecord.ReadFrom(run.StandardOutput));
+        Assert.DoesNotContain('\u001b', run.StandardOutput + run.StandardError);
 
         // stderr — только project-owned события приложения: чужих категорий логирования на уровне
         // Information и выше здесь нет. С появлением реальной MuMu-capability проект владеет не только
-        // категорией application host, но и категориями MuMu-владельцев (discovery — Windows-адаптер,
+        // категорией хоста приложения, но и категориями MuMu-владельцев (discovery — Windows-адаптер,
         // выбор экземпляра — Core orchestration); чужой шум этим не разрешается. Пользовательская
         // конфигурация может опустить минимальный уровень до Debug/Trace, и тогда внутренний шум generic
         // host попадает в stderr по её выбору.
@@ -75,6 +77,10 @@ public sealed class AzurPilotApplicationProcessTests
         {
             // Ни отчёт, ни события не заявляют отказ: запуск обязан быть успешным.
             Assert.Equal(AzurPilotExitCode.Success, run.ExitCode);
+            Assert.Contains(
+                "Итог: приложение запущено; выполнена начальная диагностика. "
+                    + "Это не подтверждает готовность MuMu, Android или Azur Lane.",
+                run.StandardOutput);
             return;
         }
 
@@ -116,7 +122,7 @@ public sealed class AzurPilotApplicationProcessTests
         Assert.All(run.Logs, log => Assert.Equal(traceIdentifier, log.TraceId));
         Assert.Contains(traceIdentifier, reportedIdentifiers);
 
-        // Application host передаёт identifier и явным structured property: записи его владельца обязаны
+        // Хост приложения передаёт identifier и явным structured property: записи его владельца обязаны
         // нести тот же identifier, что и scope.
         IReadOnlyList<StructuredLogRecord> applicationLogs =
             [.. run.Logs.Where(log => log.CorrelationId is not null)];
@@ -124,22 +130,72 @@ public sealed class AzurPilotApplicationProcessTests
         Assert.All(applicationLogs, log => Assert.Equal(traceIdentifier, log.CorrelationId));
     }
 
-    [Fact(DisplayName = "Продукт не разбирает аргументы запуска: переданный путь конфигурации игнорируется")]
-    public void ApplicationIgnoresCommandLineArguments()
+    [Fact(DisplayName = "Подмена пути конфигурации не поддерживается и отклоняется как неизвестный аргумент")]
+    public void UnsupportedConfigurationPathArgumentIsRejected()
     {
         ApplicationHostProcess application = ApplicationHostProcess.CreateStaged();
         using TemporaryConfigurationDirectory directory = new();
         string configurationPath = directory.WriteConfiguration(InvalidConfiguration);
 
+        ApplicationHostRun run = application.Run("--config", configurationPath);
+
+        // Продуктового параметра подмены пути конфигурации нет: неизвестный аргумент — это отказ запуска,
+        // а не молчаливое игнорирование, иначе опечатка была бы неотличима от явного выбора.
+        Assert.Equal(AzurPilotExitCode.InvalidArgument, run.ExitCode);
+        Assert.Contains("--config", run.StandardError, StringComparison.Ordinal);
+
+        // Файл по переданному пути не читается: его путь не появляется ни в одном потоке.
+        Assert.DoesNotContain(configurationPath, run.StandardOutput, StringComparison.Ordinal);
+        Assert.DoesNotContain(configurationPath, run.StandardError, StringComparison.Ordinal);
+    }
+
+    [Fact(DisplayName = "Неверный режим интерфейса отклоняет запуск вместо подстановки обычного режима")]
+    public void InvalidModeIsRejected()
+    {
+        ApplicationHostProcess application = ApplicationHostProcess.CreateStaged();
+
+        ApplicationHostRun run = application.Run("--mode", "bogus");
+
+        Assert.Equal(AzurPilotExitCode.InvalidArgument, run.ExitCode);
+        Assert.Contains("--mode", run.StandardError, StringComparison.Ordinal);
+        Assert.Contains("bogus", run.StandardError, StringComparison.Ordinal);
+        Assert.Contains("normal", run.StandardError, StringComparison.Ordinal);
+        Assert.Empty(run.StandardOutput);
+        Assert.Empty(run.Logs);
+        Assert.DoesNotContain("{", run.StandardError, StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            run.StandardError.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length);
+    }
+
+    [Fact(DisplayName = "Справка реального процесса перечисляет режимы от их владельца")]
+    public void HelpUsesOwnedModeNames()
+    {
+        ApplicationHostProcess application = ApplicationHostProcess.CreateStaged();
+
+        ApplicationHostRun run = application.Run("--help");
+
+        Assert.Equal(AzurPilotExitCode.Success, run.ExitCode);
+        Assert.Contains(
+            "[--mode " + string.Join("|", OperatorUiModeNames.All) + "]",
+            run.StandardOutput,
+            StringComparison.Ordinal);
+        Assert.Empty(run.StandardError);
+    }
+
+    [Fact(DisplayName = "Явный режим интерфейса не меняет контракт одноразовой диагностики")]
+    public void ExplicitModeKeepsOneShotDiagnosticsContract()
+    {
+        ApplicationHostProcess application = ApplicationHostProcess.CreateStaged();
+
         ApplicationHostRun plain = application.Run();
-        ApplicationHostRun withArguments = application.Run("--config", configurationPath);
+        ApplicationHostRun manual = application.Run("--mode", "manual");
 
-        // Аргументы не влияют ни на код выхода, ни на заявленный отказ: продуктового CLI нет.
-        Assert.Equal(plain.ExitCode, withArguments.ExitCode);
-        Assert.Equal(ReadFailureCodeOrNull(plain), ReadFailureCodeOrNull(withArguments));
-
-        // Файл по переданному пути не читается: его путь не появляется в человекочитаемом итоге.
-        Assert.DoesNotContain(configurationPath, withArguments.StandardOutput, StringComparison.Ordinal);
+        // При перенаправленных потоках режим не включает TUI: контракт одноразового пути сохраняется,
+        // ANSI-последовательностей в выводе нет ни в одном режиме.
+        Assert.Equal(plain.ExitCode, manual.ExitCode);
+        Assert.DoesNotContain('\u001b', manual.StandardOutput);
+        Assert.DoesNotContain('\u001b', manual.StandardError);
     }
 
     /// <summary>Возвращает код выхода, соответствующий заявленному application-level отказу.</summary>

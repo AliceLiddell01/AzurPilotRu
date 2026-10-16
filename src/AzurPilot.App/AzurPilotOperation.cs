@@ -24,7 +24,7 @@ public sealed class AzurPilotOperation : IDisposable
     /// <summary>Имя <see cref="ActivitySource"/> приложения.</summary>
     public const string SourceName = "AzurPilot.App";
 
-    /// <summary>Имя операции запуска application host.</summary>
+    /// <summary>Имя операции запуска хоста приложения.</summary>
     public const string StartupActivityName = "azurpilot.startup";
 
     /// <summary>Имя шага загрузки пользовательской конфигурации.</summary>
@@ -63,8 +63,20 @@ public sealed class AzurPilotOperation : IDisposable
     /// с неполной диагностикой нельзя.
     /// </exception>
     public static AzurPilotOperation Start()
+        => Start(StartupActivityName);
+
+    /// <summary>Начинает коррелированную application-операцию с указанным именем.</summary>
+    /// <param name="activityName">Имя логической операции.</param>
+    /// <returns>Операция с доступным correlation identifier.</returns>
+    /// <exception cref="ArgumentException"><paramref name="activityName"/> пуст или состоит из пробелов.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Источник операции не имеет слушателя: correlation identity недоступна.
+    /// </exception>
+    public static AzurPilotOperation Start(string activityName)
     {
-        Activity? activity = OperationSource.StartActivity(StartupActivityName, ActivityKind.Internal);
+        ArgumentException.ThrowIfNullOrWhiteSpace(activityName);
+
+        Activity? activity = OperationSource.StartActivity(activityName, ActivityKind.Internal);
         if (activity is null)
         {
             throw new InvalidOperationException(

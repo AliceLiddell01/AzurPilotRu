@@ -4,9 +4,13 @@ using Xunit;
 namespace AzurPilot.Tests.Configuration;
 
 /// <summary>
-/// Доказывает синтаксис значения <c>mumu.instance</c> схемы v2: единственный владелец правила —
+/// Доказывает синтаксис значения <c>mumu.instance</c>: единственный владелец правила —
 /// <see cref="MuMuInstanceValue"/>, поэтому проверки идут через него, а не через вторую копию грамматики.
 /// </summary>
+/// <remarks>
+/// Грамматика одна для всех форматов: и строгий JSON-конвертер legacy-документов, и строгий YAML-ридер
+/// вызывают этого владельца, а не повторяют перечень допустимых форм.
+/// </remarks>
 [Trait("Category", "Configuration")]
 public sealed class MuMuInstanceValueTests
 {
@@ -53,7 +57,7 @@ public sealed class MuMuInstanceValueTests
     [InlineData("MuMu Player 6.8.0")]
     public void InvalidValuesAreRejected(string? value)
     {
-        Assert.False(MuMuInstanceValue.IsValid(value), $"Значение «{value}» не является частью схемы v2.");
+        Assert.False(MuMuInstanceValue.IsValid(value), $"Значение «{value}» не является частью схемы.");
     }
 
     [Fact(DisplayName = "Литерал auto сравнивается с учётом регистра: Auto и AUTO схемой не являются")]

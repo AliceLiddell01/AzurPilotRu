@@ -106,9 +106,11 @@ public sealed class AndroidHostCompositionTests
         Assert.DoesNotContain(exported, type => type.Name == "AzurPilotAndroidProbe");
         Assert.DoesNotContain(exported, type => type.Name == "AzurPilotAndroidTarget");
 
-        // Новых boundaries в App не появилось: диагностические операции могут жить в выделенном подпространстве.
+        // Application-level diagnostics и operator surface не меняют число managed boundaries.
         Assert.All(exported, type => Assert.True(
-            type.Namespace is "AzurPilot.App" or "AzurPilot.App.Diagnostics"));
+            type.Namespace is "AzurPilot.App" or "AzurPilot.App.Diagnostics"
+                or "AzurPilot.App.OperatorServices" or "AzurPilot.App.OperatorUi"
+                or "AzurPilot.App.LogViewer"));
     }
 
     private static IHost BuildHost()

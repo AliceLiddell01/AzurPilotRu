@@ -71,19 +71,19 @@ public sealed class ApplicationCompositionProbeTests
         }
         """;
 
-    /// <summary>Property structured diagnostics с версией ABI, полученной из native boundary.</summary>
+    /// <summary>Свойство структурированной диагностики с версией ABI, полученной из границы native-кода.</summary>
     private const string AbiVersionProperty = "AbiVersion";
 
-    /// <summary>Property structured diagnostics с версией OpenCV, полученной из native boundary.</summary>
+    /// <summary>Свойство структурированной диагностики с версией OpenCV, полученной из границы native-кода.</summary>
     private const string OpencvVersionProperty = "OpencvVersion";
 
-    /// <summary>Property structured diagnostics с поддержанными capability native boundary.</summary>
+    /// <summary>Свойство структурированной диагностики с поддержанными возможностями границы native-кода.</summary>
     private const string CapabilitiesProperty = "Capabilities";
 
-    /// <summary>Property structured diagnostics с источником загруженной конфигурации.</summary>
+    /// <summary>Свойство структурированной диагностики с источником загруженной конфигурации.</summary>
     private const string ConfigurationSourceProperty = "ConfigurationSource";
 
-    /// <summary>Property structured diagnostics с версией схемы конфигурации.</summary>
+    /// <summary>Свойство структурированной диагностики с версией схемы конфигурации.</summary>
     private const string SchemaVersionProperty = "SchemaVersion";
 
     /// <summary>Фрагмент документа конфигурации, который не должен попадать в вывод диагностики.</summary>
@@ -92,7 +92,7 @@ public sealed class ApplicationCompositionProbeTests
     /// <summary>Длина correlation identifier операции.</summary>
     private const int CorrelationIdLength = 32;
 
-    /// <summary>Категория логирования application host: владелец явного correlation property.</summary>
+    /// <summary>Категория логирования хоста приложения: владелец явного correlation property.</summary>
     private static readonly string ApplicationHostCategory = typeof(AzurPilotHost).Namespace!;
 
     [Fact(DisplayName = "Проба без native runtime сообщает application-level native_unavailable")]
@@ -112,11 +112,26 @@ public sealed class ApplicationCompositionProbeTests
         Assert.Empty(StructuredLogRecord.ReadFrom(run.StandardOutput));
 
         // Отказ получен как application-level: он виден и в structured diagnostics, а не только в коде
-        // выхода. Сведений native boundary в snapshot нет — запрос к ней не состоялся.
+        // выхода. Сведений о границе native-кода в snapshot нет — запрос к ней не состоялся.
         Assert.Contains(
             run.Logs,
             log => string.Equals(log.FailureCode, ApplicationFailure.NativeUnavailable, StringComparison.Ordinal));
         Assert.DoesNotContain(run.Logs, log => log.State.ContainsKey(AbiVersionProperty));
+    }
+
+    [Fact(DisplayName = "Интерактивная сессия не запускается при отказе границы native-кода")]
+    public void InteractiveSessionDoesNotStartWhenNativeRuntimeIsUnavailable()
+    {
+        using ApplicationCompositionProbe probe = ApplicationCompositionProbe.CreateWithoutNativeRuntime();
+        using TemporaryConfigurationDirectory directory = new();
+
+        ApplicationProbeRun run = probe.RunInteractive(directory.WriteConfiguration(InformationConfiguration));
+
+        Assert.Equal(0, run.ProbeExitCode);
+        Assert.Equal(AzurPilotExitCode.NativeUnavailable, run.ApplicationExitCode);
+        Assert.Equal(ApplicationFailure.NativeUnavailable, run.ReadFailureCode());
+        Assert.Contains("Проба: interactive session started=false", run.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("Проба: interactive callback invoked=false", run.StandardOutput, StringComparison.Ordinal);
     }
 
     [Fact(DisplayName = "Проба с fixture несовместимого ABI сообщает application-level native_incompatible")]
@@ -165,8 +180,8 @@ public sealed class ApplicationCompositionProbeTests
                 $"Чужая категория логирования в stderr: {log.Category}."));
 
         // Один correlation identifier связывает все события запуска: MuMu-владельцы несут его scope
-        // записи, application host — ещё и явным structured property. Явное свойство обязательно именно
-        // у событий application host, поэтому проверяется и его наличие, а не только совпадение.
+        // записи, хост приложения — ещё и явным structured property. Явное свойство обязательно именно
+        // у событий хоста приложения, поэтому проверяется и его наличие, а не только совпадение.
         string identifier = Assert.Single(
             run.Logs.Select(log => log.TraceId).OfType<string>().Distinct(StringComparer.Ordinal));
         Assert.Equal(CorrelationIdLength, identifier.Length);
@@ -181,7 +196,7 @@ public sealed class ApplicationCompositionProbeTests
             run.Logs.Where(log => log.CorrelationId is not null),
             log => Assert.Equal(identifier, log.CorrelationId));
 
-        // Здоровый snapshot несёт реальные evidence из native boundary: версии сверяются с владельцами
+        // Здоровый snapshot несёт реальные evidence из границы native-кода: версии сверяются с владельцами
         // этих значений — заголовком ABI и manifest артефакта OpenCV.
         StructuredLogRecord verified = Assert.Single(run.Logs, log => log.State.ContainsKey(AbiVersionProperty));
         Assert.Equal(
@@ -237,7 +252,7 @@ public sealed class ApplicationCompositionProbeTests
         // записи — весь structured runtime log идёт в stderr.
         Assert.Empty(StructuredLogRecord.ReadFrom(run.StandardOutput));
 
-        // Строгая валидация не подменяется built-in defaults: native boundary не запрашивается вовсе.
+        // Строгая валидация не подменяется built-in defaults: граница native-кода не запрашивается вовсе.
         Assert.DoesNotContain(run.Logs, log => log.State.ContainsKey(AbiVersionProperty));
     }
 
@@ -276,7 +291,7 @@ public sealed class ApplicationCompositionProbeTests
         // записи — весь structured runtime log идёт в stderr.
         Assert.Empty(StructuredLogRecord.ReadFrom(run.StandardOutput));
 
-        // Строгая валидация не подменяется built-in defaults: native boundary не запрашивается вовсе.
+        // Строгая валидация не подменяется built-in defaults: граница native-кода не запрашивается вовсе.
         Assert.DoesNotContain(run.Logs, log => log.State.ContainsKey(AbiVersionProperty));
     }
 }

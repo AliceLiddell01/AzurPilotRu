@@ -51,7 +51,7 @@ public sealed class AndroidReadinessService
     /// <param name="host">Host-side поверхность Android.</param>
     /// <param name="timings">Владелец интервала опроса и deadline-значений.</param>
     /// <param name="timeProvider">Источник времени для deadline, задержки и elapsed.</param>
-    /// <param name="logger">Логгер orchestration из существующего logging stack.</param>
+    /// <param name="logger">Логгер orchestration из существующей системы логирования.</param>
     /// <exception cref="ArgumentNullException">Любая из зависимостей равна <see langword="null"/>.</exception>
     public AndroidReadinessService(
         IAndroidHost host,
@@ -249,10 +249,12 @@ public sealed class AndroidReadinessService
     /// </remarks>
     /// <param name="endpoint">Exact endpoint, ранее разрешённый для явно выбранной identity.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <param name="progress">Наблюдатель реально начатых этапов подготовки.</param>
     /// <returns>Итог доказанной готовности либо ожидаемый отказ.</returns>
     public async Task<ApplicationResult<AndroidTransportPreparationOutcome>> PrepareTransportAsync(
         AndroidEndpoint endpoint,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<AndroidReadinessStage>? progress = null)
     {
         long started = _timeProvider.GetTimestamp();
         TimeSpan readinessDeadline = _timings.ReadinessDeadline;
@@ -273,6 +275,7 @@ public sealed class AndroidReadinessService
                     AndroidNames.PrepareTransportOperation));
         }
 
+        progress?.Report(AndroidReadinessStage.Transport);
         ApplicationResult<AndroidTransportObservation> initialResult = _host.QueryTransport(endpoint);
         if (initialResult.IsFailure)
         {
@@ -357,6 +360,7 @@ public sealed class AndroidReadinessService
                     initialTransport.State));
         }
 
+        progress?.Report(AndroidReadinessStage.Boot);
         ApplicationResult<AndroidBootObservation> boot = await WaitForReadyAsync(
             endpoint,
             started,

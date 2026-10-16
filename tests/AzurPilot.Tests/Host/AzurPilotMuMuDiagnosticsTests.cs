@@ -23,12 +23,12 @@ namespace AzurPilot.Tests.Host;
 /// <para>
 /// Проверки выполняются на реально построенном host-е: подменяется только host-side граница MuMu, поэтому
 /// остальной production-код диагностики — разрешение экземпляра через Core orchestration, bounded-форма
-/// секции и логирование — остаётся тем же. Ни установленная MuMu, ни реальный control utility для этих
+/// секции и логирование — остаётся тем же. Ни установленная MuMu, ни реальный утилита управления для этих
 /// проверок не требуются.
 /// </para>
 /// <para>
 /// Секция не является исключением из правила «ожидаемый отказ — данные»: отсутствие установки,
-/// неподдерживаемая control surface, неразрешённый выбор экземпляра и наблюдённый <c>Stopped</c> обязаны
+/// неподдерживаемая интерфейс управления, неразрешённый выбор экземпляра и наблюдённый <c>Stopped</c> обязаны
 /// возвращаться данными, а не отклонять запуск.
 /// </para>
 /// </remarks>
@@ -38,22 +38,22 @@ public sealed class AzurPilotMuMuDiagnosticsTests
     /// <summary>Версия схемы, которую объявляет legacy-документ v1.</summary>
     private const int LegacySchemaVersion = 1;
 
-    /// <summary>Bounded статус control surface: форма распознана.</summary>
+    /// <summary>Ограниченный статус интерфейс управления: форма распознана.</summary>
     private const string SupportedStatus = "supported";
 
-    /// <summary>Bounded статус control surface: форма не поддерживается.</summary>
+    /// <summary>Ограниченный статус интерфейс управления: форма не поддерживается.</summary>
     private const string UnsupportedStatus = "unsupported";
 
-    /// <summary>Bounded статус control surface: установка не обнаружена.</summary>
+    /// <summary>Ограниченный статус интерфейс управления: установка не обнаружена.</summary>
     private const string AbsentStatus = "absent";
 
-    /// <summary>Bounded статус control surface: поддержку доказать не удалось.</summary>
+    /// <summary>Ограниченный статус интерфейс управления: поддержку доказать не удалось.</summary>
     private const string UnknownStatus = "unknown";
 
     /// <summary>Синтетический корень установки: в исходниках проверок нет machine-specific путей.</summary>
     private const string InstallRootSentinel = "install-root-sentinel";
 
-    /// <summary>Синтетический путь control surface установки.</summary>
+    /// <summary>Синтетический путь интерфейс управления установки.</summary>
     private const string ControlExecutableSentinel = "control-executable-sentinel";
 
     /// <summary>Хвост длинного evidence: до bounded-секции он доходить не должен.</summary>
@@ -100,7 +100,7 @@ public sealed class AzurPilotMuMuDiagnosticsTests
         Assert.Equal(0, host.MutationCount);
     }
 
-    [Fact(DisplayName = "Неподдерживаемая control surface отображается как unsupported, а не как отсутствие MuMu")]
+    [Fact(DisplayName = "Неподдерживаемая интерфейс управления отображается как unsupported, а не как отсутствие MuMu")]
     public void UnsupportedControlSurfaceIsReportedAsUnsupported()
     {
         TestMuMuHost host = new()
@@ -312,7 +312,7 @@ public sealed class AzurPilotMuMuDiagnosticsTests
 
         AzurPilotMuMuDiagnostics muMu = Capture(CurrentSchemaConfiguration("auto"), host).MuMu;
 
-        // Один snapshot не утверждает одновременно «форма control surface поддержана» и «форма control
+        // Один snapshot не утверждает одновременно «форма интерфейс управления поддержана» и «форма control
         // surface не распознана»: статус выводится из кода отказа наблюдения.
         Assert.Equal(UnsupportedStatus, muMu.ControlSurfaceStatus);
         Assert.Equal(ApplicationFailure.MuMuControlSurfaceUnsupported, muMu.Failure!.Code);
@@ -383,7 +383,7 @@ public sealed class AzurPilotMuMuDiagnosticsTests
                 Failure(ApplicationFailure.MuMuInstallationNotFound)),
         };
         AzurPilotConfigurationDiagnostics legacy =
-            Capture(LegacyConfiguration, legacyHost).Configuration;
+            CaptureLegacyJson(LegacyConfiguration, legacyHost).Configuration;
 
         Assert.Equal(AzurPilotConfigurationSource.File, legacy.Source);
         Assert.Equal(LegacySchemaVersion, legacy.SourceSchemaVersion);
@@ -412,16 +412,39 @@ public sealed class AzurPilotMuMuDiagnosticsTests
         Assert.DoesNotContain("\"schemaVersion\"", projection, StringComparison.Ordinal);
     }
 
-    /// <summary>Собирает диагностический snapshot на реально построенном host-е.</summary>
-    /// <param name="configurationDocument">Документ пользовательской конфигурации.</param>
+    /// <summary>Собирает диагностический snapshot на реально построенном host-е из канонического YAML.</summary>
+    /// <param name="configurationDocument">Документ пользовательской конфигурации схемы v3.</param>
     /// <param name="muMuHost">Управляемая host-side граница MuMu.</param>
     /// <returns>Собранный диагностический snapshot.</returns>
     private static AzurPilotDiagnosticReport Capture(string configurationDocument, IMuMuHost muMuHost)
+        => CaptureCore(
+            directory => directory.WriteYamlConfiguration(configurationDocument),
+            directory => directory.YamlConfigurationFilePath,
+            muMuHost);
+
+    /// <summary>Собирает диагностический snapshot из legacy JSON-документа.</summary>
+    /// <param name="configurationDocument">Legacy JSON-документ схемы v1 или v2.</param>
+    /// <param name="muMuHost">Управляемая host-side граница MuMu.</param>
+    /// <returns>Собранный диагностический snapshot.</returns>
+    /// <remarks>
+    /// Legacy-документ читается своим строгим контрактом и нормализуется к текущей схеме в памяти: на
+    /// диск ничего не переписывается.
+    /// </remarks>
+    private static AzurPilotDiagnosticReport CaptureLegacyJson(string configurationDocument, IMuMuHost muMuHost)
+        => CaptureCore(
+            directory => directory.WriteConfiguration(configurationDocument),
+            directory => directory.ConfigurationFilePath,
+            muMuHost);
+
+    private static AzurPilotDiagnosticReport CaptureCore(
+        Func<TemporaryConfigurationDirectory, string> write,
+        Func<TemporaryConfigurationDirectory, string> path,
+        IMuMuHost muMuHost)
     {
         using TemporaryConfigurationDirectory directory = new();
-        _ = directory.WriteConfiguration(configurationDocument);
+        _ = write(directory);
         ApplicationResult<AzurPilotConfigurationSnapshot> configuration =
-            AzurPilotConfigurationLoader.Load(directory.ConfigurationFilePath);
+            AzurPilotConfigurationLoader.Load(path(directory));
         Assert.True(configuration.IsSuccess, configuration.ToString());
 
         HostApplicationBuilder builder = AzurPilotHost.CreateBuilder(configuration);
@@ -453,23 +476,24 @@ public sealed class AzurPilotMuMuDiagnosticsTests
     private static ApplicationFailure Failure(string code)
         => new() { Code = code, Message = "Ожидаемый отказ MuMu-диагностики." };
 
-    /// <summary>Документ текущей схемы v2 с заданным значением <c>mumu.instance</c>.</summary>
+    /// <summary>Канонический YAML текущей схемы с заданным значением <c>mumu.instance</c>.</summary>
     /// <param name="instance">Значение выбора экземпляра.</param>
-    /// <returns>Документ конфигурации схемы v2.</returns>
+    /// <returns>Документ конфигурации текущей схемы.</returns>
     private static string CurrentSchemaConfiguration(string instance) => $$"""
-        {
-          "schemaVersion": {{AzurPilotConfiguration.CurrentSchemaVersion.ToString(CultureInfo.InvariantCulture)}},
-          "diagnostics": {
-            "minimumLevel": "Information"
-          },
-          "mumu": {
-            "instance": "{{instance}}"
-          }
-        }
+        schemaVersion: {{AzurPilotConfiguration.CurrentSchemaVersion.ToString(CultureInfo.InvariantCulture)}}
+        ui:
+          mode: normal
+        mumu:
+          instance: "{{instance}}"
+        diagnostics:
+          minimumLevel: Information
+        logging:
+          viewer:
+            enabled: false
         """;
 
     /// <summary>
-    /// Legacy-документ схемы v1: он нормализуется к v2 в памяти, и на диск ничего не пишется.
+    /// Legacy-документ схемы v1: он нормализуется к текущей схеме в памяти, и на диск ничего не пишется.
     /// </summary>
     /// <remarks>
     /// Номер версии в документе — часть legacy-контракта v1, а не значение, которым владеет этот файл,

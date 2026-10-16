@@ -26,16 +26,18 @@ namespace AzurPilot.Core.MuMu;
 /// <para>
 /// Details содержат только bounded полезное evidence: операцию, identity экземпляра, наблюдённое
 /// состояние, целевое состояние, фазу, код выхода mutation и затраченное время. Полный stdout/stderr
-/// control utility, пути установки и прочие machine-specific данные в details не попадают.
+/// утилита управления, пути установки и прочие machine-specific данные в details не попадают.
 /// </para>
 /// </remarks>
-internal static class MuMuFailures
+public static class MuMuFailures
 {
     /// <summary>Фаза отказа: ожидание process-local координации по identity экземпляра.</summary>
     internal const string GatePhase = "gate";
 
     /// <summary>Фаза отказа: начальное наблюдение состояния до mutation.</summary>
     internal const string InitialObservationPhase = "initial_observation";
+
+    private const string OperatorPreflightPhase = "operator_preflight";
 
     /// <summary>Фаза отказа: выполнение mutation.</summary>
     internal const string MutationPhase = "mutation";
@@ -234,4 +236,44 @@ internal static class MuMuFailures
         };
 
     private static string Count(int value) => value.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>Отказывает строгому запуску до mutation, если состояние после gate не доказано.</summary>
+    internal static ApplicationFailure StateUnproven(MuMuInstanceId instanceId, MuMuLifecycleState state)
+        => CreateStateUnproven(
+            instanceId,
+            state,
+            InitialObservationPhase,
+            $"Состояние MuMu instance {instanceId} не доказано: запуск не выполнялся.");
+
+    /// <summary>Создаёт отказ, если состояние MuMu не доказано перед подготовкой Android.</summary>
+    /// <param name="instanceId">Identity наблюдавшегося экземпляра.</param>
+    /// <param name="state">Наблюдённое, но недоказанное состояние.</param>
+    /// <returns>Типизированный отказ с деталями preflight и без выполненной mutation.</returns>
+    public static ApplicationFailure StateUnprovenBeforeOperatorPreparation(
+        MuMuInstanceId instanceId,
+        MuMuLifecycleState state)
+        => CreateStateUnproven(
+            instanceId,
+            state,
+            OperatorPreflightPhase,
+            "Состояние выбранного MuMu не доказано: подготовка Android не выполнялась.");
+
+    private static ApplicationFailure CreateStateUnproven(
+        MuMuInstanceId instanceId,
+        MuMuLifecycleState state,
+        string phase,
+        string message)
+        => new()
+        {
+            Code = ApplicationFailure.MuMuStateUnproven,
+            Message = message,
+            IsRetryable = true,
+            Details = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [InstanceIdDetailKey] = instanceId.ToString(),
+                [StateDetailKey] = MuMuNames.StateName(state),
+                [PhaseDetailKey] = phase,
+                ["mutation_attempted"] = "false",
+            },
+        };
 }

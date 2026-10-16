@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Xml.Linq;
 using AzurPilot.App;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
@@ -14,7 +15,7 @@ namespace AzurPilot.Tests.Host;
 
 /// <summary>
 /// Проверки MuMu-состава построенного host-а: реальные сервисы приходят из DI, а публичная поверхность
-/// приложения не расширяется командной строкой, REPL, doctor-командой или новыми boundaries.
+/// приложение использует единственную composition root и не вводит новых managed boundaries.
 /// </summary>
 /// <remarks>
 /// Проверки выполняются на реально построенном host-е: они доказывают, что MuMu-capability подключена как
@@ -23,35 +24,6 @@ namespace AzurPilot.Tests.Host;
 [Trait("Category", "Integration")]
 public sealed class MuMuHostCompositionTests
 {
-    /// <summary>Ожидаемое множество публичных типов приложения.</summary>
-    /// <remarks>
-    /// Composition root остаётся единственной точкой сборки host-а, а presentation-поверхность — только
-    /// диагностические данные и точка входа. Появление здесь CLI/REPL/doctor-типа или новой boundary
-    /// означает, что состав приложения изменился, и проверка обязана это заметить.
-    /// </remarks>
-    private static readonly string[] ExpectedPublicTypes =
-    [
-        "AzurPilotAndroidDiagnostics",
-        "AzurPilotApplicationDiagnostics",
-        "AzurPilotAzurLaneDiagnostics",
-        "AzurPilotConfigurationDiagnostics",
-        "AzurPilotDiagnosticReport",
-        "AzurPilotDiagnosticService",
-        "AzurPilotExitCode",
-        "AzurPilotHost",
-        "AzurPilotMuMuDiagnostics",
-        "AzurPilotNativeDiagnostics",
-        "AzurPilotOperation",
-        "AzurPilotStartupResult",
-        "ScreenshotAnalysisSource",
-        "ScreenshotAnalysisSourceKind",
-        "ScreenshotDiagnosticRegion",
-        "ScreenshotDiagnosticRegions",
-        "ScreenshotLogicalBounds",
-        "ScreenshotRegionScanResult",
-        "ScreenshotRegionScanner",
-    ];
-
     [Fact(DisplayName = "MuMu services резолвятся из DI существующего host-а как singleton-ы")]
     public void MuMuServicesAreResolvedFromContainer()
     {
@@ -100,18 +72,36 @@ public sealed class MuMuHostCompositionTests
         Assert.NotNull(services.GetRequiredService<AzurPilotDiagnosticService>());
     }
 
-    [Fact(DisplayName = "Публичная поверхность App не расширена CLI/REPL/doctor и новыми boundaries")]
-    public void PublicSurfaceStaysBounded()
+    [Fact(DisplayName = "Managed-проекты и ссылки сборок соблюдают направление App → Windows → Core")]
+    public void ManagedBoundariesAndDependencyDirectionArePreserved()
     {
-        Assembly application = typeof(AzurPilotHost).Assembly;
-        Type[] exported = application.GetExportedTypes();
+        string sourceRoot = Path.Combine(PinnedVersions.RepositoryRoot, "src");
+        string[] projects = Directory.GetFiles(sourceRoot, "*.csproj", SearchOption.AllDirectories);
+        Dictionary<string, string[]> allowed = new(StringComparer.Ordinal)
+        {
+            ["AzurPilot.App"] = ["AzurPilot.Windows", "AzurPilot.Core"],
+            ["AzurPilot.Windows"] = ["AzurPilot.Core"],
+            ["AzurPilot.Core"] = [],
+        };
+        Assert.Equal(allowed.Keys.Order(StringComparer.Ordinal),
+            projects.Select(Path.GetFileNameWithoutExtension).Order(StringComparer.Ordinal));
 
-        Assert.Equal(
-            ExpectedPublicTypes.OrderBy(name => name, StringComparer.Ordinal),
-            exported.Select(type => type.Name).OrderBy(name => name, StringComparer.Ordinal));
+        foreach (string project in projects)
+        {
+            string owner = Path.GetFileNameWithoutExtension(project);
+            foreach (XElement reference in XDocument.Load(project).Descendants("ProjectReference"))
+            {
+                string target = Path.GetFileNameWithoutExtension(reference.Attribute("Include")!.Value);
+                Assert.Contains(target, allowed[owner]);
+            }
+        }
 
-        // Новых boundaries в App не появилось; diagnostics выделена в собственное подпространство.
-        Assert.All(exported, type => Assert.True(
-            type.Namespace is "AzurPilot.App" or "AzurPilot.App.Diagnostics"));
+        foreach (Assembly assembly in new[] { typeof(AzurPilotHost).Assembly,
+            typeof(MuMuWindowsHost).Assembly, typeof(MuMuLifecycleService).Assembly })
+        {
+            string owner = assembly.GetName().Name!;
+            Assert.All(assembly.GetReferencedAssemblies().Where(reference => reference.Name!.StartsWith("AzurPilot.", StringComparison.Ordinal)),
+                reference => Assert.Contains(reference.Name!, allowed[owner]));
+        }
     }
 }

@@ -30,6 +30,7 @@ public sealed class AzurPilotExitCodeTests
     [InlineData(ApplicationFailure.MuMuInstanceNotFound, AzurPilotExitCode.MuMuInstanceNotFound)]
     [InlineData(ApplicationFailure.MuMuInstanceAmbiguous, AzurPilotExitCode.MuMuInstanceAmbiguous)]
     [InlineData(ApplicationFailure.MuMuControlSurfaceUnsupported, AzurPilotExitCode.MuMuControlSurfaceUnsupported)]
+    [InlineData(ApplicationFailure.MuMuStateUnproven, AzurPilotExitCode.MuMuStateUnproven)]
     [InlineData(
         ApplicationFailure.MuMuLifecyclePostconditionNotMet,
         AzurPilotExitCode.MuMuLifecyclePostconditionNotMet)]
@@ -107,6 +108,9 @@ public sealed class AzurPilotExitCodeTests
         Assert.Equal(25, AzurPilotExitCode.DiagnosticRegionUnsupported);
         Assert.Equal(26, AzurPilotExitCode.NativeFrameAnalysisFailed);
         Assert.Equal(27, AzurPilotExitCode.NativeFrameInvalid);
+        Assert.Equal(28, AzurPilotExitCode.MuMuStateUnproven);
+        Assert.Equal(29, AzurPilotExitCode.InvalidArgument);
+        Assert.Equal(30, AzurPilotExitCode.LogViewerUnavailable);
     }
 
     [Fact(DisplayName = "Каждый код отказа capability имеет проекцию, а не общий internal_error")]

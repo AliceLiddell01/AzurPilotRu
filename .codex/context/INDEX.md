@@ -29,6 +29,7 @@
 | Runtime logging и diagnostics | `runtime-diagnostics.md` | `src/AzurPilot.App/**`, `docs/getting-started.md` |
 | MuMu lifecycle | `mumu-lifecycle.md` | production code + relevant tests/acceptance |
 | Android/ADB и lifecycle Azur Lane Global/EN | `android-game-lifecycle.md` | `docs/architecture/android-game-lifecycle.md`, production code/tests |
+| Операторский TUI | `operator-tui.md` | `docs/architecture/operator-tui.md`, `docs/testing/operator-tui-acceptance.md`, `src/AzurPilot.App/OperatorServices/**`, `src/AzurPilot.App/OperatorUi/**` |
 | Verification semantics | `verification.md` | `docs/testing/`, tests, CI workflows |
 | Язык project-owned текста | `language.md` | этот contract |
 | Git/GitHub lifecycle | — | `.agents/skills/azurpilot-git-workflow/` |

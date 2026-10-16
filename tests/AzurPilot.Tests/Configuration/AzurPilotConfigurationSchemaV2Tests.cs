@@ -7,43 +7,49 @@ using Xunit;
 namespace AzurPilot.Tests.Configuration;
 
 /// <summary>
-/// Доказывает контракт эффективной схемы v2: владелец номера версии, состав секции <c>mumu</c>, строгое
-/// чтение документа v2, различие source/effective schema в snapshot, приоритет неподдерживаемой версии и
-/// закрытие edge case с повторяющимся <c>schemaVersion</c>.
+/// Доказывает правила legacy-входа схемы v2: документ с <c>schemaVersion = 2</c> читается строгим
+/// контрактом своей версии и нормализуется к эффективной схеме v3 только в памяти, строгая валидация v2
+/// сохраняется, а неподдерживаемый номер версии получает отдельный стабильный код.
 /// </summary>
 [Trait("Category", "Configuration")]
 public sealed class AzurPilotConfigurationSchemaV2Tests
 {
-    [Fact(DisplayName = "Эффективная схема — v2, а встроенные defaults описывают валидный документ v2")]
-    public void CurrentSchemaVersionIsTwoAndDefaultsAreValidV2()
+    /// <summary>Версия legacy-схемы v2: владелец числа — legacy-контракт внутри Core.</summary>
+    private const int LegacySchemaVersion = 2;
+
+    [Fact(DisplayName = "Эффективная схема — v3, а встроенные defaults описывают валидный документ v3")]
+    public void CurrentSchemaVersionIsThreeAndDefaultsAreValidV3()
     {
         // Владелец номера — сам тип конфигурации: требуемое значение проверяется ровно здесь.
-        Assert.Equal(2, AzurPilotConfiguration.CurrentSchemaVersion);
+        Assert.Equal(3, AzurPilotConfiguration.CurrentSchemaVersion);
 
         AzurPilotConfiguration defaults = AzurPilotConfigurationDefaults.Create();
         Assert.Equal(AzurPilotConfiguration.CurrentSchemaVersion, defaults.SchemaVersion);
+        Assert.Equal(OperatorUiMode.Normal, defaults.Ui.Mode);
         Assert.Equal(LogLevel.Information, defaults.Diagnostics.MinimumLevel);
         Assert.Equal(MuMuInstanceValue.AutoValue, defaults.MuMu.Instance);
+        Assert.False(defaults.Logging.Viewer.Enabled);
         Assert.True(
             MuMuInstanceValue.IsValid(defaults.MuMu.Instance),
-            "Встроенное значение mumu.instance обязано быть частью схемы v2.");
+            "Встроенное значение mumu.instance обязано быть частью схемы v3.");
 
-        // Defaults описывают ту же схему, что и файл: документ, собранный из их значений, читается
-        // полностью и даёт ровно ту же конфигурацию.
+        // Defaults описывают ту же схему, что и канонический файл: документ, собранный из их значений,
+        // читается полностью и даёт ровно ту же конфигурацию.
         using TemporaryConfigurationDirectory directory = new();
         string document =
-            $$$"""
-            {
-              "schemaVersion": {{{defaults.SchemaVersion.ToString(CultureInfo.InvariantCulture)}}},
-              "diagnostics": {
-                "minimumLevel": "{{{defaults.Diagnostics.MinimumLevel}}}"
-              },
-              "mumu": {
-                "instance": "{{{defaults.MuMu.Instance}}}"
-              }
-            }
+            $"""
+            schemaVersion: {defaults.SchemaVersion}
+            ui:
+              mode: normal
+            mumu:
+              instance: {defaults.MuMu.Instance}
+            diagnostics:
+              minimumLevel: {defaults.Diagnostics.MinimumLevel}
+            logging:
+              viewer:
+                enabled: false
             """;
-        string path = directory.WriteConfiguration(document);
+        string path = directory.WriteYamlConfiguration(document);
 
         ApplicationResult<AzurPilotConfigurationSnapshot> result = AzurPilotConfigurationLoader.Load(path);
 
@@ -51,17 +57,20 @@ public sealed class AzurPilotConfigurationSchemaV2Tests
         Assert.Equal(defaults, result.Value!.Configuration);
     }
 
-    [Fact(DisplayName = "Валидный документ v2 читается полностью, а snapshot несёт обе версии схемы")]
-    public void ValidV2DocumentIsReadAndSnapshotCarriesBothSchemaVersions()
+    [Fact(DisplayName = "Валидный legacy-документ v2 читается и нормализуется к v3 в памяти")]
+    public void ValidV2DocumentIsReadAsLegacyInput()
     {
         using TemporaryConfigurationDirectory directory = new();
-        string path = directory.WriteConfiguration(CurrentSchemaDocument(mumuInstance: "mumu:2", minimumLevel: "Warning"));
+        string path = directory.WriteConfiguration(
+            CurrentSchemaDocument(mumuInstance: "mumu:2", minimumLevel: "Warning"));
+        byte[] documentBefore = File.ReadAllBytes(path);
 
         ApplicationResult<AzurPilotConfigurationSnapshot> result = AzurPilotConfigurationLoader.Load(path);
 
-        Assert.True(result.IsSuccess, $"Валидный документ v2 обязан читаться, получено {result}.");
+        Assert.True(result.IsSuccess, $"Валидный legacy-документ v2 обязан читаться, получено {result}.");
         AzurPilotConfigurationSnapshot snapshot = result.Value!;
         Assert.Equal(AzurPilotConfigurationSource.File, snapshot.Source);
+        Assert.Equal(AzurPilotConfigurationFormat.Json, snapshot.SourceFormat);
         Assert.False(snapshot.IsBuiltInDefaults);
         Assert.Equal(path, snapshot.FilePath);
 
@@ -69,11 +78,19 @@ public sealed class AzurPilotConfigurationSchemaV2Tests
         Assert.Equal(LogLevel.Warning, snapshot.Configuration.Diagnostics.MinimumLevel);
         Assert.Equal("mumu:2", snapshot.Configuration.MuMu.Instance);
 
-        // Source schema и effective schema различимы без дампа конфигурации.
-        Assert.Equal(AzurPilotConfiguration.CurrentSchemaVersion, snapshot.Configuration.SchemaVersion);
-        Assert.Equal(AzurPilotConfiguration.CurrentSchemaVersion, snapshot.SourceSchemaVersion);
+        // Source schema — v2, effective schema — v3: это и есть нормализация в памяти.
+        Assert.Equal(LegacySchemaVersion, snapshot.SourceSchemaVersion);
         Assert.Equal(AzurPilotConfiguration.CurrentSchemaVersion, snapshot.EffectiveSchemaVersion);
-        Assert.False(snapshot.IsLegacySchemaNormalized);
+        Assert.Equal(AzurPilotConfiguration.CurrentSchemaVersion, snapshot.Configuration.SchemaVersion);
+        Assert.True(snapshot.IsLegacySchemaNormalized);
+
+        // Секции, которых в схеме v2 не было, приходят от владельца defaults.
+        AzurPilotConfiguration defaults = AzurPilotConfigurationDefaults.Create();
+        Assert.Equal(defaults.Ui.Mode, snapshot.Configuration.Ui.Mode);
+        Assert.Equal(defaults.Logging.Viewer.Enabled, snapshot.Configuration.Logging.Viewer.Enabled);
+
+        // Нормализация не касается диска: файл побитово тот же.
+        Assert.Equal(documentBefore, File.ReadAllBytes(path));
     }
 
     [Fact(DisplayName = "Snapshot встроенных defaults несёт effective схему как source schema")]
@@ -87,12 +104,13 @@ public sealed class AzurPilotConfigurationSchemaV2Tests
         Assert.True(result.IsSuccess, $"Отсутствие файла — валидный сценарий, получено {result}.");
         AzurPilotConfigurationSnapshot snapshot = result.Value!;
         Assert.Equal(AzurPilotConfigurationSource.BuiltInDefaults, snapshot.Source);
+        Assert.Equal(AzurPilotConfigurationFormat.None, snapshot.SourceFormat);
         Assert.Equal(AzurPilotConfiguration.CurrentSchemaVersion, snapshot.SourceSchemaVersion);
         Assert.Equal(snapshot.SourceSchemaVersion, snapshot.EffectiveSchemaVersion);
         Assert.False(snapshot.IsLegacySchemaNormalized);
     }
 
-    [Theory(DisplayName = "Допустимое значение mumu.instance читается из документа v2")]
+    [Theory(DisplayName = "Допустимое значение mumu.instance читается из legacy-документа v2")]
     [InlineData("auto")]
     [InlineData("mumu:0")]
     [InlineData("mumu:1")]
@@ -109,7 +127,7 @@ public sealed class AzurPilotConfigurationSchemaV2Tests
         Assert.Equal(instance, result.Value!.Configuration.MuMu.Instance);
     }
 
-    [Theory(DisplayName = "Значение mumu.instance вне синтаксиса схемы v2 даёт configuration_invalid")]
+    [Theory(DisplayName = "Значение mumu.instance вне синтаксиса схемы даёт configuration_invalid")]
     [InlineData("пустая строка", "")]
     [InlineData("пробел", " ")]
     [InlineData("неверный регистр литерала auto", "Auto")]
@@ -137,7 +155,7 @@ public sealed class AzurPilotConfigurationSchemaV2Tests
             scenario: $"mumu.instance «{scenario}»");
     }
 
-    [Theory(DisplayName = "Документ v2, нарушающий строгую схему, отклоняется как configuration_invalid")]
+    [Theory(DisplayName = "Legacy-документ v2, нарушающий строгую схему, отклоняется как configuration_invalid")]
     [InlineData("нестроковый mumu.instance", """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"mumu":{"instance":1}}""")]
     [InlineData("null mumu.instance", """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"mumu":{"instance":null}}""")]
     [InlineData("отсутствует required mumu.instance", """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"mumu":{}}""")]
@@ -150,6 +168,8 @@ public sealed class AzurPilotConfigurationSchemaV2Tests
     [InlineData("секция ADB", """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"mumu":{"instance":"auto"},"adb":{"port":5037}}""")]
     [InlineData("секция game", """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"mumu":{"instance":"auto"},"game":{"package":"x"}}""")]
     [InlineData("секция vision", """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"mumu":{"instance":"auto"},"vision":{}}""")]
+    [InlineData("секция ui", """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"mumu":{"instance":"auto"},"ui":{"mode":"normal"}}""")]
+    [InlineData("секция logging", """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"mumu":{"instance":"auto"},"logging":{"viewer":{"enabled":false}}}""")]
     [InlineData("неизвестное property в корне", """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"mumu":{"instance":"auto"},"unknown":true}""")]
     [InlineData("неверный регистр property mumu", """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"MuMu":{"instance":"auto"}}""")]
     [InlineData("неверный регистр property instance", """{"schemaVersion":2,"diagnostics":{"minimumLevel":"Information"},"mumu":{"Instance":"auto"}}""")]
@@ -173,7 +193,7 @@ public sealed class AzurPilotConfigurationSchemaV2Tests
             scenario: scenario);
     }
 
-    [Theory(DisplayName = "Неподдерживаемая версия схемы даёт отдельный стабильный код с details schema_version")]
+    [Theory(DisplayName = "Неподдерживаемая версия схемы в JSON даёт отдельный код с details schema_version")]
     [InlineData(3)]
     [InlineData(0)]
     [InlineData(-1)]
@@ -196,6 +216,20 @@ public sealed class AzurPilotConfigurationSchemaV2Tests
             schemaVersion.ToString(CultureInfo.InvariantCulture),
             details["schema_version"]);
         Assert.Equal(path, details["config_path"]);
+    }
+
+    [Fact(DisplayName = "JSON-документ схемы v3 не существует: текущая версия в JSON неподдерживаема")]
+    public void CurrentSchemaVersionInJsonIsUnsupported()
+    {
+        using TemporaryConfigurationDirectory directory = new();
+        string path = directory.WriteConfiguration(
+            """{"schemaVersion":3,"ui":{"mode":"normal"},"mumu":{},"diagnostics":{},"logging":{"viewer":{"enabled":false}}}""");
+
+        ApplicationFailure failure = ConfigurationTestAssertions.AssertFailure(
+            AzurPilotConfigurationLoader.Load(path),
+            ApplicationFailure.ConfigurationSchemaUnsupported,
+            "текущая версия схемы в JSON-файле");
+        Assert.Equal("3", failure.Details!["schema_version"]);
     }
 
     [Fact(DisplayName = "Неподдерживаемая версия распознаётся даже при секциях будущей схемы")]
@@ -270,25 +304,26 @@ public sealed class AzurPilotConfigurationSchemaV2Tests
         Assert.NotEqual(ApplicationFailure.ConfigurationSchemaUnsupported, failure.Code);
     }
 
-    /// <summary>Собирает документ эффективной схемы v2 с указанным значением <c>mumu.instance</c>.</summary>
+    /// <summary>Собирает legacy-документ схемы v2 с указанным значением <c>mumu.instance</c>.</summary>
+    /// <param name="mumuInstance">Значение выбора экземпляра.</param>
+    /// <param name="minimumLevel">Имя уровня логирования.</param>
+    /// <returns>Текст legacy-документа v2.</returns>
     private static string CurrentSchemaDocument(string mumuInstance, string minimumLevel = "Information")
-        => CurrentSchemaDocumentWithRawInstance("\"" + mumuInstance + "\"", minimumLevel);
-
-    /// <summary>Собирает документ схемы v2 с значением <c>mumu.instance</c>, записанным как есть.</summary>
-    private static string CurrentSchemaDocumentWithRawInstance(string rawInstanceJson, string minimumLevel)
         => $$$"""
             {
-              "schemaVersion": {{{AzurPilotConfiguration.CurrentSchemaVersion.ToString(CultureInfo.InvariantCulture)}}},
+              "schemaVersion": {{{LegacySchemaVersion.ToString(CultureInfo.InvariantCulture)}}},
               "diagnostics": {
                 "minimumLevel": "{{{minimumLevel}}}"
               },
               "mumu": {
-                "instance": {{{rawInstanceJson}}}
+                "instance": "{{{mumuInstance}}}"
               }
             }
             """;
 
-    /// <summary>Собирает документ с указанной версией схемы и секциями эффективной схемы v2.</summary>
+    /// <summary>Собирает документ с указанной версией схемы и секциями legacy-схемы v2.</summary>
+    /// <param name="schemaVersion">Номер версии схемы.</param>
+    /// <returns>Текст документа с указанной версией.</returns>
     private static string DocumentWithSchemaVersion(int schemaVersion)
         => $$$"""
             {
