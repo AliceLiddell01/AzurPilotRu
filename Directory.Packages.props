@@ -8,6 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Только developer harness: управление Chromium и PNG настоящего терминального renderer. -->
+    <PackageVersion Include="Microsoft.Playwright" Version="1.63.0" />
+    <PackageVersion Include="Microsoft.Windows.Console.ConPTY" Version="1.25.260930003" />
     <!-- Строгая конфигурация приложения типизирует минимальный уровень логирования стандартным
          Microsoft.Extensions.Logging.LogLevel, а не собственной копией списка значений. -->
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />

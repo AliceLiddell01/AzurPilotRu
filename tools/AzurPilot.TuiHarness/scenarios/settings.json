@@ -1,0 +1,11 @@
+{
+  "name": "isolated-settings-save",
+  "steps": [
+    { "command": "text", "value": "/settings" },
+    { "command": "key", "value": "Enter" },
+    { "command": "capture", "name": "settings", "contains": "Расположение конфигурации" },
+    { "command": "key", "value": "ArrowDown" },
+    { "command": "key", "value": "Enter" },
+    { "command": "capture", "name": "settings-saved", "contains": "Настройки" }
+  ]
+}

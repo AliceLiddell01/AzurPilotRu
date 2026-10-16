@@ -1,0 +1,17 @@
+{
+  "name": "safe-default-cancel-and-denied-mutation",
+  "steps": [
+    { "command": "capture", "name": "startup", "contains": "AzurPilot" },
+    { "command": "text", "value": "/environment-start" },
+    { "command": "key", "value": "Enter" },
+    { "command": "capture", "name": "default-cancel", "contains": "> Отмена" },
+    { "command": "key", "value": "Enter" },
+    { "command": "capture", "name": "cancelled", "absent": ["Подтверждение · по умолчанию отмена"] },
+    { "command": "text", "value": "/environment-start" },
+    { "command": "key", "value": "Enter" },
+    { "command": "capture", "name": "confirm-again", "contains": "> Отмена" },
+    { "command": "key", "value": "ArrowDown" },
+    { "command": "key", "value": "Enter" },
+    { "command": "capture", "name": "mutation-denied", "contains": "внешние mutation запрещены" }
+  ]
+}

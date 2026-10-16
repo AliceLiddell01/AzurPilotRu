@@ -736,7 +736,7 @@ public sealed class OperatorUiController : IDisposable
             + $"Режим интерфейса: {OperatorUiModePresentation.Label(mode)} "
             + $"(запуск: --mode {OperatorUiModePresentation.Argument(mode)})\n"
             + $"Экземпляр MuMu: {instance}\n"
-            + $"Расположение конфигурации: {AzurPilotConfigurationPath.GetDefaultRuntimePath()}\n"
+            + $"Расположение конфигурации: {_savedConfiguration.FilePath ?? AzurPilotConfigurationPath.GetDefaultRuntimePath()}\n"
             + $"Следующий запуск: {OperatorUiModePresentation.Argument(SavedConfiguration.Ui.Mode)}, "
             + $"экземпляр {SavedConfiguration.MuMu.Instance}, "
             + $"отдельная лог-консоль: {(SavedConfiguration.Logging.Viewer.Enabled ? "включена" : "выключена")}.";

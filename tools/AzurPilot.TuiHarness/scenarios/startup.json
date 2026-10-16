@@ -1,0 +1,24 @@
+{
+  "name": "startup-palette-composer-resize",
+  "steps": [
+    { "command": "capture", "name": "startup", "contains": "AzurPilot", "absent": ["Запуск отклонён"], "checkSize": true },
+    { "command": "key", "value": "F2" },
+    { "command": "capture", "name": "palette", "contains": "Настройки" },
+    { "command": "key", "value": "Escape" },
+    { "command": "text", "value": "Черновик Кириллица е́ 界" },
+    { "command": "capture", "name": "unicode", "contains": "Черновик Кириллица е́ 界" },
+    { "command": "key", "value": "F2" },
+    { "command": "key", "value": "Escape" },
+    { "command": "capture", "name": "restored-draft", "contains": "Черновик" },
+    { "command": "resize", "columns": 100, "rows": 30 },
+    { "command": "capture", "name": "size-100", "columns": 100, "rows": 30, "checkSize": true },
+    { "command": "resize", "columns": 80, "rows": 25 },
+    { "command": "capture", "name": "size-80", "columns": 80, "rows": 25, "checkSize": true },
+    { "command": "resize", "columns": 60, "rows": 18 },
+    { "command": "capture", "name": "size-60", "columns": 60, "rows": 18, "checkSize": true, "contains": "Черновик", "absent": ["Увеличьте терминал минимум"] },
+    { "command": "resize", "columns": 59, "rows": 17 },
+    { "command": "capture", "name": "size-59", "columns": 59, "rows": 17, "checkSize": true, "contains": "Увеличьте терминал минимум до 60×18" },
+    { "command": "resize", "columns": 120, "rows": 30 },
+    { "command": "capture", "name": "restored-size", "contains": "Черновик", "checkSize": true }
+  ]
+}

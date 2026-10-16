@@ -4,6 +4,7 @@ using AzurPilot.App.OperatorServices;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
+using AzurPilot.Windows;
 using Microsoft.Extensions.Logging;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
@@ -45,6 +46,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     private Scheme _selectionScheme = NeutralScheme;
     private Scheme _accentScheme = NeutralScheme;
     private Scheme _disabledScheme = NeutralScheme;
+    private bool? _darkBackground;
     private readonly OperatorUiController _controller;
     private readonly IOperatorUiLogSource _logSource;
     private readonly OperatorUiSession _session;
@@ -95,6 +97,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     /// <param name="darkBackground">Фон терминала тёмный.</param>
     private void BuildPalette(bool darkBackground)
     {
+        _darkBackground = darkBackground;
         string muted = darkBackground ? "#9A9A9A" : "#5F6368";
         string accent = darkBackground ? "#4E9ACF" : "#2E6DA4";
         string success = darkBackground ? "#7FB069" : "#217A3C";
@@ -175,11 +178,17 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
         cancellationToken.ThrowIfCancellationRequested();
         _hasRun = true;
+        using WindowsConsoleOutputMode outputMode = WindowsConsoleOutputMode.EnableVirtualTerminalProcessing();
         using IApplication application = Application.Create();
         _application = application;
         _ = application.Init();
         Terminal.Gui.Drawing.Color terminalBackground =
             application.Driver!.DefaultAttribute?.Background ?? Terminal.Gui.Drawing.Color.None;
+        if (terminalBackground.A == 0 && outputMode.BackgroundRgb is int backgroundRgb)
+        {
+            terminalBackground = new Terminal.Gui.Drawing.Color((byte)(backgroundRgb >> 16),
+                (byte)(backgroundRgb >> 8), (byte)backgroundRgb);
+        }
         // Неразрешённый фон темы (Color.None) считаем тёмным: это исторический вид поверхности.
         BuildPalette(terminalBackground.A == 0 || terminalBackground.IsDarkColor());
         // Корневая поверхность без декоративной границы: содержимое занимает всю доступную площадь
@@ -251,6 +260,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
     private bool Tick(CancellationToken cancellationToken)
     {
+        ApplyTerminalBackground(_application?.Driver?.DefaultAttribute?.Background ?? Terminal.Gui.Drawing.Color.None);
         if (cancellationToken.IsCancellationRequested && !_exitRequested)
         {
             RequestExit();
@@ -282,6 +292,31 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _operation!.Text = _controller.OperationText;
         RefreshComposerFocus();
         return true;
+    }
+
+    // OSC 10/11 завершается асинхронно уже после Init. Палитра обновляется только в UI event loop.
+    internal void ApplyTerminalBackground(Terminal.Gui.Drawing.Color background)
+    {
+        if (background.A == 0 || _window is null)
+        {
+            return;
+        }
+
+        bool dark = background.IsDarkColor();
+        if (_darkBackground == dark)
+        {
+            return;
+        }
+
+        BuildPalette(dark);
+        _ = _historyHeading!.SetScheme(_mutedScheme);
+        _messagesDirty = true;
+        if (_paletteMode != PaletteMode.Hidden)
+        {
+            RenderPalette();
+        }
+
+        RefreshComposerFocus();
     }
 
     /// <summary>Строка состояния: выбранный target, режим и подсказка вызова палитры.</summary>

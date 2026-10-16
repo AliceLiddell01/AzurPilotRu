@@ -38,6 +38,7 @@ if (arguments.Help)
     Console.WriteLine("Без аргументов: ui.mode из config.yaml; по умолчанию normal.");
     Console.WriteLine("При перенаправлении stdin или stdout: одноразовая read-only диагностика.");
     Console.WriteLine("Машинный JSON-интерфейс: AzurPilot.App agent discover.");
+    Console.WriteLine("Developer UI: --isolated-ui <directory>; по умолчанию внешние mutation и viewer отключены.");
     return AzurPilotExitCode.Success;
 }
 
@@ -46,6 +47,13 @@ if (arguments.LogViewer)
     // Отдельная лог-консоль — собственный процесс того же приложения: он не собирает хост приложения,
     // не открывает TUI и не управляет состоянием MuMu, Android или игры.
     return await AzurPilotLogViewerHost.RunAsync(args).ConfigureAwait(false);
+}
+
+string? isolatedConfiguration = arguments.IsolatedUiRoot is string root ? Path.Combine(root, "config.yaml") : null;
+if (isolatedConfiguration is not null && !File.Exists(isolatedConfiguration))
+{
+    Console.Error.WriteLine("Изолированная UI-сессия требует существующий отдельный YAML.");
+    return AzurPilotExitCode.InvalidArgument;
 }
 
 if (!Console.IsInputRedirected && !Console.IsOutputRedirected)
@@ -62,7 +70,10 @@ if (!Console.IsInputRedirected && !Console.IsOutputRedirected)
             ui.Run(cancellationToken);
             return Task.CompletedTask;
         },
-        modeOverride: arguments.Mode).ConfigureAwait(false);
+        configurationPath: isolatedConfiguration,
+        modeOverride: arguments.Mode,
+        isolatedUi: arguments.IsolatedUiRoot is not null,
+        liveEnvironmentTarget: arguments.LiveEnvironmentTarget).ConfigureAwait(false);
 
     if (!interactive.InteractiveSessionStarted || interactive.Startup.ExitCode != AzurPilotExitCode.Success)
     {
@@ -73,6 +84,12 @@ if (!Console.IsInputRedirected && !Console.IsOutputRedirected)
     }
 
     return interactive.Startup.ExitCode;
+}
+
+if (arguments.IsolatedUiRoot is not null)
+{
+    Console.Error.WriteLine("--isolated-ui требует интерактивную консоль; diagnostic fallback запрещён.");
+    return AzurPilotExitCode.InvalidArgument;
 }
 
 AzurPilotStartupResult result = await AzurPilotHost.RunAsync().ConfigureAwait(false);

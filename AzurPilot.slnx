@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="tools/AzurPilot.TuiHarness/AzurPilot.TuiHarness.csproj" />
   <Project Path="src/AzurPilot.Core/AzurPilot.Core.csproj" />
   <Project Path="src/AzurPilot.Windows/AzurPilot.Windows.csproj" />
   <Project Path="src/AzurPilot.App/AzurPilot.App.csproj" />

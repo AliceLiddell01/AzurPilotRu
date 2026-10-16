@@ -96,6 +96,11 @@ public sealed record AzurPilotOperatorAndroidPreparationOutcome(
 /// </remarks>
 public sealed class AzurPilotOperatorService
 {
+    // Устанавливается только composition root изолированного интерактивного запуска.
+    // Отказ до аренды также исключает записи в пользовательский runtime-каталог.
+    internal bool ExternalMutationsDisabled { get; set; }
+    internal MuMuInstanceId? LiveEnvironmentTarget { get; set; }
+
     private const string DiagnosticsActivity = "azurpilot.operator.diagnostics";
     private const string InventoryActivity = "azurpilot.operator.mumu.inventory";
     private const string MuMuLifecycleActivity = "azurpilot.operator.mumu.lifecycle";
@@ -170,7 +175,8 @@ public sealed class AzurPilotOperatorService
         MuMuInstanceId instanceId, MuMuLifecycleOperation operationKind, CancellationToken cancellationToken)
     {
         return WithMutationLeaseAsync(instanceId,
-                () => RunMuMuLifecycleCoreAsync(instanceId, operationKind, cancellationToken), cancellationToken);
+                () => RunMuMuLifecycleCoreAsync(instanceId, operationKind, cancellationToken),
+                operationKind == MuMuLifecycleOperation.Stop && LiveEnvironmentTarget == instanceId, cancellationToken);
     }
 
     /// <summary>Подготовка transport под арендой окружения.</summary>
@@ -188,6 +194,12 @@ public sealed class AzurPilotOperatorService
         Action<AzurPilotOperatorAndroidPreparationOutcome>? onOutcome = null,
         AndroidMutationProgress? preparationMutationProgress = null)
     {
+        if (ExternalMutationsDisabled && LiveEnvironmentTarget != instanceId)
+        {
+            return new(instanceId, AzurPilotOperatorAndroidPreparationStage.ResolveMuMu,
+                null, false, null, null, IsolatedMutationFailure());
+        }
+
         if (cancellationToken.IsCancellationRequested)
         {
             return await PrepareSelectedAndroidCoreAsync(instanceId, cancellationToken, progress, onOutcome, preparationMutationProgress).ConfigureAwait(false);
@@ -216,9 +228,21 @@ public sealed class AzurPilotOperatorService
                 () => StartAzurLaneCoreAsync(instanceId, cancellationToken, progress, onGameStarting, onPreparationCompleted, mutationProgress, preparationMutationProgress), cancellationToken);
     }
 
-    private static async Task<ApplicationResult<T>> WithMutationLeaseAsync<T>(
+    private Task<ApplicationResult<T>> WithMutationLeaseAsync<T>(
         MuMuInstanceId instanceId, Func<Task<ApplicationResult<T>>> action, CancellationToken cancellationToken)
     {
+        return WithMutationLeaseAsync(instanceId, action, false, cancellationToken);
+    }
+
+    private async Task<ApplicationResult<T>> WithMutationLeaseAsync<T>(
+        MuMuInstanceId instanceId, Func<Task<ApplicationResult<T>>> action, bool allowIsolatedStop,
+        CancellationToken cancellationToken)
+    {
+        if (ExternalMutationsDisabled && !allowIsolatedStop)
+        {
+            return ApplicationResult<T>.Failure(IsolatedMutationFailure());
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         ApplicationResult<FileStream> acquired = WindowsInstanceMutationLease.TryAcquire(instanceId);
         if (acquired.IsFailure)
@@ -229,6 +253,19 @@ public sealed class AzurPilotOperatorService
         using FileStream lease = acquired.Value!;
         cancellationToken.ThrowIfCancellationRequested();
         return await action().ConfigureAwait(false);
+    }
+
+    private static ApplicationFailure IsolatedMutationFailure()
+    {
+        return new()
+        {
+            Code = ApplicationFailure.InvalidArgument,
+            Message = "В изолированной UI-сессии внешние mutation запрещены.",
+            Details = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [ApplicationFailure.MutationAttemptedDetailKey] = "false",
+            },
+        };
     }
 
     /// <summary>Повторно открывает read-only viewer; отключённая настройка применяется только при запуске.</summary>

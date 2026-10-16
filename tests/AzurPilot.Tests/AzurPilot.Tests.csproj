@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../tools/AzurPilot.TuiHarness/AzurPilot.TuiHarness.csproj" />
     <ProjectReference Include="..\..\src\AzurPilot.Core\AzurPilot.Core.csproj" />
     <ProjectReference Include="..\..\src\AzurPilot.Windows\AzurPilot.Windows.csproj" />
     <!-- Composition root приложения: проверки состава host-а и его runtime services выполняются

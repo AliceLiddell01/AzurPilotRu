@@ -39,6 +39,22 @@ public sealed class OperatorUiComposerKeyBindingTests : IDisposable
         _ui.InitializeViews(_window);
     }
 
+    [Fact]
+    public void LateTerminalBackgroundChangesPaletteWithoutLosingDraft()
+    {
+        _ui.ComposerText = "черновик";
+        _ui.ApplyTerminalBackground(new Terminal.Gui.Drawing.Color("#F2F2F2"));
+        Assert.Contains(_window.SubViews, view => view.GetAttributeForRole(Terminal.Gui.Drawing.VisualRole.Normal).Foreground
+            == new Terminal.Gui.Drawing.Color("#5F6368"));
+        _ui.ApplyTerminalBackground(Terminal.Gui.Drawing.Color.None);
+        Assert.Contains(_window.SubViews, view => view.GetAttributeForRole(Terminal.Gui.Drawing.VisualRole.Normal).Foreground
+            == new Terminal.Gui.Drawing.Color("#5F6368"));
+        _ui.ApplyTerminalBackground(new Terminal.Gui.Drawing.Color("#0C0C0C"));
+        Assert.Contains(_window.SubViews, view => view.GetAttributeForRole(Terminal.Gui.Drawing.VisualRole.Normal).Foreground
+            == new Terminal.Gui.Drawing.Color("#9A9A9A"));
+        Assert.Equal("черновик", _ui.ComposerText);
+    }
+
     [Theory(DisplayName = "F2 сохраняет исходный текст при одном и повторных открытиях")]
     [InlineData(1)]
     [InlineData(2)]

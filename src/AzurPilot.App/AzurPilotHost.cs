@@ -118,15 +118,32 @@ public static class AzurPilotHost
     /// значением конфигурации; <see langword="null"/> означает, что режим берётся из конфигурации.
     /// </param>
     /// <param name="cancellationToken">Токен отмены запуска и сессии.</param>
+    /// <param name="isolatedUi">Отключить внешние mutation и viewer в developer-сессии.</param>
+    /// <param name="liveEnvironmentTarget">Разрешение только подготовки и остановки exact target.</param>
     /// <returns>Итог запуска и признак того, что интерактивная сессия была запущена.</returns>
     public static async Task<AzurPilotInteractiveRunResult> RunInteractiveAsync(
         Func<AzurPilotOperatorService, AzurPilotDiagnosticReport, AzurPilotOperatorLogBuffer,
             OperatorUiMode, ApplicationFailure?, CancellationToken, Task> runSession,
         string? configurationPath = null,
         OperatorUiMode? modeOverride = null,
+        bool isolatedUi = false,
+        MuMuInstanceId? liveEnvironmentTarget = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(runSession);
+        if (isolatedUi)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(configurationPath);
+            if (!File.Exists(configurationPath))
+            {
+                throw new ArgumentException("Изолированная UI-сессия требует существующий отдельный YAML.", nameof(configurationPath));
+            }
+        }
+
+        if (liveEnvironmentTarget is not null && !isolatedUi)
+        {
+            throw new ArgumentException("Live grant применим только к изолированной UI-сессии.", nameof(liveEnvironmentTarget));
+        }
 
         AzurPilotOperation operation = AzurPilotOperation.Start("azurpilot.interactive.startup");
         AzurPilotOperatorLogBuffer logBuffer = new();
@@ -153,7 +170,7 @@ public static class AzurPilotHost
 
                 // Отдельная лог-консоль открывается до сборки host-а: её провайдер — часть системы логирования,
                 // а не второй владелец логирования. Отказ открытия окна не мешает запуску.
-                if (configuration.IsSuccess && configuration.Value!.Configuration.Logging.Viewer.Enabled)
+                if (!isolatedUi && configuration.IsSuccess && configuration.Value!.Configuration.Logging.Viewer.Enabled)
                 {
                     logViewer = new AzurPilotLogViewerSession(configuration.Value.Configuration.Diagnostics.MinimumLevel);
                     ApplicationResult<bool> viewer = await logViewer.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -206,6 +223,9 @@ public static class AzurPilotHost
 
             await host.StartAsync(cancellationToken).ConfigureAwait(false);
             hostStarted = true;
+            AzurPilotOperatorService operatorService = host.Services.GetRequiredService<AzurPilotOperatorService>();
+            operatorService.ExternalMutationsDisabled = isolatedUi;
+            operatorService.LiveEnvironmentTarget = isolatedUi ? liveEnvironmentTarget : null;
 
             // Снимок и результат startup готовы до UI, но сам host останется запущен до её закрытия.
             startupResult = await InspectStartedHostAsync(host, logger, operation, cancellationToken)

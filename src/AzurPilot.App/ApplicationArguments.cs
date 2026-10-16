@@ -1,5 +1,6 @@
 using AzurPilot.App.OperatorUi;
 using AzurPilot.Core.Configuration;
+using AzurPilot.Core.MuMu;
 using Microsoft.Extensions.Logging;
 
 namespace AzurPilot.App;
@@ -14,6 +15,7 @@ public sealed record ApplicationArgumentFailure(string Message)
     [
         "Запуск отклонён: " + Message,
         "Использование: AzurPilot.App [--mode " + string.Join("|", OperatorUiModeNames.All) + "] "
+            + "[--isolated-ui <directory> [--live-environment-target mumu:<index>]] "
             + "[--log-viewer --log-viewer-pipe <name> [--log-viewer-level <level>] [--log-viewer-details]]",
     ];
 }
@@ -26,6 +28,8 @@ public sealed record ApplicationArgumentFailure(string Message)
 /// <param name="Failure">Ожидаемый отказ разбора аргументов; <see langword="null"/> при успехе.</param>
 /// <param name="Help">Показать справку без запуска host.</param>
 /// <param name="LogViewerDetails">Показывать correlation и structured properties в отдельном viewer.</param>
+/// <param name="IsolatedUiRoot">Явный каталог developer UI-сессии; внешние mutation и viewer отключены.</param>
+/// <param name="LiveEnvironmentTarget">Разрешение только подготовки и остановки exact target.</param>
 public sealed record ApplicationArguments(
     OperatorUiMode? Mode,
     bool LogViewer,
@@ -33,7 +37,9 @@ public sealed record ApplicationArguments(
     LogLevel? LogViewerLevel,
     ApplicationArgumentFailure? Failure,
     bool Help = false,
-    bool LogViewerDetails = false)
+    bool LogViewerDetails = false,
+    string? IsolatedUiRoot = null,
+    MuMuInstanceId? LiveEnvironmentTarget = null)
 {
     /// <summary>Признак успешного разбора аргументов.</summary>
     public bool IsSuccess => Failure is null;
@@ -44,9 +50,8 @@ public sealed record ApplicationArguments(
     /// <remarks>
     /// <para>
     /// Продуктовый CLI минимален и необязателен: без аргументов приложение работает как раньше.
-    /// Поддерживаются только те параметры, у которых есть реальная capability: режим интерфейса и
-    /// отдельная лог-консоль. Параметра подмены пути конфигурации здесь нет — владельцем runtime-пути
-    /// остаётся <see cref="AzurPilotConfigurationPath"/>.
+    /// Изолированный developer-запуск использует отдельный каталог и запрещает внешние mutation.
+    /// Без этого явного параметра владельцем runtime-пути остаётся <see cref="AzurPilotConfigurationPath"/>.
     /// </para>
     /// <para>
     /// Неизвестный аргумент, отсутствующее значение и недопустимое значение — это отказ запуска.
@@ -66,6 +71,8 @@ public sealed record ApplicationArguments(
         bool viewerDetails = false;
         string? pipe = null;
         LogLevel? level = null;
+        string? isolatedUiRoot = null;
+        MuMuInstanceId? liveEnvironmentTarget = null;
         HashSet<string> seen = new(StringComparer.Ordinal);
 
         for (int index = 0; index < args.Length; index++)
@@ -78,6 +85,32 @@ public sealed record ApplicationArguments(
 
             switch (argument)
             {
+                case "--live-environment-target":
+                    if (!TryReadValue(args, ref index, argument, out string target, out ApplicationArgumentFailure? targetFailure))
+                    {
+                        return Failed(targetFailure!);
+                    }
+
+                    if (!MuMuInstanceValue.IsValid(target) || target == MuMuInstanceValue.AutoValue)
+                    {
+                        return Failed(new ApplicationArgumentFailure("Live UI требует каноническую exact MuMu identity."));
+                    }
+
+                    liveEnvironmentTarget = MuMuInstanceId.FromIndex(target[MuMuInstanceValue.ProviderPrefix.Length..]);
+                    break;
+                case "--isolated-ui":
+                    if (!TryReadValue(args, ref index, argument, out string root, out ApplicationArgumentFailure? rootFailure))
+                    {
+                        return Failed(rootFailure!);
+                    }
+
+                    if (!Path.IsPathFullyQualified(root))
+                    {
+                        return Failed(new ApplicationArgumentFailure("--isolated-ui требует абсолютный каталог конфигурации."));
+                    }
+
+                    isolatedUiRoot = Path.GetFullPath(root);
+                    break;
                 case "--help" or "-h":
                     return Failed(new ApplicationArgumentFailure(
                         $"{argument} не сочетается с другими параметрами."));
@@ -128,7 +161,7 @@ public sealed record ApplicationArguments(
                     break;
                 default:
                     return Failed(new ApplicationArgumentFailure(
-                        $"Аргумент «{argument}» не поддерживается. Доступны: --mode, --log-viewer, "
+                        $"Аргумент «{argument}» не поддерживается. Доступны: --mode, --isolated-ui, --live-environment-target, --log-viewer, "
                         + "--log-viewer-pipe, --log-viewer-level, --log-viewer-details, --help."));
             }
         }
@@ -144,13 +177,24 @@ public sealed record ApplicationArguments(
             return Failed(new ApplicationArgumentFailure("--mode не применяется к отдельной лог-консоли."));
         }
 
+        if (liveEnvironmentTarget is not null && isolatedUiRoot is null)
+        {
+            return Failed(new ApplicationArgumentFailure("--live-environment-target требует --isolated-ui и отдельный YAML."));
+        }
+
+        if (logViewer && isolatedUiRoot is not null)
+        {
+            return Failed(new ApplicationArgumentFailure("--isolated-ui не сочетается с --log-viewer."));
+        }
+
         if (!logViewer && (pipe is not null || level is not null || viewerDetails))
         {
             return Failed(new ApplicationArgumentFailure(
                 "--log-viewer-pipe, --log-viewer-level и --log-viewer-details применимы только вместе с --log-viewer."));
         }
 
-        return new ApplicationArguments(mode, logViewer, pipe, level, null, LogViewerDetails: viewerDetails);
+        return new ApplicationArguments(mode, logViewer, pipe, level, null, LogViewerDetails: viewerDetails,
+            IsolatedUiRoot: isolatedUiRoot, LiveEnvironmentTarget: liveEnvironmentTarget);
     }
 
     /// <summary>Код выхода процесса для отказа разбора аргументов.</summary>

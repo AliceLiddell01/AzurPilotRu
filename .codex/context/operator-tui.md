@@ -1,6 +1,7 @@
 # Operator TUI — agent-critical контракт
 
 Подробное устройство, режимы и клавиатура описаны в `../../docs/architecture/operator-tui.md`.
+Визуальные изменения проверяй через [azurpilot-tui-harness](../../.agents/skills/azurpilot-tui-harness/SKILL.md).
 
 - `AzurPilot.App.OperatorUi` владеет Terminal.Gui renderer, навигацией, режимами доступа и presentation
   state; предметные решения, адресация и postconditions остаются в `AzurPilot.App.OperatorServices` и

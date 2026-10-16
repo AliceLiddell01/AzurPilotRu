@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/AzurPilot.Core/AzurPilot.Core.csproj" />
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="Microsoft.Windows.Console.ConPTY" />
+    <Content Include="Renderer/**;profiles/**;scenarios/**;renderer.lock.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../artifacts/tui-harness/vendor/xterm/package/lib/xterm.js" Link="Renderer/vendor/xterm.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../artifacts/tui-harness/vendor/xterm/package/css/xterm.css" Link="Renderer/vendor/xterm.css" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../artifacts/tui-harness/vendor/unicode11/package/lib/addon-unicode11.js" Link="Renderer/vendor/addon-unicode11.js" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

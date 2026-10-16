@@ -1,0 +1,187 @@
+{
+  "name": "history-wheel-and-keyboard",
+  "steps": [
+    {
+      "contains": "AzurPilot",
+      "name": "startup",
+      "command": "capture"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "contains": "Помощь",
+      "name": "history-bottom",
+      "command": "capture"
+    },
+    {
+      "value": "wheel-up",
+      "x": 25,
+      "y": 10,
+      "command": "mouse"
+    },
+    {
+      "historyChangedFrom": "history-bottom",
+      "name": "history-wheel",
+      "command": "capture"
+    },
+    {
+      "command": "key",
+      "value": "PageUp"
+    },
+    {
+      "historyChangedFrom": "history-wheel",
+      "name": "history-page-up",
+      "command": "capture"
+    },
+    {
+      "command": "key",
+      "value": "Control+End"
+    },
+    {
+      "name": "history-end",
+      "command": "capture"
+    }
+  ]
+}
