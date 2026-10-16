@@ -40,9 +40,9 @@ internal static class AgentCommands
             schemaVersion = AgentJson.SchemaVersion,
             maximumOutputBytes = AgentJson.MaximumOutputBytes,
             maximumInventoryInstances = AgentRequest.MaximumInventoryInstances,
-            argumentTypes = new
+            argumentTypes = new Dictionary<string, object>(StringComparer.Ordinal)
             {
-                MuMuInstanceValue = new
+                ["MuMuInstanceValue"] = new
                 {
                     type = "string",
                     automaticValue = MuMuInstanceValue.AutoValue,

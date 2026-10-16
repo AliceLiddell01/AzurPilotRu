@@ -26,7 +26,11 @@ public sealed class AgentContractTests
         AgentEnvelope result = await AgentRunner.RunAsync(["agent", "discover"], (_, _) => throw new InvalidOperationException(), TestContext.Current.CancellationToken);
         Assert.Equal(0, result.ExitCode);
         using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref result));
-        JsonElement commands = json.RootElement.GetProperty("data").GetProperty("commands");
+        JsonElement data = json.RootElement.GetProperty("data");
+        JsonElement commands = data.GetProperty("commands");
+        JsonElement argumentTypes = data.GetProperty("argumentTypes");
+        Assert.True(argumentTypes.TryGetProperty("MuMuInstanceValue", out JsonElement muMuInstanceValue));
+        Assert.Equal("string", muMuInstanceValue.GetProperty("type").GetString());
         Assert.Equal(AgentCommands.All.Count, commands.GetArrayLength());
         Assert.Equal(AgentCommands.All.Count, commands.EnumerateArray().Select(c => c.GetProperty("name").GetString()).Distinct().Count());
         foreach (AgentCommand command in AgentCommands.All)
@@ -37,6 +41,12 @@ public sealed class AgentContractTests
             JsonElement description = commands.EnumerateArray().Single(c => c.GetProperty("name").GetString() == command.Name);
             Assert.Equal(command.Mutation, description.GetProperty("mutation").GetBoolean());
             Assert.Equal(command.Arguments.Count, description.GetProperty("arguments").GetArrayLength());
+            foreach (JsonElement argument in description.GetProperty("arguments").EnumerateArray())
+            {
+                string type = argument.GetProperty("type").GetString()!;
+                Assert.True(type is "integer" or "absolute-path" || argumentTypes.TryGetProperty(type, out _),
+                    $"Discovery не описывает тип аргумента {type}.");
+            }
         }
 
         Assert.DoesNotContain(AgentCommands.All, c => c.Name is "Exit" or "Select" or "build" or "ocr");
