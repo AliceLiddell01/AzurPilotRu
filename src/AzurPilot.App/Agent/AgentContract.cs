@@ -131,7 +131,7 @@ internal static class AgentJson
         {
             failure.Code,
             failure.IsRetryable,
-            // Сообщения внешних границ могут содержать локальные пути. Машинный contract опирается на code.
+            // Сообщения внешних границ могут содержать локальные пути. Машинный контракт опирается на поле code.
             message = "Операция отклонена: " + failure.Code,
             details = failure.Details?.Take(16).ToDictionary(p => Safe(p.Key), p => Safe(p.Value), StringComparer.Ordinal),
         };

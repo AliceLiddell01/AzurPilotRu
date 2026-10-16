@@ -99,8 +99,8 @@ internal static class AgentRunner
 
     internal static async Task<int> RunProcessAsync(string[] args)
     {
-        // Сохраняем raw stdout до подавления стороннего консольного вывода. Единственная запись — ниже,
-        // после завершения host/dispose; structured logging composition root направляет в stderr.
+        // Сохраняем поток stdout до подавления стороннего консольного вывода. Записываем ответ один раз,
+        // после остановки и освобождения ресурсов хоста. При сборке хоста структурированные логи направляются в stderr.
         using Stream output = Console.OpenStandardOutput();
         Console.SetOut(TextWriter.Null);
         using CancellationTokenSource cancellation = new();
