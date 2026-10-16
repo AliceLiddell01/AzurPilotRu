@@ -273,7 +273,7 @@ public static class MuMuFailures
                 [InstanceIdDetailKey] = instanceId.ToString(),
                 [StateDetailKey] = MuMuNames.StateName(state),
                 [PhaseDetailKey] = phase,
-                ["mutation_attempted"] = "false",
+                [ApplicationFailure.MutationAttemptedDetailKey] = "false",
             },
         };
 }

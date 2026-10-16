@@ -352,7 +352,8 @@ public sealed class AzurPilotOperatorService
             ApplicationResult<ResolvedMuMuTarget> target = ResolveMuMuTarget(instanceId);
             if (target.IsFailure)
             {
-                return ApplicationResult<MuMuLifecycleOutcome>.Failure(target.FailureInfo!);
+                return ApplicationResult<MuMuLifecycleOutcome>.Failure(
+                    WithMutationAttempted(target.FailureInfo!, attempted: false));
             }
 
             ResolvedMuMuTarget value = target.Value!;
@@ -705,7 +706,8 @@ public sealed class AzurPilotOperatorService
             ApplicationResult<ResolvedAndroidTarget> target = ResolveAndroidTarget(instanceId);
             if (target.IsFailure)
             {
-                return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(target.FailureInfo!);
+                return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(
+                    WithMutationAttempted(target.FailureInfo!, attempted: false));
             }
 
             using (operation.StartStep("azurpilot.operator.azurlane.execute"))
@@ -742,6 +744,15 @@ public sealed class AzurPilotOperatorService
         }
 
         return ApplicationResult<ResolvedMuMuTarget>.Success(new ResolvedMuMuTarget(value, resolution.Instance!));
+    }
+
+    private static ApplicationFailure WithMutationAttempted(ApplicationFailure failure, bool attempted)
+    {
+        Dictionary<string, string> details = failure.Details is null
+            ? new(StringComparer.Ordinal)
+            : new(failure.Details, StringComparer.Ordinal);
+        details[ApplicationFailure.MutationAttemptedDetailKey] = attempted ? "true" : "false";
+        return failure with { Details = details };
     }
 
     private ApplicationResult<ResolvedAndroidTarget> ResolveAndroidTarget(MuMuInstanceId instanceId)

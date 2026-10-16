@@ -4,6 +4,8 @@ using Xunit;
 
 namespace AzurPilot.Tests.Agent;
 
+// Тесты используют production LocalApplicationData; пустые lock-файлы сохраняются намеренно.
+// Случайная identity снижает риск совпадения в параллельных прогонах, но не исключает его.
 [Trait("Category", "Agent")]
 public sealed class AgentConcurrencyTests
 {

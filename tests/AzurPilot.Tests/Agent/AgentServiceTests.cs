@@ -212,6 +212,44 @@ public sealed partial class AzurPilotOperatorServiceTests
         Assert.Equal("Running", json.RootElement.GetProperty("data").GetProperty("finalState").GetString());
     }
 
+    [Fact]
+    [Trait("Category", "Agent")]
+    public async Task AgentMuMuStartTargetResolutionFailureReportsNoMutation()
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        fixture.MuMuHost.InstancesResult = ApplicationResult<IReadOnlyList<MuMuInstance>>.Success([]);
+        AgentContext context = new(fixture.Service) { Target = MuMuInstanceId.FromIndex("7") };
+
+        AgentPayload result = await context.MuMuAsync(MuMuLifecycleOperation.Start, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ApplicationFailure.MuMuInstanceNotFound, result.Failure!.Code);
+        Assert.Equal("false", result.Failure.Details![ApplicationFailure.MutationAttemptedDetailKey]);
+        Assert.Equal("none", result.Effect);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+    }
+
+    [Fact]
+    [Trait("Category", "Agent")]
+    public async Task AgentGameStopEndpointResolutionFailureReportsNoMutation()
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        AndroidTestContext android = new();
+        AzurPilotOperatorService service = CreateAgentService(fixture, android);
+        android.Host.EndpointHandler = (_, _) => ApplicationResult<AndroidEndpoint>.Failure(new ApplicationFailure
+        {
+            Code = ApplicationFailure.AndroidEndpointUnavailable,
+            Message = "test endpoint resolution failure",
+        });
+        AgentContext context = new(service) { Target = MuMuInstanceId.FromIndex("7") };
+
+        AgentPayload result = await context.GameAsync("stop", TestContext.Current.CancellationToken);
+
+        Assert.Equal(ApplicationFailure.AndroidEndpointUnavailable, result.Failure!.Code);
+        Assert.Equal("false", result.Failure.Details![ApplicationFailure.MutationAttemptedDetailKey]);
+        Assert.Equal("none", result.Effect);
+        Assert.Empty(android.Host.MutationRequests);
+    }
+
     [Theory]
     [InlineData("environment-prepare")]
     [InlineData("game-start")]

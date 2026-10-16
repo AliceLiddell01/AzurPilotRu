@@ -48,6 +48,9 @@ namespace AzurPilot.Core.Failures;
 /// </remarks>
 public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
 {
+    /// <summary>Ключ details с признаком попытки выполнить mutation.</summary>
+    public const string MutationAttemptedDetailKey = "mutation_attempted";
+
     /// <summary>Недопустимый машинный запрос.</summary>
     public const string InvalidArgument = "invalid_argument";
 

@@ -122,7 +122,7 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
         {
             Effect = FailureEffect(result.FailureInfo!);
         }
-        else if (Stage == "game-lifecycle" && Effect != "changed")
+        else if (Stage == "game-lifecycle" && Effect != "changed" && !MutationWasNotAttempted(result.FailureInfo!))
         {
             Effect = "mayHaveChanged";
         }
@@ -160,6 +160,13 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
     private static string FailureEffect(ApplicationFailure failure)
     {
         return failure.Code is ApplicationFailure.TargetBusy or ApplicationFailure.MutationCoordinationUnavailable
-            ? "none" : "mayHaveChanged";
+            || MutationWasNotAttempted(failure) ? "none" : "mayHaveChanged";
+    }
+
+    private static bool MutationWasNotAttempted(ApplicationFailure failure)
+    {
+        return failure.Details is { } details
+            && details.TryGetValue(ApplicationFailure.MutationAttemptedDetailKey, out string? attempted)
+            && string.Equals(attempted, "false", StringComparison.Ordinal);
     }
 }
