@@ -36,7 +36,7 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
     private readonly NamedPipeServerStream _server;
     private readonly Channel<AzurPilotLogViewerEvent> _queue;
     private readonly CancellationTokenSource _shutdown = new();
-    private readonly SemaphoreSlim _outputGate = new(1, 1);
+    private readonly SemaphoreSlim _outputGate;
     private readonly Task _writer;
     private readonly Task _clientReader;
     private readonly AzurPilotLogViewerProvider _provider;
@@ -44,9 +44,10 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
     private long _totalDroppedCount;
     private int _disposed;
 
-    private AzurPilotLogViewerPublisher(NamedPipeServerStream server)
+    private AzurPilotLogViewerPublisher(NamedPipeServerStream server, SemaphoreSlim? outputGate)
     {
         _server = server;
+        _outputGate = outputGate ?? new SemaphoreSlim(1, 1);
         _queue = Channel.CreateBounded<AzurPilotLogViewerEvent>(new BoundedChannelOptions(QueueCapacity)
         {
             // TryWrite в режиме ожидания возвращает false вместо блокировки: переполнение наблюдаемо,
@@ -117,11 +118,13 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
     /// <param name="windowHost">Граница запуска отдельного окна.</param>
     /// <param name="viewerLevel">Минимальный уровень, который должен показывать viewer.</param>
     /// <param name="handshakeTimeout">Предел ожидания подключения и handshake.</param>
+    /// <param name="outputGate">Семафор записи с передачей владения либо null для собственного семафора.</param>
     /// <returns>Готовый publisher либо ожидаемый отказ <c>log_viewer_unavailable</c>.</returns>
     internal static ApplicationResult<AzurPilotLogViewerPublisher> Start(
         ILogViewerWindowHost windowHost,
         LogLevel? viewerLevel,
-        TimeSpan handshakeTimeout)
+        TimeSpan handshakeTimeout,
+        SemaphoreSlim? outputGate = null)
     {
         ArgumentNullException.ThrowIfNull(windowHost);
         if (!windowHost.IsAvailable)
@@ -171,7 +174,7 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
             // Успешный путь владеет каналом сам: CTS ожидания здесь больше не нужен, а его token не
             // передаётся writer-у — иначе завершение ожидания отменяло бы уже установленный канал.
             return ApplicationResult<AzurPilotLogViewerPublisher>.Success(
-                new AzurPilotLogViewerPublisher(server));
+                new AzurPilotLogViewerPublisher(server, outputGate));
         }
         catch (Exception exception) when (exception is IOException or ObjectDisposedException or InvalidOperationException)
         {

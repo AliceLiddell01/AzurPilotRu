@@ -152,17 +152,47 @@ public sealed class AzurPilotLogViewerTests
     [Fact(DisplayName = "Отмена проверки занятого канала не превращается в disconnect")]
     public async Task ConnectionProbeHonorsCallerCancellation()
     {
-        await using LogViewerStand stand = LogViewerStand.Start(handshake: true, read: false);
-        for (int i = 0; i < 4096; i++)
+        SemaphoreSlim outputGate = new(1, 1);
+        await using LogViewerStand stand = LogViewerStand.Start(handshake: true, outputGate: outputGate);
+        await outputGate.WaitAsync(TestContext.Current.CancellationToken);
+        try
         {
-            stand.Publisher.Publish(Event(i) with { Message = new string('я', 2048) });
+            using CancellationTokenSource cancellation = new();
+            Task<bool> probe = stand.Publisher.CheckConnectionAsync(cancellation.Token);
+            Assert.False(probe.IsCompleted);
+            cancellation.Cancel();
+            _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probe);
+            Assert.True(stand.Publisher.IsConnected);
         }
+        finally
+        {
+            _ = outputGate.Release();
+        }
+    }
 
-        using CancellationTokenSource cancellation = new();
-        Task<bool> probe = stand.Publisher.CheckConnectionAsync(cancellation.Token);
-        cancellation.Cancel();
-        _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probe);
-        Assert.True(stand.Publisher.IsConnected);
+    [Fact(DisplayName = "Занятый семафор записи не вызывает открытия второго viewer")]
+    public async Task BusyWriterGateDoesNotReopenWindow()
+    {
+        SemaphoreSlim outputGate = new(1, 1);
+        await using LogViewerStand stand = LogViewerStand.Start(handshake: true, outputGate: outputGate);
+        int opens = 0;
+        await using AzurPilotLogViewerSession session = new(LogLevel.Information, () =>
+        {
+            opens++;
+            return ApplicationResult<AzurPilotLogViewerPublisher>.Success(stand.Publisher);
+        });
+        Assert.True((await session.OpenAsync(TestContext.Current.CancellationToken)).IsSuccess);
+        await outputGate.WaitAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.True((await session.OpenAsync(TestContext.Current.CancellationToken)).IsSuccess);
+            Assert.Equal(1, opens);
+            Assert.True(stand.Publisher.IsConnected);
+        }
+        finally
+        {
+            _ = outputGate.Release();
+        }
     }
 
     [Fact(DisplayName = "Завершение дожидается открытия, освобождает publisher и запрещает повторный запрос")]
@@ -643,10 +673,10 @@ public sealed class AzurPilotLogViewerTests
 
         internal InProcessViewer Viewer { get; }
 
-        internal static LogViewerStand Start(bool handshake, bool read = true)
+        internal static LogViewerStand Start(bool handshake, bool read = true, SemaphoreSlim? outputGate = null)
         {
             (ApplicationResult<AzurPilotLogViewerPublisher> result, InProcessViewer viewer) =
-                TryStartCore(handshake, TimeSpan.FromSeconds(10), read);
+                TryStartCore(handshake, TimeSpan.FromSeconds(10), read, outputGate);
             Assert.True(result.IsSuccess, result.ToString());
             return new LogViewerStand(result.Value!, viewer);
         }
@@ -659,13 +689,15 @@ public sealed class AzurPilotLogViewerTests
         private static (ApplicationResult<AzurPilotLogViewerPublisher> Result, InProcessViewer Viewer) TryStartCore(
             bool handshake,
             TimeSpan timeout,
-            bool read)
+            bool read,
+            SemaphoreSlim? outputGate = null)
         {
             InProcessViewer viewer = new(handshake, read);
             ApplicationResult<AzurPilotLogViewerPublisher> result = AzurPilotLogViewerPublisher.Start(
                 new InProcessWindowHost(viewer),
                 LogLevel.Information,
-                timeout);
+                timeout,
+                outputGate);
             return (result, viewer);
         }
 
