@@ -13,8 +13,8 @@ using AzurPilot.App.Agent;
 // диагностика при перенаправленных потоках. Явный --mode имеет приоритет над ui.mode конфигурации.
 
 // Явный namespace выбирается до терминала, legacy parser и ранней инициализации вывода.
-// Неверное положение agent тоже остаётся машинным отказом и не открывает TUI.
-if (args.Contains("agent", StringComparer.Ordinal))
+// Namespace занимает первую позицию; значения legacy-опций командами не являются.
+if (args.Length > 0 && args[0] == "agent")
 {
     return await AgentRunner.RunProcessAsync(args).ConfigureAwait(false);
 }

@@ -8,7 +8,7 @@ namespace AzurPilot.App.Agent;
 
 internal static class AgentRunner
 {
-    // Делегат — seam всей composition boundary для deterministic тестов; product не принимает его через CLI/env.
+    // Делегат подменяет границу сборки хоста для детерминированных тестов; приложение не принимает его через CLI/env.
     internal static async Task<AgentEnvelope> RunAsync(string[] args,
         Func<Func<AzurPilotOperatorService, CancellationToken, Task<AgentPayload>>, CancellationToken, Task<AgentPayload>>? runHost = null, CancellationToken cancellationToken = default)
     {
@@ -71,7 +71,10 @@ internal static class AgentRunner
             // во время такого probe, его результат сохраняется, но запрос не объявляется своевременным.
             if (linked.IsCancellationRequested && payload.Failure?.Code is null or ApplicationFailure.OperationCancelled)
             {
-                payload = payload with { Failure = CancellationFailure(deadline, cancellationToken) };
+                payload = payload with
+                {
+                    Failure = CancellationFailure(deadline, cancellationToken) with { Details = payload.Failure?.Details },
+                };
             }
         }
         catch (Exception exception)
@@ -96,7 +99,7 @@ internal static class AgentRunner
 
     internal static async Task<int> RunProcessAsync(string[] args)
     {
-        // Сохраняем raw stdout до подавления сторонней console presentation. Единственная запись — ниже,
+        // Сохраняем raw stdout до подавления стороннего консольного вывода. Единственная запись — ниже,
         // после завершения host/dispose; structured logging composition root направляет в stderr.
         using Stream output = Console.OpenStandardOutput();
         Console.SetOut(TextWriter.Null);

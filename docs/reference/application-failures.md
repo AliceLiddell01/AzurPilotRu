@@ -28,6 +28,11 @@
 
 | Код (константа `ApplicationFailure`) | Когда возникает | Повтор |
 | --- | --- | --- |
+| `InvalidArgument` | Недопустимый запрос Agent CLI или неканоническая identity для mutation lease; human CLI сохраняет прежний exit mapping | `IsRetryable=false`: сначала исправить аргументы |
+| `TargetBusy` | Mutation lease exact identity уже удерживается другим процессом | `IsRetryable=true`: повтор после освобождения аренды |
+| `MutationCoordinationUnavailable` | Пользовательский каталог или файл аренды недоступен; mutation отклонена до выполнения | `IsRetryable=false`: сначала восстановить координацию |
+| `AgentDeadlineExceeded` | Кооперативный deadline Agent CLI истёк; завершение ожидания не означает откат изменений | `IsRetryable=false`: оценить effect и состояние target перед новым запросом |
+| `AgentOutputLimitExceeded` | Превышен предел JSON-ответа либо размера inventory до наблюдения отдельных targets | `IsRetryable=false`: повтор без изменения условий не устраняет превышение |
 | `ConfigurationInvalid` | Существующий файл конфигурации не читается или не соответствует своей схеме; условия и поддерживаемые версии схем принадлежат [application-configuration.md](application-configuration.md) | не имеет смысла |
 | `ConfigurationSchemaUnsupported` | Версия схемы в файле не поддерживается этой сборкой | не имеет смысла |
 | `NativeUnavailable` | Native библиотека отсутствует или не загружается | имеет смысл после восстановления native runtime |

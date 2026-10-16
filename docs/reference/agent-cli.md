@@ -3,7 +3,10 @@
 `AzurPilot.App.exe agent discover` возвращает JSON-описание реально поддерживаемых операций.
 Точный каталог, аргументы, их типы и признак mutation принадлежат
 [`AgentCommands`](../../src/AzurPilot.App/Agent/AgentCommands.cs) и
-[`AgentRequest`](../../src/AzurPilot.App/Agent/AgentContract.cs). Discovery не загружает конфигурацию,
+[`AgentRequest`](../../src/AzurPilot.App/Agent/AgentContract.cs). Общий реестр
+[`AgentArgumentTypes`](../../src/AzurPilot.App/Agent/AgentArgumentTypes.cs) публикует базовый JSON-тип,
+ограничение длины, числовые границы, грамматику identity и требования к пути; parser использует его же
+проверки. Discovery не загружает конфигурацию,
 не строит host, не обращается к MuMu, ADB или native DLL. Добавление команды в каталог одновременно
 регистрирует parser, discovery и обработчик.
 
@@ -40,7 +43,7 @@ Agent CLI пока нет.
 
 ## JSON и ошибки
 
-Явный namespace `agent` выбирается до legacy parser и проверки терминала. Машинный путь не открывает
+Namespace `agent` в первой позиции выбирается до legacy parser и проверки терминала. Машинный путь не открывает
 TUI и отдельный log viewer, в том числе при включённом viewer в YAML. Без namespace сохраняются прежние
 TUI, `--mode`, log viewer и однократная диагностика перенаправленных потоков.
 
@@ -101,6 +104,11 @@ AzurPilot одного Windows-пользователя, включая разн
 - `changed` — наблюдением доказан хотя бы один переход; это не обещание успеха всей операции;
 - `mayHaveChanged` — mutation могла состояться, но её эффект/конечное состояние не доказаны.
 
+Сведения о попытке mutation записываются до вызова внешней границы, а доказанное изменение — после
+независимого наблюдения postcondition. Диагностическая стадия не определяет `effect`: отказ до mutation
+с готовым окружением сохраняет `none`, исключение после попытки — `mayHaveChanged`, а доказанное
+частичное изменение подготовки или остановки при restart — `changed`.
+
 После частичного отказа `data` сохраняет preparation stage, начальное состояние, результат запуска
 MuMu и доступное postflight-наблюдение. Ошибка shutdown сохраняет уже завершённый результат в
 `data.completed`. Успешный lifecycle несёт наблюдённый `finalState`; код возврата внешнего tool не
@@ -129,7 +137,7 @@ artifact capabilities. Encoded PNG и native RGB frame не передаются
 артефакты после вызова не требуется: screenshot-файлы не создаются.
 
 Managed tests запускают настоящий EXE для JSON/negative startup paths и отдельные процессы с
-управляемым `IMuMuHost` для CLI↔CLI и общего TUI service boundary↔CLI. Screenshot-тест исполняет
+управляемым `IMuMuHost` для CLI↔CLI и взаимодействия общей границы сервиса TUI↔CLI. Screenshot-тест исполняет
 настоящую native DLL с управляемым PNG. Это Windows/runtime evidence без физической mutation MuMu.
 Real MuMu lifecycle acceptance и визуальная проверка TUI остаются отдельными доказательствами.
 Будущий визуальный TUI Harness не является частью Agent CLI.

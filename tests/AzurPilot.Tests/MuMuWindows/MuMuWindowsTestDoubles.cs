@@ -76,6 +76,9 @@ internal readonly record struct RecordedProcessRequest(
 /// </summary>
 internal sealed class FakeWindowsProcessRunner : IWindowsProcessRunner
 {
+    /// <summary>Явно заданное неожиданное исключение внешней границы.</summary>
+    internal Exception? RunException { get; set; }
+
     private readonly Queue<ApplicationResult<WindowsProcessOutcome>> _scripted = new();
     private readonly List<RecordedProcessRequest> _requests = [];
 
@@ -146,6 +149,11 @@ internal sealed class FakeWindowsProcessRunner : IWindowsProcessRunner
         CancellationToken cancellationToken)
     {
         _requests.Add(new RecordedProcessRequest(request, cancellationToken));
+
+        if (RunException is not null)
+        {
+            throw RunException;
+        }
 
         if (_scripted.Count == 0)
         {

@@ -31,7 +31,7 @@ public static class WindowsInstanceMutationLease
             return Unavailable();
         }
 
-        string directory = Path.Combine(localData, "AzurPilot", "mutation-locks");
+        string directory = Path.Combine(localData, AzurPilotConfigurationPath.ApplicationFolderName, "mutation-locks");
         try
         {
             _ = Directory.CreateDirectory(directory);

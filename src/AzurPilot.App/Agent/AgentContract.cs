@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 
 namespace AzurPilot.App.Agent;
@@ -22,7 +21,9 @@ internal sealed record AgentCommand(
 internal sealed record AgentRequest(AgentCommand Command, string? Target, int TimeoutMilliseconds, string? ConfigurationPath)
 {
     internal const int DefaultTimeoutMilliseconds = 180_000;
+    internal const int MinimumTimeoutMilliseconds = 1;
     internal const int MaximumTimeoutMilliseconds = 300_000;
+    internal const int MaximumArgumentLength = 256;
     internal const int MaximumInventoryInstances = 64;
     internal static readonly AgentArgument TimeoutArgument = new("--timeout-ms", "integer", false,
         $"Deadline: 1..{MaximumTimeoutMilliseconds}; по умолчанию {DefaultTimeoutMilliseconds} ms.");
@@ -31,7 +32,7 @@ internal sealed record AgentRequest(AgentCommand Command, string? Target, int Ti
 
     internal static ApplicationResult<AgentRequest> Parse(string[] args)
     {
-        if (args.Length < 2 || args[0] != "agent" || args.Length > 8 || args.Any(a => a.Length > 256))
+        if (args.Length < 2 || args[0] != "agent" || args.Length > 8 || args.Any(a => a.Length > MaximumArgumentLength))
         {
             return Invalid();
         }
@@ -55,19 +56,23 @@ internal sealed record AgentRequest(AgentCommand Command, string? Target, int Ti
             }
 
             string value = args[index + 1];
-            if (key == "--target" && command.Target && MuMuInstanceValue.IsValid(value))
+            AgentArgument? argument = command.Arguments.SingleOrDefault(a => a.Name == key);
+            if (argument is null || !AgentArgumentTypes.All[argument.Type].IsValid(value))
+            {
+                return Invalid();
+            }
+
+            if (key == "--target")
             {
                 target = value;
             }
-            else if (key == "--config" && command.Name != "discover" && Path.IsPathFullyQualified(value))
+            else if (key == "--config")
             {
                 configurationPath = value;
             }
-            else if (key == "--timeout-ms"
-                && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int parsed)
-                && parsed is >= 1 and <= MaximumTimeoutMilliseconds)
+            else if (key == "--timeout-ms")
             {
-                timeout = parsed;
+                timeout = int.Parse(value, NumberStyles.None, CultureInfo.InvariantCulture);
             }
             else
             {

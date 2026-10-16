@@ -83,12 +83,14 @@ public sealed partial class AzurPilotOperatorServiceTests
         OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
         fixture.MuMuHost.ObservationHandler = _ => MuMuLifecycleTestContext.Observed(
             fixture.MuMuHost.MutationCount == 0 ? MuMuLifecycleState.Stopped : MuMuLifecycleState.Running);
-        // У runner нет запланированного ADB-ответа: внешний seam бросает programming exception.
+        fixture.Runner.RunException = new InvalidOperationException("adb-boundary-marker");
         AgentEnvelope result = await AgentRunner.RunAsync(["agent", "game-start", "--target", "mumu:7"],
             (run, token) => run(fixture.Service, token), TestContext.Current.CancellationToken);
         Assert.Equal(AzurPilotExitCode.InternalError, result.ExitCode);
         Assert.Equal("changed", result.Effect);
         using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref result));
+        Assert.Equal("failure", json.RootElement.GetProperty("status").GetString());
+        Assert.Equal(ApplicationFailure.InternalError, json.RootElement.GetProperty("failure").GetProperty("code").GetString());
         Assert.Equal("Running", json.RootElement.GetProperty("data").GetProperty("preparation")
             .GetProperty("muMuStartOutcome").GetProperty("finalState").GetString());
         Assert.Equal(MuMuLifecycleMutation.Start, Assert.Single(fixture.MuMuHost.MutationRequests).Mutation);
@@ -147,6 +149,215 @@ public sealed partial class AzurPilotOperatorServiceTests
             using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref result));
             Assert.Equal("Completed", json.RootElement.GetProperty("data").GetProperty("stage").GetString());
         }
+    }
+
+    [Theory]
+    [InlineData("game-start", false)]
+    [InlineData("game-stop", false)]
+    [InlineData("game-restart", false)]
+    [InlineData("game-start", true)]
+    [InlineData("game-restart", true)]
+    [Trait("Category", "Agent")]
+    public async Task AgentGameFailureBeforeMutationHasNoEffect(string command, bool launcherFailure)
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        AndroidTestContext android = new();
+        TestAndroidDevice device = new(android.Host);
+        if (launcherFailure)
+        {
+            android.Host.LauncherHandler = (_, _) => ApplicationResult<AndroidLauncherResolution>.Failure(new()
+            {
+                Code = ApplicationFailure.AzurLaneLauncherUnresolved,
+                Message = "Проверочный отказ разрешения launcher.",
+            });
+        }
+        else
+        {
+            device.SetNotInstalled();
+        }
+
+        AzurPilotOperatorService service = CreateAgentService(fixture, android);
+        AgentEnvelope result = await AgentRunner.RunAsync(["agent", command, "--target", "mumu:7"],
+            (run, token) => run(service, token), TestContext.Current.CancellationToken);
+        using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref result));
+        Assert.Equal(launcherFailure ? AzurPilotExitCode.AzurLaneLauncherUnresolved : AzurPilotExitCode.AzurLanePackageMissing, result.ExitCode);
+        Assert.Equal("failure", result.Status);
+        Assert.Equal("none", json.RootElement.GetProperty("effect").GetString());
+        Assert.Equal(launcherFailure ? ApplicationFailure.AzurLaneLauncherUnresolved : ApplicationFailure.AzurLanePackageMissing,
+            json.RootElement.GetProperty("failure").GetProperty("code").GetString());
+        Assert.Equal("false", json.RootElement.GetProperty("failure").GetProperty("details")
+            .GetProperty(ApplicationFailure.MutationAttemptedDetailKey).GetString());
+        Assert.Empty(android.Host.MutationRequests);
+        Assert.Empty(android.Host.ConnectRequests);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+    }
+
+    [Theory]
+    [InlineData("game-start", "before", "none")]
+    [InlineData("game-start", "mutation", "mayHaveChanged")]
+    [InlineData("game-start", "postcondition", "mayHaveChanged")]
+    [InlineData("game-stop", "mutation", "mayHaveChanged")]
+    [InlineData("game-restart", "mutation", "mayHaveChanged")]
+    [InlineData("game-restart", "second-mutation", "changed")]
+    [Trait("Category", "Agent")]
+    public async Task AgentGameExceptionPreservesMutationEvidence(string command, string phase, string effect)
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        AndroidTestContext android = new();
+        TestAndroidDevice device = new(android.Host);
+        if (command != "game-start")
+        {
+            device.SetForeground();
+        }
+
+        if (phase == "before")
+        {
+            android.Host.PackageHandler = (_, _) => throw new InvalidOperationException("private-game-marker");
+        }
+        else if (phase == "postcondition")
+        {
+            device.MutationApplied = _ => android.Host.PackageHandler = (_, _) => throw new InvalidOperationException("private-game-marker");
+        }
+        else
+        {
+            var apply = android.Host.MutationHandler!;
+            android.Host.MutationHandler = (request, token) => phase == "second-mutation" && request.Mutation == AndroidGameMutation.ForceStop
+                ? apply(request, token) : throw new InvalidOperationException("private-game-marker");
+        }
+
+        AzurPilotOperatorService service = CreateAgentService(fixture, android);
+        AgentEnvelope result = await AgentRunner.RunAsync(["agent", command, "--target", "mumu:7"],
+            (run, token) => run(service, token), TestContext.Current.CancellationToken);
+        byte[] bytes = AgentJson.Serialize(ref result);
+        using JsonDocument json = JsonDocument.Parse(bytes);
+        Assert.Equal(AzurPilotExitCode.InternalError, result.ExitCode);
+        Assert.Equal("failure", result.Status);
+        Assert.Equal(effect, json.RootElement.GetProperty("effect").GetString());
+        Assert.Equal(ApplicationFailure.InternalError, json.RootElement.GetProperty("failure").GetProperty("code").GetString());
+        Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("data").GetProperty("postcondition").ValueKind);
+        JsonElement mutation = json.RootElement.GetProperty("data").GetProperty("mutation").GetProperty("game");
+        Assert.Equal(phase != "before", mutation.GetProperty("mutationAttempted").GetBoolean());
+        Assert.Equal(phase == "second-mutation", mutation.GetProperty("changeProven").GetBoolean());
+        Assert.Equal(phase == "before" ? 0 : phase == "second-mutation" ? 2 : 1, android.Host.MutationRequests.Count);
+        Assert.DoesNotContain("private-game-marker", System.Text.Encoding.UTF8.GetString(bytes), StringComparison.Ordinal);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+    }
+
+    [Theory]
+    [InlineData("game-start")]
+    [InlineData("game-stop")]
+    [Trait("Category", "Agent")]
+    public async Task AgentIdempotentGameResultSurvivesShutdownFailure(string command)
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        AndroidTestContext android = new();
+        TestAndroidDevice device = new(android.Host);
+        if (command == "game-start")
+        {
+            device.SetForeground();
+        }
+
+        AzurPilotOperatorService service = CreateAgentService(fixture, android);
+        AgentEnvelope result = await AgentRunner.RunAsync(["agent", command, "--target", "mumu:7"], async (run, token) =>
+        {
+            AgentPayload completed = await run(service, token);
+            Assert.Null(completed.Failure);
+            Assert.Equal("none", completed.Effect);
+            throw new InvalidOperationException("shutdown-marker");
+        }, TestContext.Current.CancellationToken);
+        Assert.Equal(AzurPilotExitCode.InternalError, result.ExitCode);
+        Assert.Equal("none", result.Effect);
+        using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref result));
+        Assert.Equal(command == "game-start" ? "Foreground" : "Stopped",
+            json.RootElement.GetProperty("data").GetProperty("completed").GetProperty("game").GetProperty("finalState").GetString());
+        Assert.Empty(android.Host.MutationRequests);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+    }
+
+    [Theory]
+    [InlineData("environment-prepare", "resolution", "none")]
+    [InlineData("game-start", "resolution", "none")]
+    [InlineData("environment-prepare", "offline", "none")]
+    [InlineData("game-start", "offline", "none")]
+    [InlineData("environment-prepare", "connect-exception", "mayHaveChanged")]
+    [InlineData("game-start", "connect-exception", "mayHaveChanged")]
+    [InlineData("environment-prepare", "boot-exception", "changed")]
+    [InlineData("game-start", "boot-exception", "changed")]
+    [Trait("Category", "Agent")]
+    public async Task AgentPreparationEffectUsesBoundaryEvidence(string command, string phase, string effect)
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        AndroidTestContext android = new();
+        AzurPilotOperatorService service = CreateAgentService(fixture, android);
+        if (phase == "resolution")
+        {
+            android.Host.EndpointHandler = (_, _) => ApplicationResult<AndroidEndpoint>.Failure(new()
+            {
+                Code = ApplicationFailure.AndroidEndpointUnavailable,
+                Message = "Проверочный отказ разрешения endpoint.",
+            });
+        }
+        else if (phase == "offline")
+        {
+            android.Host.TransportHandler = _ => ApplicationResult<AndroidTransportObservation>.Success(
+                AndroidTestContext.Transport(AndroidTransportState.Offline));
+        }
+        else
+        {
+            android.Host.TransportHandler = _ => ApplicationResult<AndroidTransportObservation>.Success(
+                android.Host.ConnectRequests.Count == 0 ? AndroidTestContext.Transport(AndroidTransportState.Absent) : AndroidTestContext.Device());
+            android.Host.ConnectHandler = (_, _) => phase == "connect-exception"
+                ? throw new InvalidOperationException("connect-marker") : AndroidTestContext.Command();
+            android.Host.BootHandler = _ => throw new InvalidOperationException("boot-marker");
+        }
+
+        AgentEnvelope result = await AgentRunner.RunAsync(["agent", command, "--target", "mumu:7"],
+            (run, token) => run(service, token), TestContext.Current.CancellationToken);
+        Assert.Equal(phase == "resolution" ? AzurPilotExitCode.AndroidEndpointUnavailable
+            : phase == "offline" ? AzurPilotExitCode.AndroidTransportNotReady : AzurPilotExitCode.InternalError, result.ExitCode);
+        Assert.Equal("failure", result.Status);
+        using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref result));
+        Assert.Equal(effect, json.RootElement.GetProperty("effect").GetString());
+        if (phase is "connect-exception" or "boot-exception")
+        {
+            JsonElement mutation = json.RootElement.GetProperty("data").GetProperty("mutation").GetProperty("androidPreparation");
+            Assert.True(mutation.GetProperty("mutationAttempted").GetBoolean());
+            Assert.Equal(phase == "boot-exception", mutation.GetProperty("changeProven").GetBoolean());
+        }
+
+        Assert.Equal(phase is "resolution" or "offline" ? 0 : 1, android.Host.ConnectRequests.Count);
+        Assert.Empty(android.Host.MutationRequests);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Agent")]
+    public async Task AgentFailedOrCancelledGameAttemptDoesNotClaimRollback(bool cancel)
+    {
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        AndroidTestContext android = new();
+        TestAndroidDevice device = new(android.Host) { StartReachesForeground = false, StartExitCode = 1 };
+        using CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        if (cancel)
+        {
+            device.MutationApplied = _ => cancellation.Cancel();
+        }
+
+        AzurPilotOperatorService service = CreateAgentService(fixture, android);
+        AgentEnvelope result = await AgentRunner.RunAsync(["agent", "game-start", "--target", "mumu:7"],
+            (run, token) => run(service, token), cancellation.Token);
+        Assert.Equal(cancel ? AzurPilotExitCode.OperationCancelled : AzurPilotExitCode.AzurLaneLifecyclePostconditionNotMet, result.ExitCode);
+        Assert.Equal(cancel ? "cancelled" : "failure", result.Status);
+        using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref result));
+        Assert.Equal("mayHaveChanged", json.RootElement.GetProperty("effect").GetString());
+        Assert.Equal(cancel ? ApplicationFailure.OperationCancelled : ApplicationFailure.AzurLaneLifecyclePostconditionNotMet,
+            json.RootElement.GetProperty("failure").GetProperty("code").GetString());
+        Assert.Equal("true", json.RootElement.GetProperty("failure").GetProperty("details")
+            .GetProperty(ApplicationFailure.MutationAttemptedDetailKey).GetString());
+        Assert.Equal(AndroidGameMutation.Start, Assert.Single(android.Host.MutationRequests).Mutation);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
     }
 
     private static AzurPilotOperatorService CreateAgentService(OperatorFixture fixture, AndroidTestContext android,
@@ -238,7 +449,7 @@ public sealed partial class AzurPilotOperatorServiceTests
         android.Host.EndpointHandler = (_, _) => ApplicationResult<AndroidEndpoint>.Failure(new ApplicationFailure
         {
             Code = ApplicationFailure.AndroidEndpointUnavailable,
-            Message = "test endpoint resolution failure",
+            Message = "Проверочный отказ разрешения endpoint.",
         });
         AgentContext context = new(service) { Target = MuMuInstanceId.FromIndex("7") };
 

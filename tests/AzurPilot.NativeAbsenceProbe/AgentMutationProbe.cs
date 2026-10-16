@@ -10,7 +10,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace AzurPilot.NativeAbsenceProbe;
 
-// Управляется только внешний IMuMuHost. CLI dispatch, TUI service boundary, gates и orchestration — production.
+// Управляется только внешний IMuMuHost. Маршрутизация CLI, граница сервиса TUI, gates и orchestration — из приложения.
 internal static class AgentMutationProbe
 {
     internal static async Task<int> RunAsync(string role, string index, string directory, string completion)

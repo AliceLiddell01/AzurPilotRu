@@ -1,7 +1,9 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AzurPilot.App;
 using AzurPilot.App.Agent;
 using AzurPilot.Core.Failures;
+using AzurPilot.Core.Configuration;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Windows.MuMu;
 using Xunit;
@@ -44,12 +46,110 @@ public sealed class AgentContractTests
             foreach (JsonElement argument in description.GetProperty("arguments").EnumerateArray())
             {
                 string type = argument.GetProperty("type").GetString()!;
-                Assert.True(type is "integer" or "absolute-path" || argumentTypes.TryGetProperty(type, out _),
+                Assert.True(argumentTypes.TryGetProperty(type, out JsonElement definition),
                     $"Discovery не описывает тип аргумента {type}.");
+                Assert.True(definition.GetProperty("type").GetString() is "integer" or "string");
+                Assert.Equal(AgentRequest.MaximumArgumentLength, definition.GetProperty("maximumLength").GetInt32());
             }
         }
 
         Assert.DoesNotContain(AgentCommands.All, c => c.Name is "Exit" or "Select" or "build" or "ocr");
+    }
+
+    [Fact]
+    public void LeaseUsesConfigurationApplicationFolder()
+    {
+        MuMuInstanceId identity = MuMuInstanceId.FromIndex(Random.Shared.Next(100000, int.MaxValue)
+            .ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var acquired = WindowsInstanceMutationLease.TryAcquire(identity);
+        Assert.True(acquired.IsSuccess);
+        using FileStream lease = acquired.Value!;
+        Assert.Equal(Path.Combine(Path.GetDirectoryName(AzurPilotConfigurationPath.GetDefaultRuntimePath())!,
+            "mutation-locks", identity.Index + ".lock"), lease.Name);
+    }
+
+    [Theory]
+    [InlineData("--timeout-ms", "0", false)]
+    [InlineData("--timeout-ms", "1", true)]
+    [InlineData("--timeout-ms", "300000", true)]
+    [InlineData("--timeout-ms", "300001", false)]
+    [InlineData("--timeout-ms", "0001", true)]
+    [InlineData("--timeout-ms", "+1", false)]
+    [InlineData("--timeout-ms", " 1", false)]
+    [InlineData("--timeout-ms", "1.5", false)]
+    [InlineData("--timeout-ms", "١", false)]
+    [InlineData("--target", "auto", true)]
+    [InlineData("--target", "Auto", false)]
+    [InlineData("--target", "mumu:0", true)]
+    [InlineData("--target", "mumu:12", true)]
+    [InlineData("--target", "mumu:01", false)]
+    [InlineData("--target", "mumu:-1", false)]
+    [InlineData("--target", "mumu:١", false)]
+    [InlineData("--target", "mumu:1\n", false)]
+    [InlineData("--config", "relative.yaml", false)]
+    [InlineData("--config", "C:relative.yaml", false)]
+    [InlineData("--config", "\\rooted.yaml", false)]
+    public async Task ParserMatchesPublishedArgumentTypeConstraints(string option, string value, bool accepted)
+    {
+        AgentEnvelope envelope = await AgentRunner.RunAsync(["agent", "discover"], cancellationToken: TestContext.Current.CancellationToken);
+        using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref envelope));
+        JsonElement data = json.RootElement.GetProperty("data");
+        JsonElement argument = data.GetProperty("commands").EnumerateArray().Single(c => c.GetProperty("name").GetString() == "resolve")
+            .GetProperty("arguments").EnumerateArray().Single(a => a.GetProperty("name").GetString() == option);
+        JsonElement definition = data.GetProperty("argumentTypes").GetProperty(argument.GetProperty("type").GetString()!);
+        bool described = value.Length <= definition.GetProperty("maximumLength").GetInt32();
+        if (definition.GetProperty("pattern").ValueKind == JsonValueKind.String)
+        {
+            Match match = Regex.Match(value, definition.GetProperty("pattern").GetString()!);
+            described &= match.Success && match.Length == value.Length;
+        }
+
+        if (definition.GetProperty("type").GetString() == "integer")
+        {
+            described &= long.TryParse(value, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out long number)
+                && number >= definition.GetProperty("minimum").GetInt32() && number <= definition.GetProperty("maximum").GetInt32();
+        }
+
+        if (definition.GetProperty("fullyQualified").ValueKind == JsonValueKind.True)
+        {
+            Assert.Equal("windows", definition.GetProperty("platform").GetString());
+            described &= Path.IsPathFullyQualified(value);
+        }
+
+        Assert.Equal(accepted, described);
+        Assert.Equal(described, AgentRequest.Parse(["agent", "resolve", option, value]).IsSuccess);
+    }
+
+    [Fact]
+    public void ConfigurationTypeAcceptsAbsolutePaths()
+    {
+        Assert.True(AgentRequest.Parse(["agent", "settings", "--config", Path.Combine(Path.GetTempPath(), "config.yaml")]).IsSuccess);
+        Assert.True(AgentRequest.Parse(["agent", "settings", "--config", new string(Path.DirectorySeparatorChar, 2) + Path.Combine("server", "share", "config.yaml")]).IsSuccess);
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public void ParserHonorsPublishedLengthBoundaryForOtherwiseValidValues(int excess, bool accepted)
+    {
+        int length = AgentRequest.MaximumArgumentLength + excess;
+        foreach (AgentArgument argument in AgentCommands.All.Single(c => c.Name == "resolve").Arguments)
+        {
+            string prefix = argument.Name switch
+            {
+                "--target" => MuMuInstanceValue.ProviderPrefix,
+                "--config" => Path.GetTempPath(),
+                _ => string.Empty,
+            };
+            string value = prefix + new string('0', length - prefix.Length - 1) + '1';
+            if (argument.Name == "--target")
+            {
+                value = prefix + new string('1', length - prefix.Length);
+            }
+
+            Assert.Equal(accepted, AgentRequest.Parse(["agent", "resolve", argument.Name, value]).IsSuccess);
+        }
     }
 
     private static readonly string[][] InvalidCases =

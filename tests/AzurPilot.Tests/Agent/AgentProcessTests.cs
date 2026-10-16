@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using AzurPilot.App;
+using AzurPilot.App.LogViewer;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using Xunit;
@@ -11,6 +13,47 @@ namespace AzurPilot.Tests.Agent;
 [Trait("Category", "Agent")]
 public sealed class AgentProcessTests
 {
+    [Fact]
+    public async Task LegacyViewerAcceptsAgentAsOptionValue()
+    {
+        using AgentTestDirectory directory = new();
+        using NamedPipeServerStream server = new("agent", PipeDirection.InOut, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        using Process process = directory.StartApplication("--log-viewer", "--log-viewer-pipe", "agent");
+        using CancellationTokenSource deadline = new(TimeSpan.FromSeconds(10));
+        try
+        {
+            await server.WaitForConnectionAsync(deadline.Token);
+            using StreamReader reader = new(server, Encoding.UTF8, leaveOpen: true);
+            Assert.Equal(AzurPilotLogViewerProtocol.HandshakeLine, await reader.ReadLineAsync(deadline.Token));
+            server.Disconnect();
+            AgentProcessRun run = await ReadAsync(process);
+            Assert.Equal(0, run.ExitCode);
+            Assert.Contains("Журнал AzurPilot", run.Output, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"schemaVersion\"", run.Output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill();
+                await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task LegacyHelpRemainsHumanReadable()
+    {
+        using AgentTestDirectory directory = new();
+        using Process process = directory.StartApplication("--help");
+        AgentProcessRun run = await ReadAsync(process);
+        Assert.Equal(0, run.ExitCode);
+        Assert.Contains("Использование:", run.Output, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"schemaVersion\"", run.Output, StringComparison.Ordinal);
+        Assert.Empty(run.Error);
+    }
+
     [Theory]
     [InlineData("discover", 0)]
     [InlineData("unknown", AzurPilotExitCode.InvalidArgument)]

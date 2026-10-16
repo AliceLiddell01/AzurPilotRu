@@ -1,5 +1,4 @@
 using AzurPilot.Core.MuMu;
-using AzurPilot.Core.Configuration;
 
 namespace AzurPilot.App.Agent;
 
@@ -39,17 +38,9 @@ internal static class AgentCommands
         {
             schemaVersion = AgentJson.SchemaVersion,
             maximumOutputBytes = AgentJson.MaximumOutputBytes,
+            maximumArgumentLength = AgentRequest.MaximumArgumentLength,
             maximumInventoryInstances = AgentRequest.MaximumInventoryInstances,
-            argumentTypes = new Dictionary<string, object>(StringComparer.Ordinal)
-            {
-                ["MuMuInstanceValue"] = new
-                {
-                    type = "string",
-                    automaticValue = MuMuInstanceValue.AutoValue,
-                    identityPrefix = MuMuInstanceValue.ProviderPrefix,
-                    index = "Десятичные ASCII-цифры: ноль либо положительное целое без ведущих нулей.",
-                },
-            },
+            argumentTypes = AgentArgumentTypes.All,
             commands = All.Select(c => new { c.Name, c.Mutation, requiresResolvedTarget = c.Target, c.Description, c.Arguments }),
             effects = new[] { "none", "changed", "mayHaveChanged" },
             artifacts = Array.Empty<string>(),
