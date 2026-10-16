@@ -3,6 +3,7 @@ using AzurPilot.App;
 using AzurPilot.App.LogViewer;
 using AzurPilot.App.OperatorUi;
 using AzurPilot.Core.Configuration;
+using AzurPilot.App.Agent;
 
 // Точка входа приложения: разбирает минимальный CLI, запускает хост приложения и печатает
 // человекочитаемый итог. Вся runtime-логика (composition, диагностика, логирование) живёт в
@@ -10,6 +11,13 @@ using AzurPilot.Core.Configuration;
 //
 // Без аргументов поведение прежнее: интерактивный TUI при подключённом терминале либо одноразовая
 // диагностика при перенаправленных потоках. Явный --mode имеет приоритет над ui.mode конфигурации.
+
+// Явный namespace выбирается до терминала, legacy parser и ранней инициализации вывода.
+// Неверное положение agent тоже остаётся машинным отказом и не открывает TUI.
+if (args.Contains("agent", StringComparer.Ordinal))
+{
+    return await AgentRunner.RunProcessAsync(args).ConfigureAwait(false);
+}
 
 Console.OutputEncoding = Encoding.UTF8;
 
@@ -29,6 +37,7 @@ if (arguments.Help)
     Console.WriteLine("Использование: AzurPilot.App [--mode " + string.Join("|", OperatorUiModeNames.All) + "]");
     Console.WriteLine("Без аргументов: ui.mode из config.yaml; по умолчанию normal.");
     Console.WriteLine("При перенаправлении stdin или stdout: одноразовая read-only диагностика.");
+    Console.WriteLine("Машинный JSON-интерфейс: AzurPilot.App agent discover.");
     return AzurPilotExitCode.Success;
 }
 

@@ -25,7 +25,7 @@ namespace AzurPilot.Tests.OperatorServices;
 
 [Collection(InteropCollection.Name)]
 [Trait("Category", "Operator")]
-public sealed class AzurPilotOperatorServiceTests
+public sealed partial class AzurPilotOperatorServiceTests
 {
     [Fact(DisplayName = "Этапы подготовки следуют реальным production шагам, проверка загрузки не угадывается UI")]
     public async Task PreparationReportsActualStagesInOrder()

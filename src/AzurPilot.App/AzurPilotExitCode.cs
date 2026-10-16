@@ -124,6 +124,18 @@ public static class AzurPilotExitCode
     /// </remarks>
     public const int LogViewerUnavailable = 30;
 
+    /// <summary>Exact target занят другим процессом.</summary>
+    public const int TargetBusy = 31;
+
+    /// <summary>Не удалось обеспечить межпроцессную защиту mutation.</summary>
+    public const int MutationCoordinationUnavailable = 32;
+
+    /// <summary>Истёк общий deadline машинной операции.</summary>
+    public const int AgentDeadlineExceeded = 33;
+
+    /// <summary>Превышен предел машинного ответа.</summary>
+    public const int AgentOutputLimitExceeded = 34;
+
     /// <summary>Возвращает код выхода для application-level отказа.</summary>
     /// <param name="failure">Ожидаемый отказ application boundary.</param>
     /// <returns>Код выхода процесса, соответствующий коду отказа.</returns>
@@ -134,6 +146,11 @@ public static class AzurPilotExitCode
 
         return failure.Code switch
         {
+            ApplicationFailure.InvalidArgument => InvalidArgument,
+            ApplicationFailure.TargetBusy => TargetBusy,
+            ApplicationFailure.MutationCoordinationUnavailable => MutationCoordinationUnavailable,
+            ApplicationFailure.AgentDeadlineExceeded => AgentDeadlineExceeded,
+            ApplicationFailure.AgentOutputLimitExceeded => AgentOutputLimitExceeded,
             ApplicationFailure.ConfigurationInvalid => ConfigurationInvalid,
             ApplicationFailure.ConfigurationSchemaUnsupported => ConfigurationSchemaUnsupported,
             ApplicationFailure.NativeUnavailable => NativeUnavailable,

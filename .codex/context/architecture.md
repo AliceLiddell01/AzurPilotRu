@@ -31,7 +31,7 @@
 ## Product и repository tooling
 
 Build/CI/dependency automation обслуживают репозиторий и не являются product CLI.
-Будущие product CLI/REPL/agent CLI не получают команды `build`, `repair`, `update` только потому, что
+Product CLI/REPL/agent CLI не получают команды `build`, `repair`, `update` только потому, что
 такие операции есть у developer tooling.
 
 ## Source of truth
@@ -48,7 +48,7 @@ Build/CI/dependency automation обслуживают репозиторий и 
 - `1280x720` не является физическим разрешением проекта; screenshot diagnostic regions используют его
   только как собственное логическое reference space, а размеры кадра — данные.
 - Не создавай placeholder-abstractions/config/failures/docs под capability, которой ещё нет.
-- Не смешивай test/acceptance CLI с будущим product CLI.
+- Не смешивай test/acceptance CLI с product Agent CLI.
 
 ## Текущее capability-состояние
 
@@ -57,10 +57,11 @@ Build/CI/dependency automation обслуживают репозиторий и 
 - MuMu discovery/identity/host lifecycle;
 - Android/ADB exact-target readiness;
 - lifecycle Azur Lane Global/EN;
-- read-only screenshot capture, geometry и native region statistics.
+- read-only screenshot capture, geometry и native region statistics;
+- интерактивный TUI и неинтерактивный Agent CLI поверх общих operator services.
 
 Не реализованы и не должны имитироваться placeholder-кодом: input, распознавание UI/содержимого,
-OCR/ONNX/GPU, UI readiness игры, product CLI/REPL/agent CLI. Screenshot diagnostic boundaries описаны
+OCR/ONNX/GPU, UI readiness игры, REPL. Screenshot diagnostic boundaries описаны
 в `screenshot-diagnostics.md`.
 
 Подробности конкретной capability читай у её context owner и в `docs/architecture/`.

@@ -35,6 +35,12 @@ using AzurPilot.Windows;
 
 Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
+if (args.Length == 5 && args[0] == "--agent-mutation-seam")
+{
+    return await AzurPilot.NativeAbsenceProbe.AgentMutationProbe.RunAsync(args[1], args[2], args[3], args[4])
+        .ConfigureAwait(false);
+}
+
 if (args.Length == 4 && string.Equals(args[0], "--process-output", StringComparison.Ordinal))
 {
     return await RunProcessOutputAsync(args[1], args[2], args[3]).ConfigureAwait(false);

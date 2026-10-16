@@ -32,7 +32,7 @@ C++ с OpenCV.
 | --- | --- | --- |
 | `AzurPilot.Core` | `src/AzurPilot.Core` | Доменные и application-контракты, логика, независимая от Windows, включая MuMu-контракты и orchestration lifecycle, а также контракты Android и orchestration ADB readiness и lifecycle игры |
 | `AzurPilot.Windows` | `src/AzurPilot.Windows` | Windows-specific adapters/infrastructure, включая managed сторону native interop, MuMu-adapter и Android-adapter: bundled ADB, разрешение точного endpoint и запуск команд ADB |
-| `AzurPilot.App` | `src/AzurPilot.App` | Composition root и application host: сборка host-а, startup, structured logging, correlation, runtime-диагностика и интеграция MuMu- и Android-capability. Командной строки у приложения нет; presentation boundary (REPL, CLI) не реализована |
+| `AzurPilot.App` | `src/AzurPilot.App` | Composition root, startup, logging, diagnostics; TUI и Agent CLI вызывают общие operator services для MuMu, Android, game lifecycle и screenshot |
 | native | `native/` | Отдельная CMake boundary: C++ + OpenCV shared library `AzurPilot.Native.dll` с узким C ABI |
 
 Managed boundaries приложения — ровно три: `AzurPilot.Core`, `AzurPilot.Windows`, `AzurPilot.App`.
@@ -204,8 +204,9 @@ MSBuild работает по принципу fail-closed и перед managed
 - Native boundary декодирует PNG в RGB8-кадр и вычисляет статистику явно заданной физической ROI;
   screenshot capture, logical-to-physical geometry и named regions собраны в отдельной read-only
   диагностической capability. Подробности — [screenshot-diagnostics.md](screenshot-diagnostics.md).
+- Product surfaces: интерактивный TUI и [Agent CLI](../reference/agent-cli.md) с версионированным JSON,
+  явными mutation-командами и общей межпроцессной арендой exact identity.
 - Не входят в текущую capability ввод (tap/swipe/keymap), распознавание игрового UI, OCR/ONNX/GPU
-  inference, готовность UI по изображению, командная строка продукта, REPL и командная строка для агентов.
+  inference, готовность UI по изображению, REPL и визуальный TUI Harness.
   Для них не создаются placeholder-документы, секции конфигурации, коды отказов и диагностические секции. Общие
-  команды `build`, `repair` и `update` относятся к инструментам репозитория, а не к будущей командной строке продукта,
-  REPL и командной строке для агентов.
+  команды `build`, `repair` и `update` относятся к инструментам репозитория и отсутствуют в Agent CLI.

@@ -1,10 +1,10 @@
+using AzurPilot.App.LogViewer;
+using AzurPilot.App.OperatorServices;
 using AzurPilot.Core.Android;
 using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
-using AzurPilot.App.LogViewer;
-using AzurPilot.App.OperatorServices;
 using AzurPilot.Windows;
 using AzurPilot.Windows.Android;
 using AzurPilot.Windows.MuMu;
@@ -38,6 +38,36 @@ namespace AzurPilot.App;
 /// </remarks>
 public static class AzurPilotHost
 {
+    /// <summary>Одноразовая машинная сессия: та же composition и stderr logging без viewer и TUI.</summary>
+    internal static async Task<Agent.AgentPayload> RunAgentAsync(
+        Func<AzurPilotOperatorService, CancellationToken, Task<Agent.AgentPayload>> runOperation,
+        string? configurationPath,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ApplicationResult<AzurPilotConfigurationSnapshot> configuration = configurationPath is null
+            ? AzurPilotConfigurationLoader.LoadRuntime() : AzurPilotConfigurationLoader.Load(configurationPath);
+        if (configuration.IsFailure)
+        {
+            return new(null, configuration.FailureInfo);
+        }
+
+        using IHost host = CreateBuilder(configuration).Build();
+        await host.StartAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Discovery не строит host. Остальным командам не навязываем полный startup probe:
+            // отсутствие native ограничивает scan/diagnostics, но не чтение settings и inventory.
+            return await runOperation(host.Services.GetRequiredService<AzurPilotOperatorService>(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            using CancellationTokenSource shutdown = new(TimeSpan.FromSeconds(5));
+            await host.StopAsync(shutdown.Token).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>Ключ регистрации границы запуска процесса для Android-возможности.</summary>
     /// <remarks>
     /// Ключ отделяет регистрацию Android от регистрации MuMu: граница запуска процесса принимает ровно
