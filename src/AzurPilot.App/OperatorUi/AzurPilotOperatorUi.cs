@@ -14,7 +14,7 @@ using Terminal.Gui.Views;
 
 namespace AzurPilot.App.OperatorUi;
 
-/// <summary>Интерактивная операторская поверхность поверх существующих production use cases.</summary>
+/// <summary>Интерактивная операторская поверхность поверх существующих сценариев приложения.</summary>
 /// <remarks>
 /// <para>
 /// UI владеет только presentation-состоянием. Task исполняется вне UI thread, а все изменения views
@@ -33,7 +33,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     private const int MaximumRenderedRows = 2048;
     /// <summary>Заголовок записи, которой UI отмечает введённую оператором команду.</summary>
     private const string OperatorEchoTitle = "Оператор";
-    /// <summary>Символ prompt-а composer: отделяет ввод от истории и не встречается в тексте сообщений.</summary>
+    /// <summary>Символ приглашения ввода: отделяет ввод от истории и не встречается в тексте сообщений.</summary>
     private const string ComposerPromptGlyph = "\u276f";
     /// <summary>Нейтральная схема: и текст, и фон наследуются от темы терминала.</summary>
     private static readonly Scheme NeutralScheme = new(new Terminal.Gui.Drawing.Attribute("None", "None", TextStyle.None));
@@ -130,8 +130,8 @@ public sealed class AzurPilotOperatorUi : IDisposable
         Disabled = normal,
     };
 
-    /// <summary>Использует уже собранный startup snapshot и общий источник логов application host.</summary>
-    /// <param name="service">Владелец production use cases.</param>
+    /// <summary>Использует уже собранный startup snapshot и общий источник логов хоста приложения.</summary>
+    /// <param name="service">Владелец сценариев приложения.</param>
     /// <param name="initialDiagnostics">Диагностика текущего startup без повторной инициализации.</param>
     /// <param name="logSource">Потокобезопасный bounded источник логов для явно запрошенных деталей.</param>
     /// <param name="mode">Режим интерфейса: объём доступных действий.</param>
@@ -159,7 +159,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     internal OperatorUiMode Mode => _mode;
 
     /// <summary>Запускает одну интерактивную сессию на вызывающем thread.</summary>
-    /// <param name="cancellationToken">Запрос graceful выхода от application host.</param>
+    /// <param name="cancellationToken">Запрос graceful выхода от хоста приложения.</param>
     /// <exception cref="InvalidOperationException">Повторный запуск либо redirected stdin/stdout.</exception>
     public void Run(CancellationToken cancellationToken = default)
     {
@@ -189,6 +189,26 @@ public sealed class AzurPilotOperatorUi : IDisposable
             Width = Dim.Fill(),
             Height = Dim.Fill(),
         };
+        InitializeViews(window);
+        application.Keyboard.KeyDown += (_, key) => HandleKey(key);
+        application.Mouse.MouseEvent += (_, mouse) => HandleMouse(mouse);
+        window.Initialized += (_, _) => { RefreshLayout(); _ = _composer!.SetFocus(); };
+        _ = application.AddTimeout(TimeSpan.FromMilliseconds(100), () => Tick(cancellationToken));
+        try
+        {
+            _ = application.Run(window);
+        }
+        finally
+        {
+            _controller.Dispose();
+            _application = null;
+            _window = null;
+        }
+    }
+
+    /// <summary>Создаёт те же элементы и подписки ввода без запуска терминального цикла.</summary>
+    internal void InitializeViews(Runnable window)
+    {
         _window = window;
         _header = new Label { Height = 1 };
         _operation = new Label { Height = 1 };
@@ -202,7 +222,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _sizeNotice = new Label { Visible = false };
         window.Add(_header, _operation, _historyHeading, _historyView, _composerRule, _composerPrompt,
             _composer, _footer, _paletteView, _sizeNotice);
-        // Все роли заданы явно, иначе производные роли дают непрозрачные полосы на строке composer.
+        // Все роли заданы явно, иначе производные роли дают непрозрачные полосы на строке ввода.
         foreach (View calmView in new View[] { _header, _operation, _historyHeading, _composer, _footer })
         {
             _ = calmView.SetScheme(_primaryScheme);
@@ -211,21 +231,16 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _ = _composerRule.SetScheme(_mutedScheme);
         _ = _historyHeading.SetScheme(_mutedScheme);
         _composer.TextChanged += (_, _) => UpdateCommandPalette();
-        application.Keyboard.KeyDown += (_, key) => HandleKey(key);
-        application.Mouse.MouseEvent += (_, mouse) => HandleMouse(mouse);
-        window.Initialized += (_, _) => { RefreshLayout(); _ = _composer.SetFocus(); };
-        _ = application.AddTimeout(TimeSpan.FromMilliseconds(100), () => Tick(cancellationToken));
-        try
-        {
-            _ = application.Run(window);
-        }
-        finally
-        {
-            _controller.Dispose();
-            _application = null;
-            _window = null;
-        }
     }
+
+    internal string ComposerText
+    {
+        get => _composer!.Text;
+        set => _composer!.Text = value;
+    }
+
+    internal PaletteMode CurrentPalette => _paletteMode;
+    internal OperatorUiSession Session => _session;
 
     /// <summary>Освобождает coordinator после graceful завершения операции.</summary>
     public void Dispose()
@@ -280,7 +295,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     private void RefreshComposerFocus()
     {
         bool focused = _composer!.HasFocus && _composer.Enabled;
-        // Отключённый composer (открыто подтверждение) отличается и от активного, и от неактивного.
+        // Отключённое поле ввода (открыто подтверждение) отличается и от активного, и от неактивного.
         Scheme scheme = !_composer.Enabled ? _disabledScheme : focused ? _accentScheme : _mutedScheme;
         _ = _composerPrompt!.SetScheme(scheme);
         _ = _composerRule!.SetScheme(scheme);
@@ -353,7 +368,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _ => "F4 отмена · Ctrl+C выход · F2 действия",
     };
 
-    private void HandleKey(Key key)
+    internal void HandleKey(Key key)
     {
         if (key == Key.C.WithCtrl || key == Key.Q.WithCtrl)
         {
@@ -599,7 +614,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         int rows = _paletteMode == PaletteMode.Confirmation
             ? Math.Min(Math.Min(visibleBudget, 12), desiredRows)
             : Math.Min(Math.Min(visibleBudget, _choices.Count + 2), visibleBudget);
-        // Палитра заканчивается строкой выше линии composer-а: область ввода не перекрывается меню.
+        // Палитра заканчивается строкой выше линии ввода: область ввода не перекрывается меню.
         _paletteView.X = 0; _paletteView.Y = Math.Max(2, _lastSize.Height - 3 - rows);
         _paletteView.Width = Math.Max(1, _lastSize.Width); _paletteView.Height = rows;
         _ = AddLine(_paletteView, 0, PaletteTitle()).SetScheme(_mutedScheme);
@@ -692,12 +707,12 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
         return
         [
-            $"Target {pending.Target}: повторно наблюдать точное состояние MuMu.",
+            $"Экземпляр {pending.Target}: повторно наблюдать точное состояние MuMu.",
             "Запуск — только из доказанного Stopped.",
             "Running не перезапускается.",
-            "Unknown или preflight отказ — завершить без запуска.",
+            "Неизвестное состояние или отказ предварительной проверки — завершить без запуска.",
             $"Endpoint разрешается только для {pending.Target}.",
-            "Подготовить transport; проверить shell и boot readiness.",
+            "Подготовить транспорт; проверить shell и завершение загрузки.",
             "Без запуска Azur Lane; при сбое/отмене MuMu может остаться запущенным.",
         ];
     }
@@ -706,7 +721,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     {
         if (!completeOnly && _paletteMode == PaletteMode.Commands && IsDirectCommand(_composer!.Text))
         {
-            // Точное имя в composer имеет приоритет над строкой категории. Иначе Enter после
+            // Точное имя в поле ввода имеет приоритет над строкой категории. Иначе Enter после
             // /screenshot или /android открывал первую категорию вместо permission/dispatch gate.
             HidePalette();
             SubmitComposer();
@@ -912,14 +927,14 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
     /// <summary>Запоминает черновик composer и сообщает, что палитру нужно открыть.</summary>
     /// <remarks>
-    /// Отделено от обработчика клавиш, чтобы привязку источника открытия к состоянию composer можно было
+    /// Отделено от обработчика клавиш, чтобы привязку источника открытия к состоянию поля ввода можно было
     /// проверить детерминированным тестом: Terminal.Gui 2.5.0 не поставляет тестовый драйвер, а Run()
     /// требует реального терминала.
     /// </remarks>
     /// <param name="session">Сессия, владеющая сохранённым черновиком.</param>
     /// <param name="paletteMode">Текущее состояние палитры.</param>
     /// <param name="source">Источник открытия.</param>
-    /// <param name="composerText">Текущий текст composer.</param>
+    /// <param name="composerText">Текущий текст поля ввода.</param>
     /// <returns>Переход состояния.</returns>
     internal static ComposerKeyTransition OpenPalette(
         OperatorUiSession session,
@@ -928,14 +943,14 @@ public sealed class AzurPilotOperatorUi : IDisposable
         string composerText)
     {
         ArgumentNullException.ThrowIfNull(session);
-        if (paletteMode != PaletteMode.Hidden && source != ComposerPaletteSource.FunctionKey)
+        if (paletteMode != PaletteMode.Hidden)
         {
             return new ComposerKeyTransition(ComposerKeyEffect.OpenPalette, null);
         }
 
         if (source == ComposerPaletteSource.FunctionKey)
         {
-            // F2 открывает палитру из любого состояния; прежний draft запоминается до подстановки триггера.
+            // Первое F2 сохраняет исходный текст до подстановки триггера.
             session.DiscardComposerDraft();
             session.CaptureComposerDraft(composerText);
             return new ComposerKeyTransition(ComposerKeyEffect.OpenPalette, "/");
@@ -945,9 +960,9 @@ public sealed class AzurPilotOperatorUi : IDisposable
         return new ComposerKeyTransition(ComposerKeyEffect.OpenPalette, null);
     }
 
-    /// <summary>Переводит клавишу в переход состояния composer и палитры без обращения к представлению.</summary>
+    /// <summary>Переводит клавишу в переход состояния поля ввода и палитры без обращения к представлению.</summary>
     /// <param name="key">Нажатая клавиша.</param>
-    /// <param name="composerText">Текущий текст composer.</param>
+    /// <param name="composerText">Текущий текст поля ввода.</param>
     /// <param name="paletteMode">Текущее состояние палитры.</param>
     /// <param name="detailsVisible">Открыты ли технические детали.</param>
     /// <param name="session">Сессия, владеющая сохранённым черновиком.</param>
@@ -1728,8 +1743,8 @@ public sealed class AzurPilotOperatorUi : IDisposable
         ClearDetails,
     }
 
-    /// <summary>Переход состояния composer и палитры.</summary>
+    /// <summary>Переход состояния поля ввода и палитры.</summary>
     /// <param name="Effect">Что применить к представлению.</param>
-    /// <param name="ComposerText">Текст composer после перехода либо отсутствие изменения.</param>
+    /// <param name="ComposerText">Текст поля ввода после перехода либо отсутствие изменения.</param>
     internal readonly record struct ComposerKeyTransition(ComposerKeyEffect Effect, string? ComposerText);
 }

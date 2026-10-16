@@ -112,9 +112,11 @@ public static class AzurPilotConfigurationLoader
                 AzurPilotConfigurationSnapshot.FromBuiltInDefaults());
         }
 
-        return format == AzurPilotConfigurationFormat.Yaml
-            ? ReadYamlDocument(document, path)
-            : ReadLegacyJsonDocument(document, path);
+        ApplicationResult<AzurPilotConfigurationSnapshot> parsed = format == AzurPilotConfigurationFormat.Yaml
+            ? ReadYamlDocument(StripByteOrderMark(document), path)
+            : ReadLegacyJsonDocument(StripByteOrderMark(document), path);
+        return parsed.IsFailure ? parsed : ApplicationResult<AzurPilotConfigurationSnapshot>.Success(
+            parsed.Value!.WithSourceVersion(ConfigurationFileOperations.Version(document.Span)));
     }
 
     /// <summary>Загружает конфигурацию по обоим runtime-путям по умолчанию.</summary>
@@ -262,7 +264,7 @@ public static class AzurPilotConfigurationLoader
 
             byte[] content = new byte[(int)stream.Length];
             stream.ReadExactly(content);
-            document = StripByteOrderMark(content);
+            document = content;
             failure = null;
             return DocumentReadOutcome.Read;
         }
@@ -516,10 +518,10 @@ public static class AzurPilotConfigurationLoader
     /// <summary>Отбрасывает ведущий UTF-8 BOM: это кодировка файла, а не часть документа.</summary>
     /// <param name="document">Содержимое файла конфигурации.</param>
     /// <returns>Документ без ведущего BOM.</returns>
-    private static ReadOnlyMemory<byte> StripByteOrderMark(byte[] document)
+    private static ReadOnlyMemory<byte> StripByteOrderMark(ReadOnlyMemory<byte> document)
         => document.Length >= Utf8ByteOrderMark.Length
-            && document.AsSpan(0, Utf8ByteOrderMark.Length).SequenceEqual(Utf8ByteOrderMark)
-                ? document.AsMemory(Utf8ByteOrderMark.Length)
+            && document.Span[..Utf8ByteOrderMark.Length].SequenceEqual(Utf8ByteOrderMark)
+                ? document[Utf8ByteOrderMark.Length..]
                 : document;
 
     /// <summary>Исход чтения файла конфигурации.</summary>

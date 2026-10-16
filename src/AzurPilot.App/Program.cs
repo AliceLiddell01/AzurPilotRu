@@ -4,7 +4,7 @@ using AzurPilot.App.LogViewer;
 using AzurPilot.App.OperatorUi;
 using AzurPilot.Core.Configuration;
 
-// Точка входа приложения: разбирает минимальный CLI, запускает application host и печатает
+// Точка входа приложения: разбирает минимальный CLI, запускает хост приложения и печатает
 // человекочитаемый итог. Вся runtime-логика (composition, диагностика, логирование) живёт в
 // AzurPilotHost, поэтому здесь нет ни DI-регистраций, ни сбора диагностики, ни настройки логгеров.
 //
@@ -34,7 +34,7 @@ if (arguments.Help)
 
 if (arguments.LogViewer)
 {
-    // Отдельная лог-консоль — собственный процесс того же приложения: он не собирает application host,
+    // Отдельная лог-консоль — собственный процесс того же приложения: он не собирает хост приложения,
     // не открывает TUI и не управляет состоянием MuMu, Android или игры.
     return await AzurPilotLogViewerHost.RunAsync(args).ConfigureAwait(false);
 }

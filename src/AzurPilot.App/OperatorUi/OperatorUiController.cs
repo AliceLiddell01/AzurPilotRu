@@ -10,7 +10,7 @@ using AzurPilot.Windows;
 
 namespace AzurPilot.App.OperatorUi;
 
-/// <summary>Проверяемый без renderer coordinator операторских действий и production service results.</summary>
+/// <summary>Координатор действий оператора и результатов сервисов, проверяемый без отрисовки.</summary>
 /// <remarks>Session обновляется только вызывающей стороной; завершённый task применяется через CompleteOperation.</remarks>
 public sealed class OperatorUiController : IDisposable
 {
@@ -23,8 +23,8 @@ public sealed class OperatorUiController : IDisposable
     private AzurPilotConfigurationSnapshot _savedConfiguration;
     private bool _disposed;
 
-    /// <summary>Создаёт coordinator с существующим startup snapshot.</summary>
-    /// <param name="service">Production use cases.</param>
+    /// <summary>Создаёт координатор с уже собранным снимком диагностики запуска.</summary>
+    /// <param name="service">Сценарии приложения.</param>
     /// <param name="initialDiagnostics">Уже собранная диагностика.</param>
     /// <param name="mode">Режим интерфейса: объём доступных действий и подробность состояния.</param>
     /// <param name="logViewerFailure">Отказ открытия отдельной лог-консоли либо <see langword="null"/>.</param>
@@ -90,7 +90,7 @@ public sealed class OperatorUiController : IDisposable
     /// <summary>Отказ последней завершённой операции; <see langword="null"/> при успехе или отмене.</summary>
     public ApplicationFailure? LastOperationFailure { get; private set; }
 
-    /// <summary>Запускает service use case только после успешного gate.</summary>
+    /// <summary>Запускает сценарий сервиса только после проверки допуска.</summary>
     /// <param name="action">Service action.</param>
     /// <returns>Операция получила единственный execution slot.</returns>
     public bool TryStartOperation(OperatorUiAction action)
@@ -100,7 +100,7 @@ public sealed class OperatorUiController : IDisposable
         {
             Session.AddMessage("Действие недоступно", Session.IsOperationActive
                 ? "Уже выполняется операция. /cancel — отмена; повтор доступен после завершения."
-                : "Нужен explicit target и, для изменения состояния, отдельное подтверждение.",
+                : "Нужен явно выбранный экземпляр и, для изменения состояния, отдельное подтверждение.",
                 OperatorUiMessageKind.Warning);
             return false;
         }
@@ -149,7 +149,7 @@ public sealed class OperatorUiController : IDisposable
         }
         catch (Exception)
         {
-            // CompleteOperation сохраняет unexpected failure, не оставляя task ненаблюдённым.
+            // CompleteOperation сохраняет непредвиденный отказ, не оставляя task ненаблюдённым.
         }
     }
 
@@ -279,28 +279,28 @@ public sealed class OperatorUiController : IDisposable
                         $"MuMu {target}: {DescribeAction(action)} завершено. "
                         + $"Состояние: {DescribeMuMuState(outcome.InitialState)} → {DescribeMuMuState(outcome.FinalState)}.",
                         $"Действие: {action}\nИсходное состояние: {DescribeMuMuState(outcome.InitialState)}\n"
-                        + $"Итоговое состояние: {DescribeMuMuState(outcome.FinalState)}\nEvidence: {outcome.Evidence}"
+                        + $"Итоговое состояние: {DescribeMuMuState(outcome.FinalState)}\nНаблюдения: {outcome.Evidence}"
                     ));
             case OperatorUiAction.AndroidObserve:
                 return Present(_service.ObserveAndroid(target!.Value), facts =>
                     (
                         DescribeAndroidObservation(target.Value, facts.Transport.State, facts.Boot?.ShellAvailable,
                             facts.Boot?.BootCompleted),
-                        $"Endpoint: {facts.Endpoint}\nTransport: {facts.Transport.State}\n"
+                        $"Адрес подключения: {facts.Endpoint}\nТранспорт: {facts.Transport.State}\n"
                         + $"Shell: {Fact(facts.Boot?.ShellAvailable)}\n"
                         + $"boot_completed: {facts.Boot?.BootCompleted?.ToString(CultureInfo.InvariantCulture) ?? "не наблюдалось"}\n"
-                        + $"Android release: {facts.Boot?.AndroidRelease ?? "не наблюдалась"}\nEvidence: {facts.Evidence}"
+                        + $"Версия Android: {facts.Boot?.AndroidRelease ?? "не наблюдалась"}\nНаблюдения: {facts.Evidence}"
                     ));
             case OperatorUiAction.AndroidPrepare:
                 return Present(await _service.PrepareAndroidAsync(target!.Value, cancellationToken).ConfigureAwait(false),
                     outcome =>
                     (
                         $"Android готов для {target}: transport, shell и загрузка Android проверены.",
-                        $"Endpoint: {outcome.Endpoint}\nTransport: {outcome.InitialTransportName} → {outcome.FinalTransportName}\n"
+                        $"Адрес подключения: {outcome.Endpoint}\nТранспорт: {outcome.InitialTransportName} → {outcome.FinalTransportName}\n"
                         + $"Попытка connect: {Fact(outcome.ConnectAttempted)}\n"
                         + $"Shell: {Fact(outcome.Boot.ShellAvailable)}\n"
                         + $"boot_completed: {outcome.Boot.BootCompleted?.ToString(CultureInfo.InvariantCulture) ?? "не наблюдалось"}\n"
-                        + $"Evidence: {outcome.Evidence}"
+                        + $"Наблюдения: {outcome.Evidence}"
                     ));
             case OperatorUiAction.EnvironmentPrepare:
                 return DescribeEnvironmentPreparation(await _service.PrepareSelectedAndroidAsync(
@@ -309,17 +309,17 @@ public sealed class OperatorUiController : IDisposable
                 return ResolveConfiguredTarget();
             case OperatorUiAction.ReopenLogViewer:
                 return Present(await _service.ReopenLogViewerAsync(cancellationToken).ConfigureAwait(false),
-                    _ => ("Отдельная лог-консоль подключена.", "Read-only consumer application host; MuMu не изменялся."));
+                    _ => ("Отдельная лог-консоль подключена.", "Потребитель журнала хоста приложения без управления; MuMu не изменялся."));
             case OperatorUiAction.GameObserve:
                 return Present(_service.ObserveAzurLane(target!.Value), observation =>
                     (
                         $"Azur Lane Global/EN · {target}: {DescribeGameState(observation.State)}. "
                         + $"Установлена: {Fact(observation.Facts.Installed)}; процесс: {Fact(observation.Facts.ProcessRunning)}; "
                         + $"на переднем плане: {Fact(observation.Facts.Foreground)}.",
-                        $"State: {observation.State}\n"
-                        + $"Installed: {Fact(observation.Facts.Installed)}\nProcess: {Fact(observation.Facts.ProcessRunning)}\n"
-                        + $"Foreground: {Fact(observation.Facts.Foreground)}\n"
-                        + $"Evidence: {observation.Evidence}"
+                        $"Состояние: {observation.State}\n"
+                        + $"Установлена: {Fact(observation.Facts.Installed)}\nПроцесс: {Fact(observation.Facts.ProcessRunning)}\n"
+                        + $"На переднем плане: {Fact(observation.Facts.Foreground)}\n"
+                        + $"Наблюдения: {observation.Evidence}"
                     ));
             case OperatorUiAction.GameStart:
             case OperatorUiAction.GameStop:
@@ -344,15 +344,15 @@ public sealed class OperatorUiController : IDisposable
                     (
                         $"Azur Lane Global/EN · {target}: {DescribeAction(action)} завершено. "
                         + $"Состояние: {DescribeGameState(outcome.InitialState)} → {DescribeGameState(outcome.FinalState)}.",
-                        $"Package: {outcome.Package}\nДействие: {action}\nИсходное состояние: {outcome.InitialState}\n"
-                        + $"Итоговое состояние: {outcome.FinalState}\nEvidence: {outcome.Evidence}"
+                        $"Пакет: {outcome.Package}\nДействие: {action}\nИсходное состояние: {outcome.InitialState}\n"
+                        + $"Итоговое состояние: {outcome.FinalState}\nНаблюдения: {outcome.Evidence}"
                     ));
             case OperatorUiAction.Screenshot:
                 return Present(await _service.CaptureAndScanAsync(target!.Value, cancellationToken).ConfigureAwait(false),
                     analysis =>
                     (
                         $"Снимок MuMu {analysis.Capture.InstanceId} получен; FullFrame и Center проверены.",
-                        $"Endpoint: {analysis.Capture.Endpoint}\nPNG: {analysis.Capture.EncodedPngByteCount} bytes\n"
+                        $"Адрес подключения: {analysis.Capture.Endpoint}\nPNG: {analysis.Capture.EncodedPngByteCount} байт\n"
                         + $"Время захвата UTC: {analysis.Capture.CapturedAtUtc:O}\n"
                         + string.Join('\n', analysis.Regions.Select(DescribeRegion))
                     ));
@@ -401,13 +401,13 @@ public sealed class OperatorUiController : IDisposable
             AndroidTransportPreparationOutcome readiness = outcome.AndroidPreparation!;
             string summary = $"Окружение готово. Android для {outcome.InstanceId} готов: transport, shell и загрузка проверены. "
                 + $"{muMuSummary} Azur Lane не запускалась.";
-            string details = $"Target: {outcome.InstanceId}\nЭтап: {outcome.Stage}\n"
+            string details = $"Экземпляр: {outcome.InstanceId}\nЭтап: {outcome.Stage}\n"
                 + $"Исходное состояние MuMu: {outcome.InitialMuMuState}\n{muMuSummary}\n"
-                + $"Endpoint: {readiness.Endpoint}\nTransport: {readiness.InitialTransportName} → {readiness.FinalTransportName}\n"
+                + $"Адрес подключения: {readiness.Endpoint}\nТранспорт: {readiness.InitialTransportName} → {readiness.FinalTransportName}\n"
                 + $"Попытка connect: {Fact(readiness.ConnectAttempted)}\n"
                 + $"Shell: {Fact(readiness.Boot.ShellAvailable)}\n"
                 + $"boot_completed: {readiness.Boot.BootCompleted?.ToString(CultureInfo.InvariantCulture) ?? "не наблюдалось"}\n"
-                + $"Evidence: {readiness.Evidence}\nAzur Lane: запуск не выполнялся.";
+                + $"Наблюдения: {readiness.Evidence}\nAzur Lane: запуск не выполнялся.";
             return new OperationPresentation(true, summary, OperatorUiMessageKind.Success, details);
         }
 
@@ -426,17 +426,17 @@ public sealed class OperatorUiController : IDisposable
         };
         string failedSummary = $"Подготовка {outcome.InstanceId} остановлена на этапе "
             + $"{DescribePreparationStage(outcome.Stage)}: {reason} {partialState} Azur Lane не запускалась.";
-        string failedDetails = $"Target: {outcome.InstanceId}\nЭтап: {outcome.Stage}\n"
+        string failedDetails = $"Экземпляр: {outcome.InstanceId}\nЭтап: {outcome.Stage}\n"
             + $"Исходное состояние MuMu: {outcome.InitialMuMuState?.ToString() ?? "не наблюдалось"}\n"
             + $"Запрос запуска MuMu: {Fact(outcome.MuMuStartRequested)}\n"
             + $"Итог MuMu: {outcome.MuMuStartOutcome?.FinalState.ToString() ?? "не доказан"}\n"
             + $"MuMu может остаться запущенным: {Fact(outcome.MuMuMayRemainRunning)}\n"
             + (failure is null ? "Код отказа: не предоставлен." : FormatFailureDetails(failure))
             + (outcome.AndroidPreparation is null ? string.Empty
-                : $"\nEndpoint: {outcome.AndroidPreparation.Endpoint}\n"
-                    + $"Transport: {outcome.AndroidPreparation.InitialTransportName} → "
+                : $"\nАдрес подключения: {outcome.AndroidPreparation.Endpoint}\n"
+                    + $"Транспорт: {outcome.AndroidPreparation.InitialTransportName} → "
                     + $"{outcome.AndroidPreparation.FinalTransportName}\n"
-                    + $"Evidence: {outcome.AndroidPreparation.Evidence}")
+                    + $"Наблюдения: {outcome.AndroidPreparation.Evidence}")
             + "\nAzur Lane: запуск не выполнялся.";
         OperatorUiMessageKind kind = failure?.Code is ApplicationFailure.OperationCancelled
             or ApplicationFailure.MuMuStateUnproven
@@ -581,7 +581,7 @@ public sealed class OperatorUiController : IDisposable
             true,
             $"Целевой экземпляр {target} определён {how}.",
             OperatorUiMessageKind.Information,
-            $"Target: {target}\nСпособ выбора: {how}\n"
+            $"Экземпляр: {target}\nСпособ выбора: {how}\n"
             + $"Значение mumu.instance: {_service.Configuration.Configuration.MuMu.Instance}",
             ResolvedTarget: target,
             Failure: null);
@@ -644,19 +644,19 @@ public sealed class OperatorUiController : IDisposable
             + $"ABI {report.Native.AbiVersion?.ToString(CultureInfo.InvariantCulture) ?? "не наблюдалась"}; "
             + $"OpenCV {report.Native.OpencvVersion?.ToString() ?? "не наблюдалась"}\n"
             + $"MuMu: обнаружена {Fact(report.MuMu.IsInstallationDiscovered)}; версия {report.MuMu.Version ?? "не наблюдалась"}; "
-            + $"control surface {report.MuMu.ControlSurfaceStatus}; configured instance {report.MuMu.ConfiguredInstance}; "
-            + $"selected instance {report.MuMu.SelectedInstanceId ?? "не выбран"}; "
-            + $"display name {report.MuMu.SelectedInstanceDisplayName ?? "не наблюдалось"}; "
-            + $"состояние {(report.MuMu.LifecycleState is MuMuLifecycleState muMuState ? DescribeMuMuState(muMuState) : "не наблюдалось")}; evidence {report.MuMu.Evidence ?? "не наблюдались"}\n"
+            + $"интерфейс управления {report.MuMu.ControlSurfaceStatus}; настроенный экземпляр {report.MuMu.ConfiguredInstance}; "
+            + $"выбранный экземпляр {report.MuMu.SelectedInstanceId ?? "не выбран"}; "
+            + $"отображаемое имя {report.MuMu.SelectedInstanceDisplayName ?? "не наблюдалось"}; "
+            + $"состояние {(report.MuMu.LifecycleState is MuMuLifecycleState muMuState ? DescribeMuMuState(muMuState) : "не наблюдалось")}; наблюдения {report.MuMu.Evidence ?? "не наблюдались"}\n"
             + $"Android: ADB {Fact(report.Android.IsAdbAvailable)}; endpoint {report.Android.Endpoint ?? "не разрешён"}; "
-            + $"stage {report.Android.Stage}; transport {(report.Android.TransportState is AndroidTransportState androidTransport ? DescribeTransportState(androidTransport) : "не наблюдалось")}; "
+            + $"этап {report.Android.Stage}; transport {(report.Android.TransportState is AndroidTransportState androidTransport ? DescribeTransportState(androidTransport) : "не наблюдалось")}; "
             + $"shell {Fact(report.Android.IsShellAvailable)}; boot_completed "
             + $"{report.Android.BootCompleted?.ToString(CultureInfo.InvariantCulture) ?? "не наблюдалось"}; "
-            + $"Android release {report.Android.AndroidRelease ?? "не наблюдалась"}; SDK {report.Android.SdkLevel?.ToString(CultureInfo.InvariantCulture) ?? "не наблюдался"}; "
-            + $"evidence {report.Android.Evidence ?? "не наблюдались"}\n"
-            + $"Azur Lane Global/EN: package {report.AzurLane.Package}; состояние {(report.AzurLane.State is AzurLaneGameState gameState ? DescribeGameState(gameState) : "не наблюдалось")}; "
+            + $"версия Android {report.Android.AndroidRelease ?? "не наблюдалась"}; SDK {report.Android.SdkLevel?.ToString(CultureInfo.InvariantCulture) ?? "не наблюдался"}; "
+            + $"наблюдения {report.Android.Evidence ?? "не наблюдались"}\n"
+            + $"Azur Lane Global/EN: пакет {report.AzurLane.Package}; состояние {(report.AzurLane.State is AzurLaneGameState gameState ? DescribeGameState(gameState) : "не наблюдалось")}; "
             + $"установлена {Fact(report.AzurLane.IsInstalled)}; процесс {Fact(report.AzurLane.IsProcessRunning)}; "
-            + $"передний план {Fact(report.AzurLane.IsForeground)}; evidence {report.AzurLane.Evidence ?? "не наблюдались"}\n"
+            + $"передний план {Fact(report.AzurLane.IsForeground)}; наблюдения {report.AzurLane.Evidence ?? "не наблюдались"}\n"
             + string.Join('\n', new[] { report.Native.Failure, report.MuMu.Failure, report.Android.Failure, report.AzurLane.Failure }
                 .OfType<ApplicationFailure>().Select(FormatFailureDetails));
         return new OperationPresentation(true, warning ? summary + "\n" + nextStep : summary,
@@ -735,7 +735,7 @@ public sealed class OperatorUiController : IDisposable
             + $"Минимальный уровень журнала: {OperatorUiLogPresentation.LevelLabel(configuration.MinimumLevel)}\n"
             + $"Режим интерфейса: {OperatorUiModePresentation.Label(mode)} "
             + $"(запуск: --mode {OperatorUiModePresentation.Argument(mode)})\n"
-            + $"MuMu instance: {instance}\n"
+            + $"Экземпляр MuMu: {instance}\n"
             + $"Расположение конфигурации: {AzurPilotConfigurationPath.GetDefaultRuntimePath()}\n"
             + $"Следующий запуск: {OperatorUiModePresentation.Argument(SavedConfiguration.Ui.Mode)}, "
             + $"экземпляр {SavedConfiguration.MuMu.Instance}, "

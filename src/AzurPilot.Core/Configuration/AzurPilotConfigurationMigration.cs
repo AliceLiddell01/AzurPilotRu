@@ -11,8 +11,8 @@ namespace AzurPilot.Core.Configuration;
 /// <remarks>
 /// <para>
 /// Миграция выполняется только по явному действию оператора и никогда не запускается при загрузке
-/// конфигурации: загрузчик остаётся читающим, а единственный путь создания <c>config.yaml</c> — эта
-/// операция. Порядок шагов фиксирован и проверяем:
+/// конфигурации: загрузчик остаётся читающим, создание <c>config.yaml</c> выполняется только
+/// явной миграцией или сохранением настроек. Порядок шагов фиксирован и проверяем:
 /// </para>
 /// <list type="number">
 /// <item>legacy JSON читается прежним строгим контрактом своей версии — невалидный файл не мигрируется;</item>
@@ -22,8 +22,8 @@ namespace AzurPilot.Core.Configuration;
 /// без замены существующего файла, поэтому чужой YAML не перезаписывается;</item>
 /// <item>только после успешной проверки legacy-файл перемещается в резервную копию
 /// (<c>config.json.bak-&lt;UTC timestamp&gt;</c>): перемещение и есть backup, отдельного копирования нет;</item>
-/// <item>любая неудача на шагах записи, проверки или перемещения возвращает состояние «существует только
-/// legacy JSON»: записанный YAML удаляется, а legacy-файл остаётся нетронутым.</item>
+/// <item>при отказе переноса выполняется проверяемый откат собственного YAML; частичный отказ
+/// сообщает сохранённые файлы и действия восстановления без потери чужих правок.</item>
 /// </list>
 /// <para>
 /// Итог успешной миграции — ровно один действующий источник (<c>config.yaml</c>) плюс резервная копия
@@ -66,30 +66,42 @@ public static class AzurPilotConfigurationMigration
     public static ApplicationResult<AzurPilotConfigurationMigrationResult> MigrateLegacyJsonToYaml(
         string legacyJsonPath,
         string yamlPath)
-        => MigrateLegacyJsonToYamlCore(legacyJsonPath, yamlPath, expected: null, configuration: null);
+        => MigrateLegacyJsonToYaml(legacyJsonPath, yamlPath, ConfigurationFileOperations.System);
+
+    internal static ApplicationResult<AzurPilotConfigurationMigrationResult> MigrateLegacyJsonToYaml(
+        string legacyJsonPath, string yamlPath, ConfigurationFileOperations files)
+    {
+        lock (ConfigurationFileOperations.WriteGate)
+        {
+            return MigrateLegacyJsonToYamlCore(legacyJsonPath, yamlPath, expected: null, configuration: null, files);
+        }
+    }
 
     /// <summary>Сохраняет новые настройки из legacy JSON в YAML и переносит JSON в резервную копию.</summary>
     /// <param name="legacyJsonPath">Абсолютный путь legacy JSON-файла.</param>
     /// <param name="yamlPath">Абсолютный путь создаваемого YAML-файла.</param>
     /// <param name="expected">Snapshot legacy-источника, прочитанный вызывающей стороной.</param>
     /// <param name="configuration">Настройки, которые должны стать действующим YAML.</param>
-    /// <returns>Проверенный snapshot новых настроек и путь резервной копии либо отказ без смены источника.</returns>
+    /// <returns>Проверенный snapshot новых настроек и путь резервной копии либо отказ с диагностикой сохранённых источников.</returns>
+    /// <param name="files">Граница операций переноса и удаления.</param>
     internal static ApplicationResult<AzurPilotConfigurationMigrationResult> SaveLegacyJsonAsYaml(
         string legacyJsonPath,
         string yamlPath,
         AzurPilotConfigurationSnapshot expected,
-        AzurPilotConfiguration configuration)
+        AzurPilotConfiguration configuration,
+        ConfigurationFileOperations files)
     {
         ArgumentNullException.ThrowIfNull(expected);
         ArgumentNullException.ThrowIfNull(configuration);
-        return MigrateLegacyJsonToYamlCore(legacyJsonPath, yamlPath, expected, configuration);
+        return MigrateLegacyJsonToYamlCore(legacyJsonPath, yamlPath, expected, configuration, files);
     }
 
     private static ApplicationResult<AzurPilotConfigurationMigrationResult> MigrateLegacyJsonToYamlCore(
         string legacyJsonPath,
         string yamlPath,
         AzurPilotConfigurationSnapshot? expected,
-        AzurPilotConfiguration? configuration)
+        AzurPilotConfiguration? configuration,
+        ConfigurationFileOperations files)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(legacyJsonPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(yamlPath);
@@ -141,11 +153,7 @@ public static class AzurPilotConfigurationMigration
                 legacyJsonPath);
         }
 
-        if (expected is not null
-            && (expected.Configuration != source.Configuration
-                || expected.SourceFormat != source.SourceFormat
-                || expected.Source != source.Source
-                || !string.Equals(expected.FilePath, source.FilePath, StringComparison.Ordinal)))
+        if (expected is not null && !expected.HasSameSource(source))
         {
             return Failure(
                 $"Legacy JSON «{legacyJsonPath}» изменился вне приложения. Повторите чтение перед сохранением.",
@@ -166,28 +174,44 @@ public static class AzurPilotConfigurationMigration
                 yamlPath);
         }
 
-        string backupPath;
+        string? backupPath = null;
         try
         {
-            backupPath = MoveToBackup(legacyJsonPath);
+            using FileStream guard = new(legacyJsonPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+            if (ConfigurationFileOperations.VersionOfFile(legacyJsonPath) != source.SourceVersion)
+            {
+                throw new IOException("Legacy JSON изменился во время миграции.");
+            }
+
+            backupPath = MoveToBackup(legacyJsonPath, files);
+            if (ConfigurationFileOperations.VersionOfFile(backupPath) != source.SourceVersion)
+            {
+                File.Move(backupPath, legacyJsonPath);
+                throw new IOException("Обнаружена конкурентная замена legacy JSON; исходный файл восстановлен.");
+            }
         }
         catch (Exception exception) when (IsFileFailure(exception))
         {
-            // Перенос legacy-файла не удался: подтверждённый YAML удаляется, иначе действующими
-            // источниками остались бы оба файла и runtime-политика отказывала бы на запуске.
-            TryDelete(yamlPath);
+            string rollback = RollbackYaml(yamlPath, verified!, files);
             return Failure(
                 $"Канонический YAML записан и подтверждён, но legacy-файл «{legacyJsonPath}» не удалось "
-                + $"перенести в резервную копию: {exception.Message}. Записанный YAML удалён, "
-                + "legacy-конфигурация не изменена.",
+                + $"перенести в резервную копию: {exception.Message}. {rollback} "
+                + $"Legacy JSON по исходному пути: {(File.Exists(legacyJsonPath) ? "обнаружен" : "не подтверждён")}. "
+                + (backupPath is null ? string.Empty : $"Путь резервной копии: «{backupPath}»."),
                 legacyJsonPath);
+        }
+
+        ApplicationResult<AzurPilotConfigurationSnapshot> final = AzurPilotConfigurationLoader.LoadFromSources(yamlPath, legacyJsonPath);
+        if (final.IsFailure || final.Value!.SourceVersion != verified!.SourceVersion)
+        {
+            return Failure($"Источники изменились после миграции. Проверьте YAML «{yamlPath}» и резервную копию «{backupPath}».", yamlPath);
         }
 
         return ApplicationResult<AzurPilotConfigurationMigrationResult>.Success(
             new AzurPilotConfigurationMigrationResult
             {
-                Snapshot = verified!.WithFilePathAfterMove(yamlPath),
-                BackupFilePath = backupPath,
+                Snapshot = final.Value!,
+                BackupFilePath = backupPath!,
             });
     }
 
@@ -220,7 +244,8 @@ public static class AzurPilotConfigurationMigration
     /// суффикса: существующая копия никогда не перезаписывается.
     /// </para>
     /// </remarks>
-    private static string MoveToBackup(string legacyJsonPath)
+    /// <param name="files">Граница переноса файла.</param>
+    private static string MoveToBackup(string legacyJsonPath, ConfigurationFileOperations files)
     {
         string timestamp = DateTimeOffset.UtcNow.ToString(BackupTimestampFormat, CultureInfo.InvariantCulture);
         string candidate = legacyJsonPath + BackupSuffix + timestamp;
@@ -240,7 +265,7 @@ public static class AzurPilotConfigurationMigration
                 + attempt.ToString(CultureInfo.InvariantCulture);
         }
 
-        File.Move(legacyJsonPath, candidate);
+        files.Move(legacyJsonPath, candidate);
         return candidate;
     }
 
@@ -305,6 +330,46 @@ public static class AzurPilotConfigurationMigration
             error = exception.Message;
             TryDelete(tempPath);
             return false;
+        }
+    }
+
+    private static string RollbackYaml(string yamlPath, AzurPilotConfigurationSnapshot verified, ConfigurationFileOperations files)
+    {
+        string held = yamlPath + $".rollback-{Guid.NewGuid():N}";
+        try
+        {
+            // Сначала захватываем фактический файл под уникальным именем. Новое содержимое по
+            // каноническому пути не удаляется, а чужие байты в захваченном файле сохраняются.
+            File.Move(yamlPath, held);
+            using FileStream guard = new(held, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+            if (ConfigurationFileOperations.VersionOfFile(held) != verified.SourceVersion)
+            {
+                throw new IOException("YAML изменён извне; удаление чужих правок запрещено.");
+            }
+
+            files.Delete(held);
+            return "Записанный YAML удалён. Повторите чтение источников перед миграцией.";
+        }
+        catch (Exception exception) when (IsFileFailure(exception))
+        {
+            string recovery = held;
+            try
+            {
+                if (File.Exists(held))
+                {
+                    File.Move(held, yamlPath);
+                }
+
+                recovery = yamlPath;
+            }
+            catch (Exception restoreException) when (IsFileFailure(restoreException))
+            {
+                return $"Откат YAML не завершён: {exception.Message}; восстановление имени: {restoreException.Message}. "
+                    + $"Сохранённый файл: «{recovery}». Проверьте оба источника и переименуйте лишний перед запуском.";
+            }
+
+            return $"Откат YAML не завершён: {exception.Message}. YAML «{recovery}» и legacy JSON могут оставаться одновременно. "
+                + "Проверьте оба файла и переименуйте лишний источник перед запуском.";
         }
     }
 

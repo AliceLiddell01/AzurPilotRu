@@ -36,6 +36,77 @@ public sealed class AzurPilotConfigurationMigrationTests
 
         """;
 
+    [Theory(DisplayName = "Отказ переноса JSON честно различает успешный и частичный откат YAML")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BackupMoveFailureReportsActualRollbackState(bool deleteFails)
+    {
+        using TemporaryConfigurationDirectory directory = new();
+        string json = """{"schemaVersion":2,"mumu":{"instance":"mumu:7"},"diagnostics":{"minimumLevel":"Warning"}}""";
+        _ = directory.WriteConfiguration(json);
+        byte[] original = File.ReadAllBytes(directory.LegacyJsonConfigurationFilePath);
+        ConfigurationFileOperations files = new()
+        {
+            Move = static (_, _) => throw new IOException("управляемый отказ переноса JSON"),
+            Delete = path =>
+            {
+                if (deleteFails)
+                {
+                    throw new IOException("управляемый отказ удаления YAML");
+                }
+
+                File.Delete(path);
+            },
+        };
+        ApplicationResult<AzurPilotConfigurationMigrationResult> result = AzurPilotConfigurationMigration.MigrateLegacyJsonToYaml(
+            directory.LegacyJsonConfigurationFilePath, directory.YamlConfigurationFilePath, files);
+        Assert.True(result.IsFailure);
+        Assert.Equal(original, File.ReadAllBytes(directory.LegacyJsonConfigurationFilePath));
+        Assert.Equal(deleteFails, File.Exists(directory.YamlConfigurationFilePath));
+        Assert.Empty(directory.BackupFilePaths());
+        Assert.Contains("управляемый отказ переноса JSON", result.FailureInfo!.Message, StringComparison.Ordinal);
+        if (deleteFails)
+        {
+            Assert.Contains("управляемый отказ удаления YAML", result.FailureInfo.Message, StringComparison.Ordinal);
+            Assert.Contains("Проверьте оба файла", result.FailureInfo.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("Записанный YAML удалён", result.FailureInfo.Message, StringComparison.Ordinal);
+            Assert.True(AzurPilotConfigurationLoader.LoadFromSources(directory.YamlConfigurationFilePath,
+                directory.LegacyJsonConfigurationFilePath).IsFailure);
+            Assert.Equal("mumu:7", AzurPilotConfigurationLoader.Load(directory.YamlConfigurationFilePath).Value!.Configuration.MuMu.Instance);
+        }
+        else
+        {
+            Assert.Contains("Записанный YAML удалён", result.FailureInfo.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact(DisplayName = "Откат миграции сохраняет YAML, изменённый другим владельцем")]
+    public void RollbackNeverDeletesExternallyChangedYaml()
+    {
+        using TemporaryConfigurationDirectory directory = new();
+        _ = directory.WriteConfiguration(LegacyV2Document);
+        byte[] json = File.ReadAllBytes(directory.LegacyJsonConfigurationFilePath);
+        byte[]? external = null;
+        bool deleteCalled = false;
+        ConfigurationFileOperations files = new()
+        {
+            Move = (_, _) =>
+            {
+                File.AppendAllText(directory.YamlConfigurationFilePath, "# правка другого владельца\n");
+                external = File.ReadAllBytes(directory.YamlConfigurationFilePath);
+                throw new IOException("управляемый отказ переноса");
+            },
+            Delete = _ => deleteCalled = true,
+        };
+        ApplicationResult<AzurPilotConfigurationMigrationResult> result = AzurPilotConfigurationMigration.MigrateLegacyJsonToYaml(
+            directory.LegacyJsonConfigurationFilePath, directory.YamlConfigurationFilePath, files);
+        Assert.True(result.IsFailure);
+        Assert.False(deleteCalled);
+        Assert.Equal(json, File.ReadAllBytes(directory.LegacyJsonConfigurationFilePath));
+        Assert.Equal(external, File.ReadAllBytes(directory.YamlConfigurationFilePath));
+        Assert.Contains("удаление чужих правок запрещено", result.FailureInfo!.Message, StringComparison.Ordinal);
+    }
+
     [Fact(DisplayName = "Миграция пишет канонический YAML, создаёт резервную копию и подтверждает результат")]
     public void MigrationWritesCanonicalYamlAndBackup()
     {

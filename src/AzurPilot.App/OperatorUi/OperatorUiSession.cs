@@ -7,7 +7,7 @@ namespace AzurPilot.App.OperatorUi;
 /// <param name="Title">Тип или заголовок сообщения.</param>
 /// <param name="Text">Текст, очищенный от управляющих символов терминала.</param>
 /// <param name="Kind">Семантический статус, не зависящий от цвета renderer-а.</param>
-/// <param name="Details">Технические evidence, показываемые только по запросу.</param>
+/// <param name="Details">Технические наблюдения, показываемые только по запросу.</param>
 public sealed record OperatorUiMessage(
     string Title,
     string Text,
@@ -27,13 +27,13 @@ public enum OperatorUiMessageKind
     Error,
 }
 
-/// <summary>Неизменяемая пара действия и exact target, предъявленная для подтверждения.</summary>
+/// <summary>Неизменяемая пара действия и точного целевого экземпляра, предъявленная для подтверждения.</summary>
 /// <param name="Action">Mutation.</param>
-/// <param name="Target">Предъявленная identity.</param>
+/// <param name="Target">Предъявленный идентификатор.</param>
 public sealed record OperatorUiConfirmation(OperatorUiAction Action, MuMuInstanceId Target);
 
-/// <summary>Чистое UI-состояние: bounded история, explicit target и однократное подтверждение mutation.</summary>
-/// <remarks>Все изменения выполняются на UI thread; бизнес-операции принадлежат operator service.</remarks>
+/// <summary>Чистое UI-состояние: ограниченная история, явно выбранный экземпляр и однократное подтверждение mutation.</summary>
+/// <remarks>Все изменения выполняются в потоке UI; бизнес-операции принадлежат сервису оператора.</remarks>
 public sealed class OperatorUiSession
 {
     private const int MessageCapacity = 128;
@@ -48,20 +48,20 @@ public sealed class OperatorUiSession
     private string _composerDraft = string.Empty;
     private bool _composerDraftCaptured;
 
-    /// <summary>Текущий explicit target; отсутствие выбора не означает автоматический выбор.</summary>
+    /// <summary>Текущий явно выбранный экземпляр; отсутствие выбора не означает автоматический выбор.</summary>
     public MuMuInstanceId? SelectedInstance { get; private set; }
 
-    /// <summary>Признак занятого operation slot.</summary>
+    /// <summary>Признак занятого слота операции.</summary>
     public bool IsOperationActive { get; private set; }
 
-    /// <summary>Ожидающее подтверждение exact action/target.</summary>
+    /// <summary>Ожидающее подтверждение точного действия и экземпляра.</summary>
     public OperatorUiConfirmation? PendingConfirmation { get; private set; }
 
     /// <summary>Добавляет ограниченное сообщение, удаляя самое старое при заполнении.</summary>
     /// <param name="title">Заголовок.</param>
     /// <param name="text">Краткое сообщение оператору.</param>
     /// <param name="kind">Семантический статус сообщения.</param>
-    /// <param name="details">Bounded технические evidence, доступные в отдельном просмотре.</param>
+    /// <param name="details">Ограниченные диагностические данные, доступные в отдельном просмотре.</param>
     public void AddMessage(
         string title,
         string text,
@@ -101,7 +101,7 @@ public sealed class OperatorUiSession
         return true;
     }
 
-    /// <summary>Предъявляет отдельное подтверждение mutation над текущим explicit target.</summary>
+    /// <summary>Предъявляет отдельное подтверждение изменения состояния явно выбранного экземпляра.</summary>
     /// <param name="action">Запрошенное действие.</param>
     /// <returns>Создано ли подтверждение.</returns>
     public bool RequestConfirmation(OperatorUiAction action)
@@ -182,10 +182,10 @@ public sealed class OperatorUiSession
         _draft = string.Empty;
     }
 
-    /// <summary>Перемещает history cursor, сохраняя несохранённый composer draft.</summary>
+    /// <summary>Перемещает курсор истории, сохраняя несохранённый черновик ввода.</summary>
     /// <param name="direction">Отрицательное значение — предыдущая команда; положительное — следующая.</param>
-    /// <param name="currentDraft">Текущий composer.</param>
-    /// <returns>Команда либо сохранённый draft.</returns>
+    /// <param name="currentDraft">Текущий текст ввода.</param>
+    /// <returns>Команда либо сохранённый черновик.</returns>
     public string NavigateHistory(int direction, string currentDraft)
     {
         ArgumentNullException.ThrowIfNull(currentDraft);
@@ -198,8 +198,8 @@ public sealed class OperatorUiSession
         return _historyPosition == _history.Count ? _draft : _history[_historyPosition];
     }
 
-    /// <summary>Запоминает состояние composer перед открытием палитры.</summary>
-    /// <param name="composerText">Текст composer до подстановки триггера палитры.</param>
+    /// <summary>Запоминает состояние поля ввода перед открытием палитры.</summary>
+    /// <param name="composerText">Текст поля ввода до подстановки триггера палитры.</param>
     public void CaptureComposerDraft(string composerText)
     {
         ArgumentNullException.ThrowIfNull(composerText);
@@ -207,14 +207,14 @@ public sealed class OperatorUiSession
         _composerDraftCaptured = true;
     }
 
-    /// <summary>Забывает сохранённый composer draft после принятого действия.</summary>
+    /// <summary>Забывает сохранённый черновик ввода после принятого действия.</summary>
     public void DiscardComposerDraft()
     {
         _composerDraft = string.Empty;
         _composerDraftCaptured = false;
     }
 
-    /// <summary>Возвращает текст composer для отмены палитры и очищает сохранённое состояние.</summary>
+    /// <summary>Возвращает текст поля ввода для отмены палитры и очищает сохранённое состояние.</summary>
     /// <remarks>
     /// Одиночный <c>/</c> — триггер палитры, а не черновик оператора: после отмены он не восстанавливается.
     /// Осмысленный черновик возвращается без изменений.

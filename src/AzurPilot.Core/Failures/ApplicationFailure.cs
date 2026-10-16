@@ -75,7 +75,7 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <summary>Код отказа: операция отменена запросом отмены.</summary>
     public const string OperationCancelled = "operation_cancelled";
 
-    /// <summary>Код отказа: внутренняя ошибка application host, не сводимая к ожидаемым отказам выше.</summary>
+    /// <summary>Код отказа: внутренняя ошибка хоста приложения, не сводимая к ожидаемым отказам выше.</summary>
     public const string InternalError = "internal_error";
 
     /// <summary>Код отказа: установка MuMuPlayer не обнаружена.</summary>
@@ -90,7 +90,7 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <summary>Код отказа: автоматический выбор экземпляра неоднозначен, подходящих экземпляров больше одного.</summary>
     public const string MuMuInstanceAmbiguous = "mumu_instance_ambiguous";
 
-    /// <summary>Код отказа: установка MuMu не предоставляет нужную control surface для экземпляра.</summary>
+    /// <summary>Код отказа: установка MuMu не предоставляет нужную интерфейс управления для экземпляра.</summary>
     public const string MuMuControlSurfaceUnsupported = "mumu_control_surface_unsupported";
 
     /// <summary>Код отказа: lifecycle-операция MuMu не привела к требуемому postcondition.</summary>
@@ -240,7 +240,7 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <summary>Ограниченные structured details отказа в формате ключ-значение.</summary>
     /// <value>
     /// Immutable словарь с ordinal-сравнением ключей или <see langword="null"/>, если дополнительных
-    /// сведений нет. Значения должны быть пригодны для structured logging.
+    /// сведений нет. Значения должны быть пригодны для структурированный журнал.
     /// </value>
     public IReadOnlyDictionary<string, string>? Details
     {

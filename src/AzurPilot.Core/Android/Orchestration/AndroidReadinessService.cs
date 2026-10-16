@@ -51,7 +51,7 @@ public sealed class AndroidReadinessService
     /// <param name="host">Host-side поверхность Android.</param>
     /// <param name="timings">Владелец интервала опроса и deadline-значений.</param>
     /// <param name="timeProvider">Источник времени для deadline, задержки и elapsed.</param>
-    /// <param name="logger">Логгер orchestration из существующего logging stack.</param>
+    /// <param name="logger">Логгер orchestration из существующей системы логирования.</param>
     /// <exception cref="ArgumentNullException">Любая из зависимостей равна <see langword="null"/>.</exception>
     public AndroidReadinessService(
         IAndroidHost host,

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 namespace AzurPilot.App;
 
 /// <summary>
-/// Устойчивые project-owned события application host.
+/// Устойчивые события приложения хоста приложения.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,7 +18,7 @@ namespace AzurPilot.App;
 /// </remarks>
 internal static partial class AzurPilotLog
 {
-    /// <summary>Категория логирования application host.</summary>
+    /// <summary>Категория логирования хоста приложения.</summary>
     internal const string Category = "AzurPilot.App";
 
     /// <summary>Начало операции запуска.</summary>
@@ -27,7 +27,7 @@ internal static partial class AzurPilotLog
     [LoggerMessage(
         EventId = 1001,
         Level = LogLevel.Information,
-        Message = "Application host выполняет операцию {CorrelationId}")]
+        Message = "Хост приложения выполняет операцию {CorrelationId}")]
     public static partial void StartupStarted(this ILogger logger, string correlationId);
 
     /// <summary>Конфигурация успешно загружена как snapshot.</summary>
@@ -64,7 +64,7 @@ internal static partial class AzurPilotLog
         Message = "Конфигурация отклонена: код {FailureCode}; операция {CorrelationId}")]
     public static partial void ConfigurationRejected(this ILogger logger, string correlationId, string failureCode);
 
-    /// <summary>Native boundary подтвердила совместимость.</summary>
+    /// <summary>Граница native-кода подтвердила совместимость.</summary>
     /// <param name="logger">Логгер host-а.</param>
     /// <param name="correlationId">Correlation identifier операции.</param>
     /// <param name="abiVersion">Фактическая версия ABI native библиотеки.</param>
@@ -73,7 +73,7 @@ internal static partial class AzurPilotLog
     [LoggerMessage(
         EventId = 1004,
         Level = LogLevel.Information,
-        Message = "Native boundary доступна: ABI {AbiVersion}, OpenCV {OpencvVersion}, "
+        Message = "Граница native-кода доступна: ABI {AbiVersion}, OpenCV {OpencvVersion}, "
             + "capability {Capabilities}; операция {CorrelationId}")]
     public static partial void NativeBoundaryVerified(
         this ILogger logger,
@@ -88,7 +88,7 @@ internal static partial class AzurPilotLog
     [LoggerMessage(
         EventId = 1005,
         Level = LogLevel.Information,
-        Message = "Application host готов; операция {CorrelationId}")]
+        Message = "Хост приложения готов; операция {CorrelationId}")]
     public static partial void StartupCompleted(this ILogger logger, string correlationId);
 
     /// <summary>Операция запуска завершена отказом.</summary>
@@ -100,7 +100,7 @@ internal static partial class AzurPilotLog
     [LoggerMessage(
         EventId = 1006,
         Level = LogLevel.Error,
-        Message = "Startup завершён отказом: код {FailureCode}, повтор имеет смысл: {IsRetryable}, "
+        Message = "Запуск завершён отказом: код {FailureCode}, повтор имеет смысл: {IsRetryable}, "
             + "сообщение: {FailureMessage}; операция {CorrelationId}")]
     public static partial void StartupRejected(
         this ILogger logger,
@@ -112,22 +112,22 @@ internal static partial class AzurPilotLog
     /// <summary>MuMu-диагностика собрана без отказов.</summary>
     /// <remarks>
     /// Событие описывает результат чтения host-side поверхности MuMu: обнаружение установки, статус
-    /// control surface и выбранный экземпляр. Полный вывод control utility, список процессов и пути
+    /// интерфейс управления и выбранный экземпляр. Полный вывод утилита управления, список процессов и пути
     /// установки в событие не попадают.
     /// </remarks>
     /// <param name="logger">Логгер host-а.</param>
     /// <param name="correlationId">Correlation identifier операции.</param>
     /// <param name="isInstallationDiscovered">Признак того, что установка MuMuPlayer обнаружена.</param>
     /// <param name="version">Версия обнаруженной установки или пустая строка.</param>
-    /// <param name="controlSurfaceStatus">Bounded статус control surface.</param>
+    /// <param name="controlSurfaceStatus">Ограниченный статус интерфейс управления.</param>
     /// <param name="configuredInstance">Значение <c>mumu.instance</c> эффективной конфигурации.</param>
     /// <param name="selectedInstanceId">Каноническая identity выбранного экземпляра или пустая строка.</param>
     [LoggerMessage(
         EventId = 1007,
         Level = LogLevel.Information,
         Message = "MuMu-диагностика: установка обнаружена: {IsInstallationDiscovered}, версия {Version}, "
-            + "control surface {ControlSurfaceStatus}, разрешённый instance {ConfiguredInstance}, "
-            + "выбранный instance {SelectedInstanceId}; операция {CorrelationId}")]
+            + "интерфейс управления {ControlSurfaceStatus}, разрешённый экземпляр {ConfiguredInstance}, "
+            + "выбранный экземпляр {SelectedInstanceId}; операция {CorrelationId}")]
     public static partial void MuMuDiagnosticsCaptured(
         this ILogger logger,
         string correlationId,
@@ -145,11 +145,11 @@ internal static partial class AzurPilotLog
     /// <param name="logger">Логгер host-а.</param>
     /// <param name="correlationId">Correlation identifier операции.</param>
     /// <param name="failureCode">Стабильный application-level код отказа MuMu.</param>
-    /// <param name="controlSurfaceStatus">Bounded статус control surface.</param>
+    /// <param name="controlSurfaceStatus">Ограниченный статус интерфейс управления.</param>
     [LoggerMessage(
         EventId = 1008,
         Level = LogLevel.Warning,
-        Message = "MuMu-диагностика сообщила отказ: код {FailureCode}, control surface "
+        Message = "MuMu-диагностика сообщила отказ: код {FailureCode}, интерфейс управления "
             + "{ControlSurfaceStatus}; операция {CorrelationId}")]
     public static partial void MuMuDiagnosticsFailed(
         this ILogger logger,
@@ -190,7 +190,7 @@ internal static partial class AzurPilotLog
     /// </remarks>
     /// <param name="logger">Логгер host-а.</param>
     /// <param name="correlationId">Correlation identifier операции.</param>
-    /// <param name="androidStage">Bounded machine-stable имя шага, на котором диагностика остановилась.</param>
+    /// <param name="androidStage">Ограниченное машинное имя шага, на котором диагностика остановилась.</param>
     /// <param name="failureCode">Стабильный application-level код отказа Android.</param>
     [LoggerMessage(
         EventId = 1010,
@@ -214,7 +214,7 @@ internal static partial class AzurPilotLog
     /// <param name="correlationId">Correlation identifier операции.</param>
     /// <param name="product">Отображаемое имя продукта.</param>
     /// <param name="package">Package identity продукта.</param>
-    /// <param name="state">Bounded имя производного состояния игры или пустая строка.</param>
+    /// <param name="state">Ограниченное имя производного состояния игры или пустая строка.</param>
     /// <param name="isInstalled">Признак установленного пакета; <see langword="null"/>, если не наблюдалось.</param>
     /// <param name="isProcessRunning">Признак запущенного процесса; <see langword="null"/>, если не наблюдалось.</param>
     /// <param name="isForeground">Признак переднего плана; <see langword="null"/>, если не наблюдалось.</param>
@@ -256,15 +256,15 @@ internal static partial class AzurPilotLog
         string package,
         string failureCode);
 
-    /// <summary>Application host сообщил ограниченный отказ остановки интерактивной сессии.</summary>
+    /// <summary>Хост приложения сообщил ограниченный отказ остановки интерактивной сессии.</summary>
     /// <param name="logger">Логгер host-а.</param>
-    /// <param name="correlationId">Correlation identifier startup.</param>
+    /// <param name="correlationId">Идентификатор корреляции запуска.</param>
     /// <param name="failureCode">Стабильный application-level код отказа.</param>
     /// <param name="failureMessage">Человекочитаемое описание отказа.</param>
     [LoggerMessage(
         EventId = 1013,
         Level = LogLevel.Error,
-        Message = "Не удалось штатно остановить application host: код {FailureCode}; "
+        Message = "Не удалось штатно остановить хост приложения: код {FailureCode}; "
             + "сообщение: {FailureMessage}; операция {CorrelationId}")]
     public static partial void OperatorHostStopFailed(
         this ILogger logger,
@@ -274,7 +274,7 @@ internal static partial class AzurPilotLog
 
     /// <summary>Отдельная лог-консоль не была открыта: причина остаётся записываемым фактом.</summary>
     /// <param name="logger">Логгер host-а.</param>
-    /// <param name="correlationId">Correlation identifier startup.</param>
+    /// <param name="correlationId">Идентификатор корреляции запуска.</param>
     /// <param name="failureCode">Стабильный application-level код отказа.</param>
     /// <param name="failureMessage">Человекочитаемое описание отказа.</param>
     [LoggerMessage(

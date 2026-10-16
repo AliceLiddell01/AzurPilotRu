@@ -26,7 +26,7 @@ namespace AzurPilot.Core.MuMu;
 /// <para>
 /// Details содержат только bounded полезное evidence: операцию, identity экземпляра, наблюдённое
 /// состояние, целевое состояние, фазу, код выхода mutation и затраченное время. Полный stdout/stderr
-/// control utility, пути установки и прочие machine-specific данные в details не попадают.
+/// утилита управления, пути установки и прочие machine-specific данные в details не попадают.
 /// </para>
 /// </remarks>
 public static class MuMuFailures

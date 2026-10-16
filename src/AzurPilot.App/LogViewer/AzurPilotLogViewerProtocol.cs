@@ -4,12 +4,12 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
+using AzurPilot.App.Diagnostics;
 
 namespace AzurPilot.App.LogViewer;
 
 /// <summary>
-/// Единственный владелец канала «application host → отдельная лог-консоль»: пределы полей,
+/// Единственный владелец канала «хост приложения → отдельная лог-консоль»: пределы полей,
 /// санитизация внешнего текста, построчный JSON-формат и handshake.
 /// </summary>
 /// <remarks>
@@ -27,7 +27,7 @@ namespace AzurPilot.App.LogViewer;
 /// длине, а превышение отклоняется детерминированно, а не приводит к неограниченному буферу.
 /// </para>
 /// </remarks>
-internal static partial class AzurPilotLogViewerProtocol
+internal static class AzurPilotLogViewerProtocol
 {
     /// <summary>Версия протокола канала.</summary>
     internal const int Version = 1;
@@ -96,34 +96,7 @@ internal static partial class AzurPilotLogViewerProtocol
     /// разделение слов исходного сообщения.
     /// </remarks>
     internal static string Sanitize(string? value, int maximumLength)
-    {
-        ArgumentOutOfRangeException.ThrowIfLessThan(maximumLength, 1);
-        if (string.IsNullOrEmpty(value))
-        {
-            return string.Empty;
-        }
-
-        StringBuilder clean = new(Math.Min(value.Length, maximumLength));
-        foreach (Rune rune in value.EnumerateRunes())
-        {
-            string text = Rune.IsControl(rune) ? " " : rune.ToString();
-            if (clean.Length + text.Length > maximumLength)
-            {
-                if (clean.Length > maximumLength - 1)
-                {
-                    clean.Length -= clean.Length >= 2 && char.IsLowSurrogate(clean[^1])
-                        && char.IsHighSurrogate(clean[^2]) ? 2 : 1;
-                }
-
-                _ = clean.Append('…');
-                return clean.ToString();
-            }
-
-            _ = clean.Append(text);
-        }
-
-        return clean.ToString();
-    }
+        => AzurPilotLogSanitizer.Sanitize(value, maximumLength);
 
     /// <summary>Ограничивает необязательное значение, сохраняя его отсутствие.</summary>
     /// <param name="value">Внешний текст или <see langword="null"/>.</param>
@@ -136,7 +109,7 @@ internal static partial class AzurPilotLogViewerProtocol
     }
 
     /// <summary>Приводит запись к пределам канала: санитизация полей и обрезка набора properties.</summary>
-    /// <param name="logEvent">Запись, построенная логгером application host.</param>
+    /// <param name="logEvent">Запись, построенная логгером хоста приложения.</param>
     /// <returns>Запись, сериализация которой гарантированно укладывается в строку канала.</returns>
     internal static AzurPilotLogViewerEvent Bound(AzurPilotLogViewerEvent logEvent)
     {
@@ -145,7 +118,7 @@ internal static partial class AzurPilotLogViewerProtocol
         return logEvent with
         {
             Category = Sanitize(logEvent.Category, MaximumCategoryLength),
-            Message = Sanitize(Redact(logEvent.Message ?? string.Empty), MaximumMessageLength),
+            Message = AzurPilotLogSanitizer.Message(logEvent.Message ?? string.Empty, logEvent.Properties, MaximumMessageLength),
             EventId = SanitizeOptional(logEvent.EventId, MaximumIdentifierLength),
             CorrelationId = SanitizeOptional(logEvent.CorrelationId, MaximumIdentifierLength),
             Properties = BoundProperties(logEvent.Properties),
@@ -171,15 +144,6 @@ internal static partial class AzurPilotLogViewerProtocol
         int written = LineEncoding.GetBytes(line, payload);
         payload[written] = (byte)'\n';
         return payload;
-    }
-
-    /// <summary>Кодирует строку без разделителя.</summary>
-    /// <param name="line">Строка протокола.</param>
-    /// <returns>Байты UTF-8 строки.</returns>
-    internal static byte[] Encode(string line)
-    {
-        ArgumentNullException.ThrowIfNull(line);
-        return LineEncoding.GetBytes(line);
     }
 
     /// <summary>Разбирает строку канала как запись журнала.</summary>
@@ -240,27 +204,12 @@ internal static partial class AzurPilotLogViewerProtocol
                 continue;
             }
 
-            bool sensitive = key.Contains("password", StringComparison.OrdinalIgnoreCase)
-                || key.Contains("token", StringComparison.OrdinalIgnoreCase)
-                || key.Contains("secret", StringComparison.OrdinalIgnoreCase)
-                || key.Contains("key", StringComparison.OrdinalIgnoreCase)
-                || key.Contains("authorization", StringComparison.OrdinalIgnoreCase);
-            bounded.Add(new KeyValuePair<string, string>(key, sensitive
-                ? "[скрыто]" : Sanitize(Redact(pair.Value ?? string.Empty), MaximumPropertyValueLength)));
+            bounded.Add(new KeyValuePair<string, string>(key,
+                AzurPilotLogSanitizer.Property(pair.Key, pair.Value ?? string.Empty, MaximumPropertyValueLength)));
         }
 
         return bounded.Count == 0 ? null : bounded.AsReadOnly();
     }
-
-    private static string Redact(string text)
-        => SecretPattern().Replace(BearerPattern().Replace(text, "Bearer [скрыто]"), "$1=[скрыто]");
-
-    [GeneratedRegex(@"\b(password|passwd|token|secret|api[_-]?key|authorization)\s*[:=]\s*.+",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
-    private static partial Regex SecretPattern();
-
-    [GeneratedRegex(@"\bBearer\s+\S+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
-    private static partial Regex BearerPattern();
 }
 
 /// <summary>Source-generated метаданные единственного типа, который ходит по каналу.</summary>

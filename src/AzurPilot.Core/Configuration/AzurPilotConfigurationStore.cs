@@ -24,6 +24,21 @@ public static class AzurPilotConfigurationStore
     public static ApplicationResult<AzurPilotConfigurationSnapshot> Save(
         string yamlPath, string jsonPath, AzurPilotConfigurationSnapshot expected,
         AzurPilotConfiguration configuration, out string? backupPath)
+        => Save(yamlPath, jsonPath, expected, configuration, out backupPath, ConfigurationFileOperations.System);
+
+    internal static ApplicationResult<AzurPilotConfigurationSnapshot> Save(
+        string yamlPath, string jsonPath, AzurPilotConfigurationSnapshot expected,
+        AzurPilotConfiguration configuration, out string? backupPath, ConfigurationFileOperations files)
+    {
+        lock (ConfigurationFileOperations.WriteGate)
+        {
+            return SaveCore(yamlPath, jsonPath, expected, configuration, out backupPath, files);
+        }
+    }
+
+    private static ApplicationResult<AzurPilotConfigurationSnapshot> SaveCore(
+        string yamlPath, string jsonPath, AzurPilotConfigurationSnapshot expected,
+        AzurPilotConfiguration configuration, out string? backupPath, ConfigurationFileOperations files)
     {
         backupPath = null;
         ArgumentNullException.ThrowIfNull(expected);
@@ -35,10 +50,7 @@ public static class AzurPilotConfigurationStore
             return current;
         }
 
-        if (current.Value!.Configuration != expected.Configuration
-            || current.Value.SourceFormat != expected.SourceFormat
-            || current.Value.Source != expected.Source
-            || !string.Equals(current.Value.FilePath, expected.FilePath, StringComparison.Ordinal))
+        if (!current.Value!.HasSameSource(expected))
         {
             return Invalid("Конфигурация изменилась вне приложения. Перезапустите приложение перед сохранением.");
         }
@@ -46,7 +58,7 @@ public static class AzurPilotConfigurationStore
         if (current.Value.SourceFormat == AzurPilotConfigurationFormat.Json)
         {
             ApplicationResult<AzurPilotConfigurationMigrationResult> migrated =
-                AzurPilotConfigurationMigration.SaveLegacyJsonAsYaml(jsonPath, yamlPath, current.Value, configuration);
+                AzurPilotConfigurationMigration.SaveLegacyJsonAsYaml(jsonPath, yamlPath, current.Value, configuration, files);
             if (migrated.IsFailure)
             {
                 return ApplicationResult<AzurPilotConfigurationSnapshot>.Failure(migrated.FailureInfo!);
@@ -69,18 +81,52 @@ public static class AzurPilotConfigurationStore
                 return Invalid("Настройки не соответствуют канонической схеме; исходный файл сохранён.");
             }
 
-            if (current.Value.SourceFormat == AzurPilotConfigurationFormat.Yaml)
+            // Повторное чтение обнаруживает изменения во время подготовки кандидата.
+            ApplicationResult<AzurPilotConfigurationSnapshot> latest = AzurPilotConfigurationLoader.LoadFromSources(yamlPath, jsonPath);
+            if (latest.IsFailure || !latest.Value!.HasSameSource(expected))
             {
-                backupPath = yamlPath + $".bak-{Guid.NewGuid():N}";
-                File.Copy(yamlPath, backupPath, overwrite: false);
+                return Invalid("Конфигурация изменилась во время сохранения; исходный файл сохранён.");
             }
 
-            File.Move(temporary, yamlPath, overwrite: current.Value.Source != AzurPilotConfigurationSource.BuiltInDefaults);
-            return AzurPilotConfigurationLoader.LoadFromSources(yamlPath, jsonPath);
+            if (current.Value.SourceFormat == AzurPilotConfigurationFormat.Yaml)
+            {
+                // Запрещаем запись в открытый файл, разрешая атомарную замену имени. Чужая замена
+                // имени всё ещё возможна: File.Replace сохраняет именно вытесненные байты в backup.
+                using FileStream source = new(yamlPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+                backupPath = yamlPath + $".bak-{Guid.NewGuid():N}";
+                files.Replace(temporary, yamlPath, backupPath);
+                if (ConfigurationFileOperations.VersionOfFile(backupPath) != expected.SourceVersion)
+                {
+                    string recovery = yamlPath + $".conflict-{Guid.NewGuid():N}";
+                    try
+                    {
+                        // Обратная замена тоже сохраняет вытесненный файл: даже последующая чужая
+                        // запись не теряется при восстановлении обнаруженной версии.
+                        File.Replace(backupPath, yamlPath, recovery);
+                    }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+                    {
+                        return Invalid($"Конфликт сохранения. Внешние правки сохранены в «{backupPath}». "
+                            + $"Не удалось восстановить источник: {exception.Message}. Проверьте YAML перед перезапуском.");
+                    }
+
+                    return Invalid($"Конфликт сохранения: внешняя версия восстановлена; вытесненный файл сохранён в «{recovery}». "
+                        + "Повторно прочитайте настройки перед сохранением.");
+                }
+            }
+            else
+            {
+                files.Move(temporary, yamlPath);
+            }
+
+            ApplicationResult<AzurPilotConfigurationSnapshot> final = AzurPilotConfigurationLoader.LoadFromSources(yamlPath, jsonPath);
+            return final.IsSuccess && final.Value!.SourceVersion == validated.Value.SourceVersion
+                ? final : Invalid("Источники изменились после записи. Проверьте YAML и резервную копию перед повтором.");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
         {
-            return Invalid("Не удалось сохранить настройки: " + exception.Message);
+            return Invalid("Не удалось сохранить настройки: " + exception.Message
+                + (backupPath is null ? string.Empty : $". Путь резервной копии: «{backupPath}»."));
         }
         finally
         {

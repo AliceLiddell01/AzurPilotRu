@@ -8,12 +8,12 @@ using AzurPilot.Core.MuMu;
 namespace AzurPilot.App;
 
 /// <summary>
-/// Типизированный результат запуска application host: код выхода, correlation identifier операции,
+/// Типизированный результат запуска хоста приложения: код выхода, correlation identifier операции,
 /// ожидаемый отказ и человекочитаемый отчёт.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Ожидаемый отказ (невалидная конфигурация, недоступная или несовместимая native boundary) читается
+/// Ожидаемый отказ (невалидная конфигурация, недоступная или несовместимая граница native-кода) читается
 /// свойством <see cref="FailureInfo"/> и приводит к ненулевому <see cref="ExitCode"/>: «нездоровый»
 /// запуск не маскируется как успешный.
 /// </para>
@@ -119,16 +119,16 @@ public sealed record AzurPilotStartupResult
 
         return
         [
-            "AzurPilot: application host",
+            "AzurPilot: хост приложения",
             $"  Операция: {correlationId}",
             $"  Сборка: {application.AssemblyName} {application.InformationalVersion}",
             $"  Runtime: {application.RuntimeFramework} ({application.RuntimeIdentifier}); "
                 + $"процесс {application.ProcessArchitecture}, x64: {DescribeFlag(application.Is64BitProcess)}",
             $"  Конфигурация: {DescribeConfigurationSource(configuration)}; {DescribeSchema(configuration)}; "
                 + $"статус: {configuration.ValidationStatus}; минимальный уровень логирования: {configuration.MinimumLevel}",
-            $"  Native boundary: ABI {DescribeAbiVersion(native)}; OpenCV {DescribeOpencvVersion(native)}; "
+            $"  Граница native-кода: ABI {DescribeAbiVersion(native)}; OpenCV {DescribeOpencvVersion(native)}; "
                 + $"capability: {DescribeCapabilities(native)}; OpenCV исполнялся: {DescribeFlag(native.OpencvExecuted)}",
-            $"  Совместимость native boundary: {native.CompatibilityReason}",
+            $"  Совместимость границы native-кода: {native.CompatibilityReason}",
             $"  MuMu: {DescribeMuMu(diagnostics.MuMu)}",
             $"  Android: {DescribeAndroid(diagnostics.Android)}",
             $"  Azur Lane: {DescribeAzurLane(diagnostics.AzurLane)}",
@@ -149,7 +149,7 @@ public sealed record AzurPilotStartupResult
     {
         List<string> lines =
         [
-            "AzurPilot: application host",
+            "AzurPilot: хост приложения",
             $"  Операция: {correlationId}",
         ];
 
@@ -160,11 +160,11 @@ public sealed record AzurPilotStartupResult
                 $"  Конфигурация: {DescribeConfigurationSource(configuration)}; {DescribeSchema(configuration)}; "
                 + $"статус: {configuration.ValidationStatus}; минимальный уровень логирования: {configuration.MinimumLevel}");
 
-            // Отказ native boundary уже описывается итогом ниже, поэтому строка секции добавляется
+            // Отказ границы native-кода уже описывается итогом ниже, поэтому строка секции добавляется
             // только тогда, когда граница доступна и отказ пришёл из другого места.
             if (diagnostics.Native.Failure is null)
             {
-                lines.Add($"  Native boundary: {diagnostics.Native.CompatibilityReason}");
+                lines.Add($"  Граница native-кода: {diagnostics.Native.CompatibilityReason}");
             }
 
             // MuMu-отказ не является отказом запуска, поэтому секция MuMu описывается данными: она
@@ -215,7 +215,7 @@ public sealed record AzurPilotStartupResult
         _ = builder.Append(muMu.IsInstallationDiscovered
             ? $"установка обнаружена (версия {muMu.Version})"
             : "установка не обнаружена");
-        _ = builder.Append($"; control surface: {muMu.ControlSurfaceStatus}");
+        _ = builder.Append($"; интерфейс управления: {muMu.ControlSurfaceStatus}");
         _ = builder.Append($"; конфигурация: {muMu.ConfiguredInstance}");
 
         if (muMu.SelectedInstanceId is string instanceId)

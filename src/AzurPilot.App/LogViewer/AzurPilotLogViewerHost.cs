@@ -7,7 +7,7 @@ using Spectre.Console;
 namespace AzurPilot.App.LogViewer;
 
 /// <summary>
-/// Сторона отдельного процесса: читает канал application host и рисует журнал в своём окне.
+/// Сторона отдельного процесса: читает канал хоста приложения и рисует журнал в своём окне.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -73,7 +73,7 @@ public static class AzurPilotLogViewerHost
                 }
                 catch (OperationCanceledException)
                 {
-                    lastError = "Истекло время подключения к application host.";
+                    lastError = "Истекло время подключения к хосту приложения.";
                 }
                 catch (TimeoutException exception)
                 {
@@ -197,7 +197,7 @@ public static class AzurPilotLogViewerHost
             if (line is null)
             {
                 // Host закрыл канал: это штатное завершение, а не отказ.
-                AnsiConsole.MarkupLine("[grey]Канал журнала закрыт: application host завершил работу.[/]");
+                AnsiConsole.MarkupLine("[grey]Канал журнала закрыт: хост приложения завершил работу.[/]");
                 return AzurPilotExitCode.Success;
             }
 

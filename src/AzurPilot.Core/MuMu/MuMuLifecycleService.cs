@@ -10,7 +10,7 @@ namespace AzurPilot.Core.MuMu;
 /// <remarks>
 /// <para>
 /// Операция считается успешной только тогда, когда postcondition доказан наблюдением авторитетного
-/// host-side состояния конкретного экземпляра. Код выхода control utility доказательством не является,
+/// host-side состояния конкретного экземпляра. Код выхода утилита управления доказательством не является,
 /// а фиксированная задержка не используется как доказательство никогда: время идёт через стандартный
 /// <see cref="TimeProvider"/>, а его числа принадлежат <see cref="MuMuLifecycleTimings"/>.
 /// </para>
@@ -62,12 +62,12 @@ public sealed class MuMuLifecycleService
     /// </remarks>
     /// <param name="host">Host-side поверхность MuMu.</param>
     /// <param name="gate">
-    /// Process-local координация mutation; в application host регистрируется singleton-ом, чтобы
+    /// Process-local координация mutation; в хосте приложения регистрируется singleton-ом, чтобы
     /// гарантия действовала для всего процесса.
     /// </param>
     /// <param name="timeProvider">Источник времени для deadline, задержки и elapsed.</param>
     /// <param name="timings">Владелец интервала опроса и deadline-значений.</param>
-    /// <param name="logger">Логгер orchestration из существующего logging stack.</param>
+    /// <param name="logger">Логгер orchestration из существующей системы логирования.</param>
     /// <exception cref="ArgumentNullException">Любая из зависимостей равна <see langword="null"/>.</exception>
     public MuMuLifecycleService(
         IMuMuHost host,
@@ -238,7 +238,7 @@ public sealed class MuMuLifecycleService
     /// экземпляр уже доказанно запущен, операция выполняется как композиция: ровно одна mutation
     /// остановки → доказан <see cref="MuMuLifecycleState.Stopped"/> → ровно одна mutation запуска →
     /// доказан <see cref="MuMuLifecycleState.Running"/>. Каждая фаза доказывается наблюдением, а не кодом
-    /// выхода control utility.
+    /// выхода утилита управления.
     /// </para>
     /// <para>
     /// Для исходного состояния <see cref="MuMuLifecycleState.Stopped"/> restart определён как

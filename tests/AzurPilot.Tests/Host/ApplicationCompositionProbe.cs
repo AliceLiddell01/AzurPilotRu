@@ -157,7 +157,7 @@ internal sealed class ApplicationCompositionProbe : IDisposable
 
     /// <summary>Читает код выхода приложения, сообщённый пробой.</summary>
     /// <param name="probeOutput">Содержимое stdout процесса-пробы.</param>
-    /// <returns>Код выхода application host.</returns>
+    /// <returns>Код выхода хоста приложения.</returns>
     /// <exception cref="InvalidOperationException">Проба не сообщила код выхода приложения.</exception>
     private static int ReadApplicationExitCode(string probeOutput)
     {
@@ -217,7 +217,7 @@ internal sealed class ApplicationCompositionProbe : IDisposable
 
 /// <summary>Результат прогона пробы, выполнившей application startup.</summary>
 /// <param name="ProbeExitCode">Код выхода процесса-пробы: 0 — прогон корректен.</param>
-/// <param name="ApplicationExitCode">Код выхода application host, сообщённый пробой.</param>
+/// <param name="ApplicationExitCode">Код выхода хоста приложения, сообщённый пробой.</param>
 /// <param name="StandardOutput">Содержимое stdout процесса-пробы.</param>
 /// <param name="StandardError">Содержимое stderr процесса-пробы.</param>
 /// <param name="Logs">Structured записи, прочитанные из stderr процесса-пробы.</param>

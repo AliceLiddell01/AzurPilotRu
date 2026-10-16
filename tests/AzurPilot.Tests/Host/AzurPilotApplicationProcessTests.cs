@@ -54,7 +54,7 @@ public sealed class AzurPilotApplicationProcessTests
 
         // stderr — только project-owned события приложения: чужих категорий логирования на уровне
         // Information и выше здесь нет. С появлением реальной MuMu-capability проект владеет не только
-        // категорией application host, но и категориями MuMu-владельцев (discovery — Windows-адаптер,
+        // категорией хоста приложения, но и категориями MuMu-владельцев (discovery — Windows-адаптер,
         // выбор экземпляра — Core orchestration); чужой шум этим не разрешается. Пользовательская
         // конфигурация может опустить минимальный уровень до Debug/Trace, и тогда внутренний шум generic
         // host попадает в stderr по её выбору.
@@ -122,7 +122,7 @@ public sealed class AzurPilotApplicationProcessTests
         Assert.All(run.Logs, log => Assert.Equal(traceIdentifier, log.TraceId));
         Assert.Contains(traceIdentifier, reportedIdentifiers);
 
-        // Application host передаёт identifier и явным structured property: записи его владельца обязаны
+        // Хост приложения передаёт identifier и явным structured property: записи его владельца обязаны
         // нести тот же identifier, что и scope.
         IReadOnlyList<StructuredLogRecord> applicationLogs =
             [.. run.Logs.Where(log => log.CorrelationId is not null)];

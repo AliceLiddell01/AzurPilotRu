@@ -9,7 +9,7 @@ namespace AzurPilot.Tests.MuMu;
 /// </summary>
 /// <remarks>
 /// Переход доказывается наблюдением авторитетного состояния конкретного экземпляра, а не кодом выхода
-/// control utility и не фиксированной задержкой. Время идёт через управляемый
+/// утилита управления и не фиксированной задержкой. Время идёт через управляемый
 /// <see cref="MuMuTestTimeProvider"/>, поэтому fixed sleeps не используются.
 /// </remarks>
 public sealed class MuMuLifecycleStartStopTests

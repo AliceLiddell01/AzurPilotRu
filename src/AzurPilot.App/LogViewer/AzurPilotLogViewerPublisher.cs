@@ -8,11 +8,11 @@ using Microsoft.Extensions.Logging;
 namespace AzurPilot.App.LogViewer;
 
 /// <summary>
-/// Сторона application host: публикует структурированные события журнала в отдельный процесс viewer-а.
+/// Сторона хоста приложения: публикует структурированные события журнала в отдельный процесс viewer-а.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Это read-only consumer, а не второй application host: publisher только отправляет события и не
+/// Этот потребитель журнала не управляет приложением: publisher только отправляет события и не
 /// принимает ни одной команды управления. Канал однонаправленный, ограничен текущим пользователем, а
 /// публикация никогда не блокирует вызывающий поток — при переполнении записи отбрасываются со
 /// счётчиком, который затем сообщается viewer-у отдельной записью.
@@ -60,15 +60,16 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
         _clientReader = Task.Run(() => DiscardClientInputAsync(_shutdown.Token), CancellationToken.None);
     }
 
-    /// <summary>Провайдер логирования для подключения в logging stack application host.</summary>
+    /// <summary>Провайдер логирования для подключения к системе логирования хоста приложения.</summary>
     public ILoggerProvider Provider => _provider;
 
-    /// <summary>Живы writer и read-only consumer текущего канала.</summary>
+    /// <summary>Живы отправитель и читатель текущего канала.</summary>
     internal bool IsConnected => !_writer.IsCompleted && !_clientReader.IsCompleted && _server.IsConnected;
 
-    /// <summary>Проверяет закрытие consumer-а реальным I/O, а не кэшированным флагом Named Pipe.</summary>
+    /// <summary>Проверяет закрытие читателя реальным I/O, а не кэшированным флагом Named Pipe.</summary>
     internal async Task<bool> CheckConnectionAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!IsConnected)
         {
             return false;
@@ -81,8 +82,8 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
             await _outputGate.WaitAsync(probe.Token).ConfigureAwait(false);
             try
             {
-                // Пустой frame viewer игнорирует. Общий gate не даёт ему разорвать JSON-событие;
-                // запись в закрытый канал обнаруживает EOF даже до обработки read continuation.
+                // Пустую запись viewer игнорирует. Общий семафор не даёт ему разорвать JSON-событие;
+                // запись в закрытый канал обнаруживает EOF даже до завершения асинхронного чтения.
                 await _server.WriteAsync(AzurPilotLogViewerProtocol.EncodeLine(string.Empty), probe.Token).ConfigureAwait(false);
                 await _server.FlushAsync(probe.Token).ConfigureAwait(false);
                 return IsConnected;
@@ -92,8 +93,12 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
                 _ = _outputGate.Release();
             }
         }
-        catch (Exception exception) when (exception is IOException or ObjectDisposedException
-            || exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Тайм-аут занятой записи не доказывает закрытие подключённого читателя.
+            return IsConnected;
+        }
+        catch (Exception exception) when (exception is IOException or ObjectDisposedException)
         {
             return false;
         }
@@ -101,10 +106,6 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
 
     /// <summary>Число событий, отброшенных из-за переполнения очереди.</summary>
     internal long DroppedCount => Interlocked.Read(ref _totalDroppedCount);
-
-    /// <summary>Доступно ли открытие отдельного окна терминала в этой среде.</summary>
-    /// <returns><see langword="true"/>, если <c>wt.exe</c> найден в <c>PATH</c>.</returns>
-    public static bool IsWindowHostAvailable() => WindowsTerminalWindowHost.Instance.IsAvailable;
 
     /// <summary>Открывает отдельное окно viewer-а и канал к нему.</summary>
     /// <param name="viewerLevel">Минимальный уровень, который должен показывать viewer.</param>
@@ -187,7 +188,7 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
     /// <summary>
     /// Публикует событие журнала, не блокируя вызывающий поток.
     /// </summary>
-    /// <param name="logEvent">Событие application host.</param>
+    /// <param name="logEvent">Событие хоста приложения.</param>
     /// <remarks>
     /// Поля приводятся к пределам канала и санитизируются до постановки в очередь, поэтому недоверенный
     /// текст не доходит до чужого терминала даже при мгновенном чтении.
@@ -313,7 +314,7 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
                 if (received > AzurPilotLogViewerProtocol.MaximumLineBytes)
                 {
                     // Никакие команды после handshake не разбираются. Заливающий вход клиент
-                    // отключается; application host и его production-состояние не затрагиваются.
+                    // отключается; хост приложения и состояние приложения не затрагиваются.
                     _server.Disconnect();
                     break;
                 }
@@ -321,7 +322,7 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
         }
         catch (Exception exception) when (exception is IOException or OperationCanceledException or ObjectDisposedException)
         {
-            // Закрытие consumer-а не является отказом application host.
+            // Закрытие читателя не является отказом хоста приложения.
         }
     }
 
@@ -462,10 +463,6 @@ public sealed class AzurPilotLogViewerPublisher : IAsyncDisposable
 
                     properties ??= [];
                     properties.Add(new KeyValuePair<string, string>(pair.Key, text));
-                    if (properties.Count == AzurPilotLogViewerProtocol.MaximumPropertyCount)
-                    {
-                        break;
-                    }
                 }
 
                 return properties;

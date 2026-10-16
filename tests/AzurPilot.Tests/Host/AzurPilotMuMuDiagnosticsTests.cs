@@ -23,12 +23,12 @@ namespace AzurPilot.Tests.Host;
 /// <para>
 /// Проверки выполняются на реально построенном host-е: подменяется только host-side граница MuMu, поэтому
 /// остальной production-код диагностики — разрешение экземпляра через Core orchestration, bounded-форма
-/// секции и логирование — остаётся тем же. Ни установленная MuMu, ни реальный control utility для этих
+/// секции и логирование — остаётся тем же. Ни установленная MuMu, ни реальный утилита управления для этих
 /// проверок не требуются.
 /// </para>
 /// <para>
 /// Секция не является исключением из правила «ожидаемый отказ — данные»: отсутствие установки,
-/// неподдерживаемая control surface, неразрешённый выбор экземпляра и наблюдённый <c>Stopped</c> обязаны
+/// неподдерживаемая интерфейс управления, неразрешённый выбор экземпляра и наблюдённый <c>Stopped</c> обязаны
 /// возвращаться данными, а не отклонять запуск.
 /// </para>
 /// </remarks>
@@ -38,22 +38,22 @@ public sealed class AzurPilotMuMuDiagnosticsTests
     /// <summary>Версия схемы, которую объявляет legacy-документ v1.</summary>
     private const int LegacySchemaVersion = 1;
 
-    /// <summary>Bounded статус control surface: форма распознана.</summary>
+    /// <summary>Ограниченный статус интерфейс управления: форма распознана.</summary>
     private const string SupportedStatus = "supported";
 
-    /// <summary>Bounded статус control surface: форма не поддерживается.</summary>
+    /// <summary>Ограниченный статус интерфейс управления: форма не поддерживается.</summary>
     private const string UnsupportedStatus = "unsupported";
 
-    /// <summary>Bounded статус control surface: установка не обнаружена.</summary>
+    /// <summary>Ограниченный статус интерфейс управления: установка не обнаружена.</summary>
     private const string AbsentStatus = "absent";
 
-    /// <summary>Bounded статус control surface: поддержку доказать не удалось.</summary>
+    /// <summary>Ограниченный статус интерфейс управления: поддержку доказать не удалось.</summary>
     private const string UnknownStatus = "unknown";
 
     /// <summary>Синтетический корень установки: в исходниках проверок нет machine-specific путей.</summary>
     private const string InstallRootSentinel = "install-root-sentinel";
 
-    /// <summary>Синтетический путь control surface установки.</summary>
+    /// <summary>Синтетический путь интерфейс управления установки.</summary>
     private const string ControlExecutableSentinel = "control-executable-sentinel";
 
     /// <summary>Хвост длинного evidence: до bounded-секции он доходить не должен.</summary>
@@ -100,7 +100,7 @@ public sealed class AzurPilotMuMuDiagnosticsTests
         Assert.Equal(0, host.MutationCount);
     }
 
-    [Fact(DisplayName = "Неподдерживаемая control surface отображается как unsupported, а не как отсутствие MuMu")]
+    [Fact(DisplayName = "Неподдерживаемая интерфейс управления отображается как unsupported, а не как отсутствие MuMu")]
     public void UnsupportedControlSurfaceIsReportedAsUnsupported()
     {
         TestMuMuHost host = new()
@@ -312,7 +312,7 @@ public sealed class AzurPilotMuMuDiagnosticsTests
 
         AzurPilotMuMuDiagnostics muMu = Capture(CurrentSchemaConfiguration("auto"), host).MuMu;
 
-        // Один snapshot не утверждает одновременно «форма control surface поддержана» и «форма control
+        // Один snapshot не утверждает одновременно «форма интерфейс управления поддержана» и «форма control
         // surface не распознана»: статус выводится из кода отказа наблюдения.
         Assert.Equal(UnsupportedStatus, muMu.ControlSurfaceStatus);
         Assert.Equal(ApplicationFailure.MuMuControlSurfaceUnsupported, muMu.Failure!.Code);

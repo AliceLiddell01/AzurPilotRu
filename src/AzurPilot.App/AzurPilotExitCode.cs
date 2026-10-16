@@ -2,7 +2,7 @@ using AzurPilot.Core.Failures;
 
 namespace AzurPilot.App;
 
-/// <summary>Коды выхода процесса application host.</summary>
+/// <summary>Коды выхода процесса хоста приложения.</summary>
 /// <remarks>
 /// <para>
 /// Код выхода — часть контракта startup: ожидаемый отказ завершает запуск явным предсказуемым
@@ -19,7 +19,7 @@ public static class AzurPilotExitCode
     /// <summary>Запуск завершён успешно.</summary>
     public const int Success = 0;
 
-    /// <summary>Внутренняя ошибка application host, не сводимая к ожидаемым отказам.</summary>
+    /// <summary>Внутренняя ошибка хоста приложения, не сводимая к ожидаемым отказам.</summary>
     public const int InternalError = 1;
 
     /// <summary>Конфигурация существует, но не соответствует схеме.</summary>
@@ -28,10 +28,10 @@ public static class AzurPilotExitCode
     /// <summary>Версия схемы конфигурации не поддерживается этой сборкой.</summary>
     public const int ConfigurationSchemaUnsupported = 3;
 
-    /// <summary>Native boundary недоступна.</summary>
+    /// <summary>Граница native-кода недоступна.</summary>
     public const int NativeUnavailable = 4;
 
-    /// <summary>Native boundary несовместима с ожидаемым ABI.</summary>
+    /// <summary>Граница native-кода несовместима с ожидаемым ABI.</summary>
     public const int NativeIncompatible = 5;
 
     /// <summary>Операция отменена.</summary>

@@ -24,7 +24,7 @@ public sealed class AzurPilotOperation : IDisposable
     /// <summary>Имя <see cref="ActivitySource"/> приложения.</summary>
     public const string SourceName = "AzurPilot.App";
 
-    /// <summary>Имя операции запуска application host.</summary>
+    /// <summary>Имя операции запуска хоста приложения.</summary>
     public const string StartupActivityName = "azurpilot.startup";
 
     /// <summary>Имя шага загрузки пользовательской конфигурации.</summary>

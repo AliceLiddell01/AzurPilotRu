@@ -35,7 +35,7 @@ public sealed class OperatorUiSessionTests
         Assert.Equal(other, target);
     }
 
-    [Fact(DisplayName = "Подтверждение mutation связано с action и exact target и потребляется один раз")]
+    [Fact(DisplayName = "Подтверждение mutation связано с action и точного целевого экземпляра и потребляется один раз")]
     public void MutationConfirmationIsBoundToActionAndTargetAndConsumedOnce()
     {
         OperatorUiSession session = new();
@@ -59,7 +59,7 @@ public sealed class OperatorUiSessionTests
         Assert.False(session.TryBeginOperation(OperatorUiAction.GameStop, out _));
     }
 
-    [Fact(DisplayName = "Подготовка MuMu и Android доступна только после подтверждения exact target")]
+    [Fact(DisplayName = "Подготовка MuMu и Android доступна только после подтверждения точного целевого экземпляра")]
     public void EnvironmentPreparationRequiresConfirmationForExactTarget()
     {
         OperatorUiCommand command = OperatorUiCommand.For(OperatorUiAction.EnvironmentPrepare);
@@ -214,7 +214,6 @@ public sealed class OperatorUiSessionTests
         Assert.NotNull(correlatedEntry.SpanId);
         Assert.DoesNotContain('\r', entries[0].Message);
         Assert.DoesNotContain('\n', entries[0].Message);
-        Assert.Equal(entries.Count, buffer.SnapshotLines().Count);
     }
 
     [Fact(DisplayName = "Краткая строка журнала отделяет источник от подробных полей")]

@@ -4,14 +4,14 @@ namespace AzurPilot.App.OperatorUi;
 
 /// <summary>Реально доступные действия операторской поверхности.</summary>
 /// <remarks>
-/// Перечисление описывает только существующие production use cases. Отсутствующие capability (bot
+/// Перечисление описывает только существующие сценарии приложения. Отсутствующие capability (bot
 /// backend, задачи бота, настройки нереализованных подсистем) здесь не представлены.
 /// </remarks>
 public enum OperatorUiAction
 {
     /// <summary>Краткое read-only состояние среды.</summary>
     Status,
-    /// <summary>Read-only диагностика приложения с полными техническими деталями.</summary>
+    /// <summary>Диагностика приложения с полными техническими деталями без изменения состояния.</summary>
     Diagnostics,
     /// <summary>Inventory MuMu.</summary>
     Instances,
@@ -23,21 +23,21 @@ public enum OperatorUiAction
     MuMuStop,
     /// <summary>Перезапуск выбранного MuMu.</summary>
     MuMuRestart,
-    /// <summary>Read-only Android observation.</summary>
+    /// <summary>Наблюдение за Android без изменения состояния.</summary>
     AndroidObserve,
     /// <summary>Явная подготовка Android transport.</summary>
     AndroidPrepare,
     /// <summary>Запуск целевого MuMu и подготовка Android readiness без запуска игры.</summary>
     EnvironmentPrepare,
     /// <summary>
-    /// Read-only разрешение точной identity целевого экземпляра по конфигурации.
+    /// Определение точного идентификатора целевого экземпляра по конфигурации без изменения состояния.
     /// </summary>
     /// <remarks>
     /// Внутренний шаг пользовательского действия «Запустить окружение»: он не является отдельным
     /// пунктом меню, потому что оператор не должен различать разрешение target и саму подготовку.
     /// </remarks>
     ResolveTarget,
-    /// <summary>Read-only Azur Lane observation.</summary>
+    /// <summary>Наблюдение за Azur Lane без изменения состояния.</summary>
     GameObserve,
     /// <summary>Запуск Azur Lane.</summary>
     GameStart,
@@ -68,7 +68,7 @@ public enum OperatorUiCategory
     Environment,
     /// <summary>Android transport и readiness.</summary>
     Android,
-    /// <summary>Lifecycle Azur Lane Global/EN.</summary>
+    /// <summary>Жизненный цикл Azur Lane Global/EN.</summary>
     Game,
     /// <summary>Технические сведения, screenshot и диагностические результаты.</summary>
     Diagnostics,
@@ -96,7 +96,7 @@ public sealed record OperatorUiCategoryDefinition(
 /// прямом вводе, но не занимают строку меню.
 /// </param>
 /// <param name="TechnicalAlias">Совместимое техническое имя, доступное только в manual/diagnostic.</param>
-/// <param name="InternalOnly">Внутренний шаг orchestration, который не принимается из composer.</param>
+/// <param name="InternalOnly">Внутренний шаг orchestration, который не принимается из поля ввода.</param>
 public sealed record OperatorUiCommand(
     OperatorUiAction Action,
     string Command,

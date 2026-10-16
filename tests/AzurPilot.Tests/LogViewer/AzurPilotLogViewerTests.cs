@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System.IO.Pipes;
 using AzurPilot.App;
 using AzurPilot.App.LogViewer;
+using AzurPilot.App.OperatorServices;
+using AzurPilot.App.OperatorUi;
 using AzurPilot.Core.Failures;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -18,7 +20,7 @@ public sealed class AzurPilotLogViewerTests
 {
     private static readonly TimeSpan ShortTimeout = TimeSpan.FromMilliseconds(400);
 
-    [Fact(DisplayName = "Настоящий процесс viewer читает события по IPC без второго application host и чисто выходит")]
+    [Fact(DisplayName = "Настоящий процесс viewer читает события по IPC без второго хоста приложения и чисто выходит")]
     public async Task RealViewerProcessReceivesEventsAndExitsWithHost()
     {
         using ProcessWindowHost window = new();
@@ -41,7 +43,7 @@ public sealed class AzurPilotLogViewerTests
         Assert.Contains("сообщение-1", rendered, StringComparison.Ordinal);
         Assert.Contains("WARN", rendered, StringComparison.Ordinal);
         Assert.Contains("ERROR", rendered, StringComparison.Ordinal);
-        Assert.DoesNotContain("Native boundary", rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain("Граница native-кода", rendered, StringComparison.Ordinal);
     }
 
     [Fact(DisplayName = "Маскирование защищает сообщения и structured properties от утечки секретов")]
@@ -102,8 +104,11 @@ public sealed class AzurPilotLogViewerTests
             opened.Add(stand);
             return ApplicationResult<AzurPilotLogViewerPublisher>.Success(stand.Publisher);
         });
+        ILogger retainedLogger = session.CreateLogger("AzurPilot.Tests");
         Assert.True((await session.OpenAsync(TestContext.Current.CancellationToken)).IsSuccess);
         Assert.True((await session.OpenAsync(TestContext.Current.CancellationToken)).IsSuccess);
+        retainedLogger.Log(LogLevel.Information, new EventId(1), "До переподключения", null, static (state, _) => state);
+        Assert.Equal("До переподключения", (await opened[0].Viewer.WaitForCountAsync(1))[0].Message);
         _ = Assert.Single(opened);
         for (int index = 0; index < reconnects; index++)
         {
@@ -113,13 +118,131 @@ public sealed class AzurPilotLogViewerTests
             Assert.Equal(index + 2, opened.Count);
         }
 
-        session.CreateLogger("AzurPilot.Tests").Log(LogLevel.Information, new EventId(1),
+        retainedLogger.Log(LogLevel.Information, new EventId(1),
             "Журнал восстановлен", null, static (state, _) => state);
         Assert.Equal("Журнал восстановлен", (await opened[^1].Viewer.WaitForCountAsync(1))[0].Message);
         foreach (LogViewerStand stand in opened)
         {
             await stand.DisposeAsync();
         }
+    }
+
+    [Fact(DisplayName = "Медленный подключённый читатель не вызывает открытие второго окна")]
+    public async Task SlowConnectedReaderDoesNotReopenWindow()
+    {
+        await using LogViewerStand stand = LogViewerStand.Start(handshake: true, read: false);
+        int opens = 0;
+        await using AzurPilotLogViewerSession session = new(LogLevel.Information, () =>
+        {
+            opens++;
+            return ApplicationResult<AzurPilotLogViewerPublisher>.Success(stand.Publisher);
+        });
+        Assert.True((await session.OpenAsync(TestContext.Current.CancellationToken)).IsSuccess);
+        for (int i = 0; i < 4096; i++)
+        {
+            stand.Publisher.Publish(Event(i) with { Message = new string('я', 2048) });
+        }
+
+        Assert.True(stand.Publisher.DroppedCount > 0);
+        Assert.True((await session.OpenAsync(TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.Equal(1, opens);
+        Assert.True(stand.Publisher.IsConnected);
+    }
+
+    [Fact(DisplayName = "Отмена проверки занятого канала не превращается в disconnect")]
+    public async Task ConnectionProbeHonorsCallerCancellation()
+    {
+        await using LogViewerStand stand = LogViewerStand.Start(handshake: true, read: false);
+        for (int i = 0; i < 4096; i++)
+        {
+            stand.Publisher.Publish(Event(i) with { Message = new string('я', 2048) });
+        }
+
+        using CancellationTokenSource cancellation = new();
+        Task<bool> probe = stand.Publisher.CheckConnectionAsync(cancellation.Token);
+        cancellation.Cancel();
+        _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probe);
+        Assert.True(stand.Publisher.IsConnected);
+    }
+
+    [Fact(DisplayName = "Завершение дожидается открытия, освобождает publisher и запрещает повторный запрос")]
+    public async Task DisposeCoordinatesWithPendingOpen()
+    {
+        await using LogViewerStand stand = LogViewerStand.Start(handshake: true);
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using ManualResetEventSlim release = new();
+        await using AzurPilotLogViewerSession session = new(LogLevel.Information, () =>
+        {
+            entered.SetResult();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+            return ApplicationResult<AzurPilotLogViewerPublisher>.Success(stand.Publisher);
+        });
+        Task<ApplicationResult<bool>> opening = session.OpenAsync(TestContext.Current.CancellationToken);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        Task disposal = session.DisposeAsync().AsTask();
+        try
+        {
+            Assert.False(disposal.IsCompleted);
+        }
+        finally
+        {
+            release.Set();
+        }
+
+        Assert.True((await opening).IsSuccess);
+        await disposal.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await session.DisposeAsync();
+        Assert.False(stand.Publisher.IsConnected);
+        _ = await Assert.ThrowsAsync<ObjectDisposedException>(() => session.OpenAsync(CancellationToken.None));
+    }
+
+    [Fact(DisplayName = "Одинаковые секреты скрываются в IPC и деталях TUI; корреляция и ID сохраняются")]
+    public async Task BothLogPresentationsMaskMessagesAndProperties()
+    {
+        await using LogViewerStand stand = LogViewerStand.Start(handshake: true);
+        using AzurPilotOperatorLogBuffer buffer = new();
+        using Activity activity = new Activity("тест").Start();
+        const string secret = "sensitive-value";
+        KeyValuePair<string, object?>[] properties = [new("Password", secret), new("InstanceId", "mumu:7")];
+        foreach (ILogger logger in new[] { buffer.CreateLogger("test"), stand.Publisher.Provider.CreateLogger("test") })
+        {
+            logger.Log(LogLevel.Information, new EventId(7),
+                properties,
+                null, static (state, _) => $"Запрос {state[0].Value}; экземпляр {state[1].Value}");
+        }
+
+        AzurPilotOperatorLogEntry entry = Assert.Single(buffer.Snapshot());
+        AzurPilotLogViewerEvent received = Assert.Single(await stand.Viewer.WaitForCountAsync(1));
+        string details = string.Join("\n", OperatorUiLogPresentation.FormatTechnicalDetails(entry));
+        Assert.DoesNotContain(secret, details, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, AzurPilotLogViewerProtocol.Serialize(received), StringComparison.Ordinal);
+        Assert.Contains("mumu:7", entry.Message, StringComparison.Ordinal);
+        Assert.Contains("mumu:7", received.Message, StringComparison.Ordinal);
+        Assert.Equal("[скрыто]", entry.Properties["Password"]);
+        Assert.Equal(activity.TraceId.ToHexString(), entry.TraceId);
+        Assert.Equal(entry.TraceId, received.CorrelationId);
+    }
+
+    [Fact(DisplayName = "Секрет после лимита свойств скрывается в сообщении; безопасные ключи не маскируются")]
+    public async Task PropertyLimitDoesNotExposeInterpolatedSecret()
+    {
+        await using LogViewerStand stand = LogViewerStand.Start(handshake: true);
+        using AzurPilotOperatorLogBuffer buffer = new();
+        KeyValuePair<string, object?>[] state = [new("MonkeyId", "mumu:7"),
+            .. Enumerable.Range(1, 12).Select(index => new KeyValuePair<string, object?>($"Value{index}", index)),
+            new("Password", "late-secret")];
+        foreach (ILogger logger in new[] { buffer.CreateLogger("test"), stand.Publisher.Provider.CreateLogger("test") })
+        {
+            logger.Log(LogLevel.Information, new EventId(8), state, null,
+                static (values, _) => "Результат: " + values[^1].Value);
+        }
+
+        AzurPilotOperatorLogEntry entry = Assert.Single(buffer.Snapshot());
+        AzurPilotLogViewerEvent received = Assert.Single(await stand.Viewer.WaitForCountAsync(1));
+        Assert.DoesNotContain("late-secret", entry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("late-secret", received.Message, StringComparison.Ordinal);
+        Assert.Equal("mumu:7", entry.Properties["MonkeyId"]);
+        Assert.Equal("mumu:7", received.Properties!.First(pair => pair.Key == "MonkeyId").Value);
     }
 
     [Fact(DisplayName = "Несколько событий доходят по реальному каналу в исходном порядке")]

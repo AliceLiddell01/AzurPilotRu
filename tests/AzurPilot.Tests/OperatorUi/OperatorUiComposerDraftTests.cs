@@ -3,7 +3,7 @@ using Xunit;
 
 namespace AzurPilot.Tests.OperatorUi;
 
-/// <summary>Контракт хранения composer draft в состоянии операторской сессии.</summary>
+/// <summary>Контракт хранения черновик ввода в состоянии операторской сессии.</summary>
 [Trait("Category", "Operator")]
 public sealed class OperatorUiComposerDraftTests
 {

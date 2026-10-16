@@ -1,13 +1,14 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using AzurPilot.App.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace AzurPilot.App.OperatorServices;
 
-/// <summary>Bounded in-memory logging provider для интерактивного оператора.</summary>
+/// <summary>Провайдер журнала с ограниченным буфером в памяти для интерактивного оператора.</summary>
 /// <remarks>
-/// Provider не пишет в stdout или stderr: интерактивный renderer читает snapshot из ограниченного
-/// буфера, поэтому background host и process runners не повреждают экран Terminal.Gui.
+/// Провайдер не пишет в stdout или stderr: интерактивный интерфейс читает снимок из ограниченного
+/// буфера, поэтому фоновые операции хоста и запуск процессов не повреждают экран Terminal.Gui.
 /// </remarks>
 public sealed class AzurPilotOperatorLogBuffer : ILoggerProvider
 {
@@ -46,15 +47,6 @@ public sealed class AzurPilotOperatorLogBuffer : ILoggerProvider
         }
     }
 
-    /// <summary>Возвращает строки последних записей для отдельной log-панели TUI.</summary>
-    public IReadOnlyList<string> SnapshotLines()
-    {
-        lock (_gate)
-        {
-            return [.. _entries.Select(static entry => entry.ToDisplayLine())];
-        }
-    }
-
     /// <summary>Освобождает provider без дополнительного вывода.</summary>
     public void Dispose()
     {
@@ -72,25 +64,33 @@ public sealed class AzurPilotOperatorLogBuffer : ILoggerProvider
         Exception? exception,
         Func<TState, Exception?, string> formatter)
     {
-        string message = Bound(formatter(state, exception), MaximumMessageLength);
+        string rawMessage = formatter(state, exception);
+        if (exception is not null)
+        {
+            rawMessage += " " + exception.Message;
+        }
+
+        List<KeyValuePair<string, string>> rawProperties = [];
+        if (state is IEnumerable<KeyValuePair<string, object?>> structured)
+        {
+            rawProperties.AddRange(structured.Where(pair => pair.Key != "{OriginalFormat}")
+                .Select(pair => new KeyValuePair<string, string>(pair.Key, pair.Value?.ToString() ?? "null")));
+        }
+
+        string message = AzurPilotLogSanitizer.Message(rawMessage, rawProperties, MaximumMessageLength);
         Dictionary<string, string> properties = new(StringComparer.Ordinal);
 
-        if (state is IEnumerable<KeyValuePair<string, object?>> values)
+        if (rawProperties.Count != 0)
         {
-            foreach (KeyValuePair<string, object?> pair in values)
+            foreach (KeyValuePair<string, string> pair in rawProperties)
             {
                 if (properties.Count == MaximumPropertyCount)
                 {
                     break;
                 }
 
-                if (pair.Key == "{OriginalFormat}")
-                {
-                    continue;
-                }
-
-                string value = pair.Value?.ToString() ?? "null";
-                _ = properties.TryAdd(Bound(pair.Key, 64), Bound(value, MaximumPropertyLength));
+                _ = properties.TryAdd(Bound(pair.Key, 64),
+                    AzurPilotLogSanitizer.Property(pair.Key, pair.Value, MaximumPropertyLength));
             }
         }
 
@@ -123,10 +123,7 @@ public sealed class AzurPilotOperatorLogBuffer : ILoggerProvider
     }
 
     private static string Bound(string value, int maximumLength)
-    {
-        string singleLine = value.Replace('\r', ' ').Replace('\n', ' ').Replace('\0', ' ');
-        return singleLine.Length <= maximumLength ? singleLine : string.Concat(singleLine.AsSpan(0, maximumLength - 1), "…");
-    }
+        => AzurPilotLogSanitizer.Text(value, maximumLength);
 
     private sealed class BufferLogger(AzurPilotOperatorLogBuffer owner, string category) : ILogger
     {
@@ -159,7 +156,7 @@ public sealed class AzurPilotOperatorLogBuffer : ILoggerProvider
     }
 }
 
-/// <summary>Bounded структурированная запись log buffer.</summary>
+/// <summary>Ограниченная структурированная запись журнала.</summary>
 public sealed record AzurPilotOperatorLogEntry(
     long Sequence,
     DateTimeOffset TimestampUtc,
@@ -170,16 +167,4 @@ public sealed record AzurPilotOperatorLogEntry(
     string? TraceId,
     string? SpanId,
     string Message,
-    IReadOnlyDictionary<string, string> Properties)
-{
-    /// <summary>Формирует однострочное представление для TUI log pane.</summary>
-    public string ToDisplayLine()
-    {
-        string correlation = TraceId is null ? string.Empty : $" trace={TraceId[..Math.Min(8, TraceId.Length)]}";
-        string eventLabel = EventName.Length > 0 ? $" {EventName}" : string.Empty;
-        string properties = Properties.Count == 0
-            ? string.Empty
-            : " " + string.Join(" ", Properties.Select(static pair => $"{pair.Key}={pair.Value}"));
-        return $"{TimestampUtc:HH:mm:ss.fff} {Level,-11} {Category} [{EventId}{eventLabel}]{correlation} {Message}{properties}";
-    }
-}
+    IReadOnlyDictionary<string, string> Properties);
