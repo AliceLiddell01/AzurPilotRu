@@ -16,7 +16,8 @@ namespace AzurPilot.Core.Configuration;
 /// </remarks>
 public static class AzurPilotConfigurationPath
 {
-    private const string ApplicationFolderName = "AzurPilot";
+    /// <summary>Имя пользовательского каталога приложения внутри LocalApplicationData.</summary>
+    public const string ApplicationFolderName = "AzurPilot";
 
     private const string CanonicalConfigurationFileName = "config.yaml";
 

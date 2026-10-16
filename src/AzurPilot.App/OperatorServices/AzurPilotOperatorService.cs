@@ -7,6 +7,7 @@ using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Windows.Android;
+using AzurPilot.Windows.MuMu;
 
 namespace AzurPilot.App.OperatorServices;
 
@@ -156,6 +157,80 @@ public sealed class AzurPilotOperatorService
     /// <summary>Неизменяемая конфигурация текущего хоста приложения.</summary>
     public AzurPilotConfigurationSnapshot Configuration => _configuration;
 
+    /// <summary>Наблюдает exact MuMu без mutation.</summary>
+    public ApplicationResult<MuMuInstanceState> ObserveMuMu(MuMuInstanceId instanceId)
+    {
+        ApplicationResult<ResolvedMuMuTarget> target = ResolveMuMuTarget(instanceId);
+        return target.IsFailure ? ApplicationResult<MuMuInstanceState>.Failure(target.FailureInfo!)
+            : _muMuHost.ObserveInstanceState(target.Value!.Installation, instanceId);
+    }
+
+    /// <summary>Целая MuMu orchestration под общей для TUI и CLI межпроцессной арендой.</summary>
+    public Task<ApplicationResult<MuMuLifecycleOutcome>> RunMuMuLifecycleAsync(
+        MuMuInstanceId instanceId, MuMuLifecycleOperation operationKind, CancellationToken cancellationToken)
+    {
+        return WithMutationLeaseAsync(instanceId,
+                () => RunMuMuLifecycleCoreAsync(instanceId, operationKind, cancellationToken), cancellationToken);
+    }
+
+    /// <summary>Подготовка transport под арендой окружения.</summary>
+    public Task<ApplicationResult<AndroidTransportPreparationOutcome>> PrepareAndroidAsync(
+        MuMuInstanceId instanceId, CancellationToken cancellationToken, IProgress<AndroidReadinessStage>? progress = null)
+    {
+        return WithMutationLeaseAsync(instanceId,
+                () => PrepareAndroidCoreAsync(instanceId, cancellationToken, progress), cancellationToken);
+    }
+
+    /// <summary>Подготовка окружения и postflight под одной арендой, без повторного захвата во вложенных шагах.</summary>
+    public async Task<AzurPilotOperatorAndroidPreparationOutcome> PrepareSelectedAndroidAsync(
+        MuMuInstanceId instanceId, CancellationToken cancellationToken,
+        IProgress<AzurPilotOperatorAndroidPreparationStage>? progress = null,
+        Action<AzurPilotOperatorAndroidPreparationOutcome>? onOutcome = null,
+        AndroidMutationProgress? preparationMutationProgress = null)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return await PrepareSelectedAndroidCoreAsync(instanceId, cancellationToken, progress, onOutcome, preparationMutationProgress).ConfigureAwait(false);
+        }
+
+        ApplicationResult<FileStream> acquired = WindowsInstanceMutationLease.TryAcquire(instanceId);
+        if (acquired.IsFailure)
+        {
+            return new(instanceId, AzurPilotOperatorAndroidPreparationStage.ResolveMuMu,
+                null, false, null, null, acquired.FailureInfo);
+        }
+
+        using FileStream lease = acquired.Value!;
+        return await PrepareSelectedAndroidUnderLeaseAsync(instanceId, cancellationToken, progress, onOutcome, preparationMutationProgress).ConfigureAwait(false);
+    }
+
+    /// <summary>Подготовка окружения и запуск игры в одной критической секции.</summary>
+    public Task<ApplicationResult<AzurLaneGameLifecycleOutcome>> StartAzurLaneAsync(
+        MuMuInstanceId instanceId, CancellationToken cancellationToken,
+        IProgress<AzurPilotOperatorAndroidPreparationStage>? progress = null, Action? onGameStarting = null,
+        Action<AzurPilotOperatorAndroidPreparationOutcome>? onPreparationCompleted = null,
+        AndroidMutationProgress? mutationProgress = null,
+        AndroidMutationProgress? preparationMutationProgress = null)
+    {
+        return WithMutationLeaseAsync(instanceId,
+                () => StartAzurLaneCoreAsync(instanceId, cancellationToken, progress, onGameStarting, onPreparationCompleted, mutationProgress, preparationMutationProgress), cancellationToken);
+    }
+
+    private static async Task<ApplicationResult<T>> WithMutationLeaseAsync<T>(
+        MuMuInstanceId instanceId, Func<Task<ApplicationResult<T>>> action, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ApplicationResult<FileStream> acquired = WindowsInstanceMutationLease.TryAcquire(instanceId);
+        if (acquired.IsFailure)
+        {
+            return ApplicationResult<T>.Failure(acquired.FailureInfo!);
+        }
+
+        using FileStream lease = acquired.Value!;
+        cancellationToken.ThrowIfCancellationRequested();
+        return await action().ConfigureAwait(false);
+    }
+
     /// <summary>Повторно открывает read-only viewer; отключённая настройка применяется только при запуске.</summary>
     public Task<ApplicationResult<bool>> ReopenLogViewerAsync(CancellationToken cancellationToken)
         => _logViewer?.OpenAsync(cancellationToken) ?? Task.FromResult(ApplicationResult<bool>.Failure(new ApplicationFailure
@@ -191,7 +266,8 @@ public sealed class AzurPilotOperatorService
 
     /// <summary>Обнаруживает установку и список экземпляров MuMu, затем отдельно наблюдает каждый точный экземпляр.</summary>
     /// <returns>Список с состояниями либо отказ обнаружения или перечисления.</returns>
-    public ApplicationResult<AzurPilotOperatorMuMuInventory> DiscoverMuMuInstances()
+    public ApplicationResult<AzurPilotOperatorMuMuInventory> DiscoverMuMuInstances(
+        int maximumInstances = int.MaxValue, CancellationToken cancellationToken = default)
     {
         using AzurPilotOperation operation = AzurPilotOperation.Start(InventoryActivity);
         using Activity? step = operation.StartStep("azurpilot.operator.mumu.enumerate");
@@ -209,9 +285,19 @@ public sealed class AzurPilotOperatorService
             return ApplicationResult<AzurPilotOperatorMuMuInventory>.Failure(enumeration.FailureInfo!);
         }
 
+        if (enumeration.Value!.Count > maximumInstances)
+        {
+            return ApplicationResult<AzurPilotOperatorMuMuInventory>.Failure(new ApplicationFailure
+            {
+                Code = ApplicationFailure.AgentOutputLimitExceeded,
+                Message = "Inventory превышает предел наблюдений за один вызов.",
+            });
+        }
+
         List<AzurPilotOperatorMuMuInstance> instances = new(enumeration.Value!.Count);
         foreach (MuMuInstance instance in enumeration.Value)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             ApplicationResult<MuMuInstanceState> observation = _muMuHost.ObserveInstanceState(value, instance.Id);
             instances.Add(observation.IsSuccess
                 ? new AzurPilotOperatorMuMuInstance(instance, observation.Value, Failure: null)
@@ -258,7 +344,7 @@ public sealed class AzurPilotOperatorService
     }
 
     /// <summary>Выполняет start, stop или restart для точного экземпляра MuMu с проверкой результата.</summary>
-    public async Task<ApplicationResult<MuMuLifecycleOutcome>> RunMuMuLifecycleAsync(
+    private async Task<ApplicationResult<MuMuLifecycleOutcome>> RunMuMuLifecycleCoreAsync(
         MuMuInstanceId instanceId,
         MuMuLifecycleOperation operationKind,
         CancellationToken cancellationToken)
@@ -269,7 +355,8 @@ public sealed class AzurPilotOperatorService
             ApplicationResult<ResolvedMuMuTarget> target = ResolveMuMuTarget(instanceId);
             if (target.IsFailure)
             {
-                return ApplicationResult<MuMuLifecycleOutcome>.Failure(target.FailureInfo!);
+                return ApplicationResult<MuMuLifecycleOutcome>.Failure(
+                    WithMutationAttempted(target.FailureInfo!, attempted: false));
             }
 
             ResolvedMuMuTarget value = target.Value!;
@@ -309,10 +396,11 @@ public sealed class AzurPilotOperatorService
     }
 
     /// <summary>Явно подготавливает transport только для выбранного target и проверяет готовность Android.</summary>
-    public async Task<ApplicationResult<AndroidTransportPreparationOutcome>> PrepareAndroidAsync(
+    private async Task<ApplicationResult<AndroidTransportPreparationOutcome>> PrepareAndroidCoreAsync(
         MuMuInstanceId instanceId,
         CancellationToken cancellationToken,
-        IProgress<AndroidReadinessStage>? progress = null)
+        IProgress<AndroidReadinessStage>? progress = null,
+        AndroidMutationProgress? preparationMutationProgress = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using AzurPilotOperation operation = AzurPilotOperation.Start(AndroidPrepareActivity);
@@ -329,7 +417,7 @@ public sealed class AzurPilotOperatorService
             {
                 return await _androidReadiness.PrepareTransportAsync(
                     target.Value!.Endpoint,
-                    cancellationToken, progress).ConfigureAwait(false);
+                    cancellationToken, progress, preparationMutationProgress).ConfigureAwait(false);
             }
         }
     }
@@ -339,13 +427,15 @@ public sealed class AzurPilotOperatorService
     /// Lifecycle и readiness владеют своими deadline; новый retry или deadline не вводится. Отказ
     /// сохраняет частичный результат и не останавливает MuMu. Игра этим действием не запускается.
     /// </remarks>
-    public async Task<AzurPilotOperatorAndroidPreparationOutcome> PrepareSelectedAndroidAsync(
+    private async Task<AzurPilotOperatorAndroidPreparationOutcome> PrepareSelectedAndroidUnderLeaseAsync(
         MuMuInstanceId instanceId,
         CancellationToken cancellationToken,
-        IProgress<AzurPilotOperatorAndroidPreparationStage>? progress = null)
+        IProgress<AzurPilotOperatorAndroidPreparationStage>? progress = null,
+        Action<AzurPilotOperatorAndroidPreparationOutcome>? onOutcome = null,
+        AndroidMutationProgress? preparationMutationProgress = null)
     {
         AzurPilotOperatorAndroidPreparationOutcome outcome = await PrepareSelectedAndroidCoreAsync(
-            instanceId, cancellationToken, progress).ConfigureAwait(false);
+            instanceId, cancellationToken, progress, onOutcome, preparationMutationProgress).ConfigureAwait(false);
         if (!outcome.IsSuccess && outcome.MuMuMayRemainRunning)
         {
             // Отмена ожидания не доказывает остановку MuMu. Новое read-only наблюдение не использует
@@ -359,13 +449,16 @@ public sealed class AzurPilotOperatorService
             }
         }
 
+        onOutcome?.Invoke(outcome);
         return outcome;
     }
 
     private async Task<AzurPilotOperatorAndroidPreparationOutcome> PrepareSelectedAndroidCoreAsync(
         MuMuInstanceId instanceId,
         CancellationToken cancellationToken,
-        IProgress<AzurPilotOperatorAndroidPreparationStage>? progress)
+        IProgress<AzurPilotOperatorAndroidPreparationStage>? progress,
+        Action<AzurPilotOperatorAndroidPreparationOutcome>? onOutcome = null,
+        AndroidMutationProgress? preparationMutationProgress = null)
     {
         using AzurPilotOperation operation = AzurPilotOperation.Start(SelectedAndroidPrepareActivity);
         AzurPilotOperatorAndroidPreparationOutcome outcome = new(
@@ -374,6 +467,7 @@ public sealed class AzurPilotOperatorService
         try
         {
             progress?.Report(outcome.Stage);
+            onOutcome?.Invoke(outcome);
             cancellationToken.ThrowIfCancellationRequested();
             ApplicationResult<ResolvedMuMuTarget> resolved = ResolveMuMuTarget(instanceId);
             cancellationToken.ThrowIfCancellationRequested();
@@ -412,6 +506,7 @@ public sealed class AzurPilotOperatorService
                     MuMuStartRequested = true,
                 };
                 progress?.Report(outcome.Stage);
+                onOutcome?.Invoke(outcome);
                 ApplicationResult<MuMuLifecycleOutcome> started = await _muMuLifecycle.StartFromKnownStateAsync(
                     target.Installation, target.Instance, cancellationToken).ConfigureAwait(false);
                 if (started.IsFailure)
@@ -420,12 +515,14 @@ public sealed class AzurPilotOperatorService
                 }
 
                 outcome = outcome with { MuMuStartOutcome = started.Value! };
+                onOutcome?.Invoke(outcome);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
             outcome = outcome with { Stage = AzurPilotOperatorAndroidPreparationStage.PrepareAndroid };
             progress?.Report(outcome.Stage);
-            ApplicationResult<AndroidTransportPreparationOutcome> prepared = await PrepareAndroidAsync(
+            onOutcome?.Invoke(outcome);
+            ApplicationResult<AndroidTransportPreparationOutcome> prepared = await PrepareAndroidCoreAsync(
                 instanceId, cancellationToken,
                 new SynchronousProgress<AndroidReadinessStage>(stage =>
                 {
@@ -436,7 +533,7 @@ public sealed class AzurPilotOperatorService
                             : AzurPilotOperatorAndroidPreparationStage.PrepareAndroid,
                     };
                     progress?.Report(outcome.Stage);
-                })).ConfigureAwait(false);
+                }), preparationMutationProgress).ConfigureAwait(false);
             if (prepared.IsFailure)
             {
                 return outcome with { Failure = prepared.FailureInfo! };
@@ -444,6 +541,7 @@ public sealed class AzurPilotOperatorService
 
             AndroidTransportPreparationOutcome readiness = prepared.Value!;
             outcome = outcome with { AndroidPreparation = readiness };
+            onOutcome?.Invoke(outcome);
             cancellationToken.ThrowIfCancellationRequested();
             if (readiness.FinalTransport != AndroidTransportState.Device
                 || !readiness.Boot.ShellAvailable || readiness.Boot.BootCompleted != 1)
@@ -491,15 +589,18 @@ public sealed class AzurPilotOperatorService
     }
 
     /// <summary>Запускает Azur Lane Global/EN и возвращает доказанный итог существующей orchestration.</summary>
-    public async Task<ApplicationResult<AzurLaneGameLifecycleOutcome>> StartAzurLaneAsync(
+    private async Task<ApplicationResult<AzurLaneGameLifecycleOutcome>> StartAzurLaneCoreAsync(
         MuMuInstanceId instanceId,
         CancellationToken cancellationToken,
         IProgress<AzurPilotOperatorAndroidPreparationStage>? progress = null,
-        Action? onGameStarting = null)
+        Action? onGameStarting = null,
+        Action<AzurPilotOperatorAndroidPreparationOutcome>? onPreparationCompleted = null,
+        AndroidMutationProgress? mutationProgress = null,
+        AndroidMutationProgress? preparationMutationProgress = null)
     {
         using AzurPilotOperation operation = AzurPilotOperation.Start(GameStartActivity);
-        AzurPilotOperatorAndroidPreparationOutcome preparation = await PrepareSelectedAndroidAsync(
-            instanceId, cancellationToken, progress).ConfigureAwait(false);
+        AzurPilotOperatorAndroidPreparationOutcome preparation = await PrepareSelectedAndroidUnderLeaseAsync(
+            instanceId, cancellationToken, progress, onPreparationCompleted, preparationMutationProgress).ConfigureAwait(false);
         if (!preparation.IsSuccess)
         {
             return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(preparation.Failure! with
@@ -520,20 +621,26 @@ public sealed class AzurPilotOperatorService
         }
 
         onGameStarting?.Invoke();
-        return await RunAzurLaneLifecycleAsync(instanceId, AzurLaneAction.Start, cancellationToken).ConfigureAwait(false);
+        return await RunAzurLaneLifecycleAsync(instanceId, AzurLaneAction.Start, mutationProgress, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Останавливает Azur Lane Global/EN и возвращает доказанный итог существующей orchestration.</summary>
     public Task<ApplicationResult<AzurLaneGameLifecycleOutcome>> StopAzurLaneAsync(
         MuMuInstanceId instanceId,
-        CancellationToken cancellationToken)
-        => RunAzurLaneLifecycleAsync(instanceId, AzurLaneAction.Stop, cancellationToken);
+        CancellationToken cancellationToken,
+        AndroidMutationProgress? mutationProgress = null)
+    {
+        return WithMutationLeaseAsync(instanceId, () => RunAzurLaneLifecycleAsync(instanceId, AzurLaneAction.Stop, mutationProgress, cancellationToken), cancellationToken);
+    }
 
     /// <summary>Перезапускает Azur Lane Global/EN и возвращает доказанный итог существующей orchestration.</summary>
     public Task<ApplicationResult<AzurLaneGameLifecycleOutcome>> RestartAzurLaneAsync(
         MuMuInstanceId instanceId,
-        CancellationToken cancellationToken)
-        => RunAzurLaneLifecycleAsync(instanceId, AzurLaneAction.Restart, cancellationToken);
+        CancellationToken cancellationToken,
+        AndroidMutationProgress? mutationProgress = null)
+    {
+        return WithMutationLeaseAsync(instanceId, () => RunAzurLaneLifecycleAsync(instanceId, AzurLaneAction.Restart, mutationProgress, cancellationToken), cancellationToken);
+    }
 
     /// <summary>Захватывает screenshot точного целевого экземпляра и анализирует FullFrame и Center native ROI.</summary>
     public async Task<ApplicationResult<AzurPilotOperatorScreenshotAnalysis>> CaptureAndScanAsync(
@@ -599,29 +706,36 @@ public sealed class AzurPilotOperatorService
     private async Task<ApplicationResult<AzurLaneGameLifecycleOutcome>> RunAzurLaneLifecycleAsync(
         MuMuInstanceId instanceId,
         AzurLaneAction action,
+        AndroidMutationProgress? mutationProgress,
         CancellationToken cancellationToken)
     {
+        mutationProgress ??= new();
         using AzurPilotOperation operation = AzurPilotOperation.Start(GameLifecycleActivity);
         using (operation.StartStep("azurpilot.operator.azurlane.resolve"))
         {
             ApplicationResult<ResolvedAndroidTarget> target = ResolveAndroidTarget(instanceId);
             if (target.IsFailure)
             {
-                return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(target.FailureInfo!);
+                return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(
+                    WithMutationAttempted(target.FailureInfo!, attempted: false));
             }
 
             using (operation.StartStep("azurpilot.operator.azurlane.execute"))
             {
-                return action switch
+                ApplicationResult<AzurLaneGameLifecycleOutcome> result = action switch
                 {
                     AzurLaneAction.Start => await _gameLifecycle.StartAsync(
-                        target.Value!.Installation, target.Value.Endpoint, cancellationToken).ConfigureAwait(false),
+                        target.Value!.Installation, target.Value.Endpoint, cancellationToken, mutationProgress).ConfigureAwait(false),
                     AzurLaneAction.Stop => await _gameLifecycle.StopAsync(
-                        target.Value!.Installation, target.Value.Endpoint, cancellationToken).ConfigureAwait(false),
+                        target.Value!.Installation, target.Value.Endpoint, cancellationToken, mutationProgress).ConfigureAwait(false),
                     AzurLaneAction.Restart => await _gameLifecycle.RestartAsync(
-                        target.Value!.Installation, target.Value.Endpoint, cancellationToken).ConfigureAwait(false),
+                        target.Value!.Installation, target.Value.Endpoint, cancellationToken, mutationProgress).ConfigureAwait(false),
                     _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Неизвестная операция Azur Lane."),
                 };
+                return result.IsFailure
+                    ? ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(
+                        WithMutationAttempted(result.FailureInfo!, mutationProgress.MutationAttempted))
+                    : result;
             }
         }
     }
@@ -644,6 +758,15 @@ public sealed class AzurPilotOperatorService
         }
 
         return ApplicationResult<ResolvedMuMuTarget>.Success(new ResolvedMuMuTarget(value, resolution.Instance!));
+    }
+
+    private static ApplicationFailure WithMutationAttempted(ApplicationFailure failure, bool attempted)
+    {
+        Dictionary<string, string> details = failure.Details is null
+            ? new(StringComparer.Ordinal)
+            : new(failure.Details, StringComparer.Ordinal);
+        details[ApplicationFailure.MutationAttemptedDetailKey] = attempted ? "true" : "false";
+        return failure with { Details = details };
     }
 
     private ApplicationResult<ResolvedAndroidTarget> ResolveAndroidTarget(MuMuInstanceId instanceId)

@@ -30,6 +30,7 @@
 | MuMu lifecycle | `mumu-lifecycle.md` | production code + relevant tests/acceptance |
 | Android/ADB и lifecycle Azur Lane Global/EN | `android-game-lifecycle.md` | `docs/architecture/android-game-lifecycle.md`, production code/tests |
 | Операторский TUI | `operator-tui.md` | `docs/architecture/operator-tui.md`, `docs/testing/operator-tui-acceptance.md`, `src/AzurPilot.App/OperatorServices/**`, `src/AzurPilot.App/OperatorUi/**` |
+| Машинный Agent CLI и общая межпроцессная mutation coordination | `agent-cli.md` | `docs/reference/agent-cli.md`, `src/AzurPilot.App/Agent/**` |
 | Verification semantics | `verification.md` | `docs/testing/`, tests, CI workflows |
 | Язык project-owned текста | `language.md` | этот contract |
 | Git/GitHub lifecycle | — | `.agents/skills/azurpilot-git-workflow/` |

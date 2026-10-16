@@ -252,7 +252,7 @@ public sealed class OperatorUiController : IDisposable
             case OperatorUiAction.Status:
                 return DescribeEnvironmentState(Remember(_service.RefreshDiagnostics()));
             case OperatorUiAction.Instances:
-                ApplicationResult<AzurPilotOperatorMuMuInventory> inventory = _service.DiscoverMuMuInstances();
+                ApplicationResult<AzurPilotOperatorMuMuInventory> inventory = _service.DiscoverMuMuInstances(cancellationToken: cancellationToken);
                 if (inventory.IsFailure)
                 {
                     return Failure(inventory.FailureInfo!);

@@ -122,12 +122,14 @@ public sealed class AzurLaneGameLifecycleService
     /// <param name="installation">Обнаруженная установка MuMuPlayer.</param>
     /// <param name="endpoint">Точный ADB endpoint, над которым выполняется операция.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <param name="mutationProgress">Сведения об эффектах текущей операции, включая частичный успех.</param>
     /// <returns>Итог с доказанным состоянием либо ожидаемый отказ.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="installation"/> равен <see langword="null"/>.</exception>
     public async Task<ApplicationResult<AzurLaneGameLifecycleOutcome>> StartAsync(
         MuMuInstallation installation,
         AndroidEndpoint endpoint,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AndroidMutationProgress? mutationProgress = null)
     {
         ArgumentNullException.ThrowIfNull(installation);
 
@@ -154,7 +156,7 @@ public sealed class AzurLaneGameLifecycleService
             }
 
             return await RunStartAsync(
-                endpoint, package, operation, initial.Value!, cancellationToken).ConfigureAwait(false);
+                endpoint, package, operation, initial.Value!, mutationProgress, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -177,12 +179,14 @@ public sealed class AzurLaneGameLifecycleService
     /// <param name="installation">Обнаруженная установка MuMuPlayer.</param>
     /// <param name="endpoint">Точный ADB endpoint, над которым выполняется операция.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <param name="mutationProgress">Сведения об эффектах текущей операции, включая частичный успех.</param>
     /// <returns>Итог с доказанным состоянием либо ожидаемый отказ.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="installation"/> равен <see langword="null"/>.</exception>
     public async Task<ApplicationResult<AzurLaneGameLifecycleOutcome>> StopAsync(
         MuMuInstallation installation,
         AndroidEndpoint endpoint,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AndroidMutationProgress? mutationProgress = null)
     {
         ArgumentNullException.ThrowIfNull(installation);
 
@@ -209,7 +213,7 @@ public sealed class AzurLaneGameLifecycleService
             }
 
             return await RunStopAsync(
-                endpoint, package, operation, initial.Value!, cancellationToken).ConfigureAwait(false);
+                endpoint, package, operation, initial.Value!, mutationProgress, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -237,12 +241,14 @@ public sealed class AzurLaneGameLifecycleService
     /// <param name="installation">Обнаруженная установка MuMuPlayer.</param>
     /// <param name="endpoint">Точный ADB endpoint, над которым выполняется операция.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <param name="mutationProgress">Сведения об эффектах текущей операции, включая частичный успех.</param>
     /// <returns>Итог с доказанным состоянием либо ожидаемый отказ.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="installation"/> равен <see langword="null"/>.</exception>
     public async Task<ApplicationResult<AzurLaneGameLifecycleOutcome>> RestartAsync(
         MuMuInstallation installation,
         AndroidEndpoint endpoint,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AndroidMutationProgress? mutationProgress = null)
     {
         ArgumentNullException.ThrowIfNull(installation);
 
@@ -284,7 +290,7 @@ public sealed class AzurLaneGameLifecycleService
                 case AzurLaneGameState.Stopped:
                     // Исходно остановленная игра: перезапуск определён как запуск.
                     return await RunStartAsync(
-                        endpoint, package, operation, start, cancellationToken).ConfigureAwait(false);
+                        endpoint, package, operation, start, mutationProgress, cancellationToken).ConfigureAwait(false);
                 case AzurLaneGameState.Background:
                 case AzurLaneGameState.Foreground:
                     break;
@@ -302,7 +308,7 @@ public sealed class AzurLaneGameLifecycleService
             }
 
             ApplicationResult<AzurLaneStopPhase> stopped = await ExecuteStopAsync(
-                endpoint, package, operation, start, cancellationToken).ConfigureAwait(false);
+                endpoint, package, operation, start, mutationProgress, cancellationToken).ConfigureAwait(false);
             if (stopped.IsFailure)
             {
                 return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(stopped.FailureInfo!);
@@ -331,6 +337,7 @@ public sealed class AzurLaneGameLifecycleService
                 stopped.Value!.Observation,
                 launcher.Value!,
                 remaining,
+                mutationProgress,
                 cancellationToken,
                 mutationEvidenceBeforeStart: stopped.Value!.MutationEvidence,
                 operationInitialState: start.State).ConfigureAwait(false);
@@ -351,12 +358,14 @@ public sealed class AzurLaneGameLifecycleService
     /// <param name="operation">Запрошенная lifecycle-операция.</param>
     /// <param name="initial">Наблюдение, с которого началась операция.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <param name="mutationProgress">Сведения об эффектах текущей операции, включая частичный успех.</param>
     /// <returns>Итог с доказанным состоянием либо ожидаемый отказ.</returns>
     private async Task<ApplicationResult<AzurLaneGameLifecycleOutcome>> RunStartAsync(
         AndroidEndpoint endpoint,
         AndroidPackageId package,
         string operation,
         AzurLaneGameObservation initial,
+        AndroidMutationProgress? mutationProgress,
         CancellationToken cancellationToken)
     {
         long started = _timeProvider.GetTimestamp();
@@ -401,7 +410,7 @@ public sealed class AzurLaneGameLifecycleService
             initial,
             launcher.Value!,
             _timings.GameStartDeadline,
-            cancellationToken).ConfigureAwait(false);
+            mutationProgress, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -419,6 +428,7 @@ public sealed class AzurLaneGameLifecycleService
     /// <param name="launcher">Разрешённый launcher-компонент: адрес mutation запуска.</param>
     /// <param name="deadline">Бюджет фазы запуска.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <param name="mutationProgress">Сведения об эффектах текущей операции, включая частичный успех.</param>
     /// <param name="mutationEvidenceBeforeStart">
     /// Bounded evidence mutation, выполненных предыдущей фазой той же операции; у одиночного запуска —
     /// <see cref="AndroidEvidence.NoMutation"/>, то есть «mutation не выполнялось»: это значение не
@@ -436,6 +446,7 @@ public sealed class AzurLaneGameLifecycleService
         AzurLaneGameObservation initial,
         AndroidComponent launcher,
         TimeSpan deadline,
+        AndroidMutationProgress? mutationProgress,
         CancellationToken cancellationToken,
         string mutationEvidenceBeforeStart = AndroidEvidence.NoMutation,
         AzurLaneGameState? operationInitialState = null)
@@ -460,7 +471,7 @@ public sealed class AzurLaneGameLifecycleService
         }
 
         ApplicationResult<AndroidCommandOutcome> mutation = RequestGameMutation(
-            endpoint, package, AndroidGameMutation.Start, operation, cancellationToken);
+            endpoint, package, AndroidGameMutation.Start, operation, mutationProgress, cancellationToken);
         if (mutation.IsFailure)
         {
             return Failed(operation, endpoint, package, mutation.FailureInfo!, initialState);
@@ -478,6 +489,11 @@ public sealed class AzurLaneGameLifecycleService
         if (final.IsFailure)
         {
             return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(final.FailureInfo!);
+        }
+
+        if (mutationProgress is not null)
+        {
+            mutationProgress.ChangeProven = true;
         }
 
         // Итог описывает все mutation операции в порядке выполнения: mutation остановки фазы перезапуска
@@ -545,17 +561,19 @@ public sealed class AzurLaneGameLifecycleService
     /// <param name="operation">Запрошенная lifecycle-операция.</param>
     /// <param name="initial">Наблюдение, с которого началась операция.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <param name="mutationProgress">Сведения об эффектах текущей операции, включая частичный успех.</param>
     /// <returns>Итог с доказанным состоянием либо ожидаемый отказ.</returns>
     private async Task<ApplicationResult<AzurLaneGameLifecycleOutcome>> RunStopAsync(
         AndroidEndpoint endpoint,
         AndroidPackageId package,
         string operation,
         AzurLaneGameObservation initial,
+        AndroidMutationProgress? mutationProgress,
         CancellationToken cancellationToken)
     {
         long started = _timeProvider.GetTimestamp();
         ApplicationResult<AzurLaneStopPhase> stopped = await ExecuteStopAsync(
-            endpoint, package, operation, initial, cancellationToken).ConfigureAwait(false);
+            endpoint, package, operation, initial, mutationProgress, cancellationToken).ConfigureAwait(false);
         if (stopped.IsFailure)
         {
             return ApplicationResult<AzurLaneGameLifecycleOutcome>.Failure(stopped.FailureInfo!);
@@ -586,12 +604,14 @@ public sealed class AzurLaneGameLifecycleService
     /// <param name="operation">Запрошенная lifecycle-операция.</param>
     /// <param name="initial">Наблюдение, с которого началась операция.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
+    /// <param name="mutationProgress">Сведения об эффектах текущей операции, включая частичный успех.</param>
     /// <returns>Фаза остановки с доказанным наблюдением либо ожидаемый отказ.</returns>
     private async Task<ApplicationResult<AzurLaneStopPhase>> ExecuteStopAsync(
         AndroidEndpoint endpoint,
         AndroidPackageId package,
         string operation,
         AzurLaneGameObservation initial,
+        AndroidMutationProgress? mutationProgress,
         CancellationToken cancellationToken)
     {
         AzurLaneGameState initialState = initial.State;
@@ -618,7 +638,7 @@ public sealed class AzurLaneGameLifecycleService
 
         long started = _timeProvider.GetTimestamp();
         ApplicationResult<AndroidCommandOutcome> mutation = RequestGameMutation(
-            endpoint, package, AndroidGameMutation.ForceStop, operation, cancellationToken);
+            endpoint, package, AndroidGameMutation.ForceStop, operation, mutationProgress, cancellationToken);
         if (mutation.IsFailure)
         {
             return ApplicationResult<AzurLaneStopPhase>.Failure(mutation.FailureInfo!);
@@ -636,6 +656,11 @@ public sealed class AzurLaneGameLifecycleService
         if (final.IsFailure)
         {
             return ApplicationResult<AzurLaneStopPhase>.Failure(final.FailureInfo!);
+        }
+
+        if (mutationProgress is not null)
+        {
+            mutationProgress.ChangeProven = true;
         }
 
         return ApplicationResult<AzurLaneStopPhase>.Success(
@@ -714,8 +739,14 @@ public sealed class AzurLaneGameLifecycleService
         AndroidPackageId package,
         AndroidGameMutation mutation,
         string operation,
+        AndroidMutationProgress? mutationProgress,
         CancellationToken cancellationToken)
     {
+        if (mutationProgress is not null)
+        {
+            mutationProgress.MutationAttempted = true;
+        }
+
         ApplicationResult<AndroidCommandOutcome> result = _host.RequestGameMutation(
             endpoint, package, mutation, cancellationToken);
         if (result.IsFailure)

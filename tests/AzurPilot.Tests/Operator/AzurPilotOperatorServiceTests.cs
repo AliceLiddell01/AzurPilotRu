@@ -25,7 +25,7 @@ namespace AzurPilot.Tests.OperatorServices;
 
 [Collection(InteropCollection.Name)]
 [Trait("Category", "Operator")]
-public sealed class AzurPilotOperatorServiceTests
+public sealed partial class AzurPilotOperatorServiceTests
 {
     [Fact(DisplayName = "Этапы подготовки следуют реальным production шагам, проверка загрузки не угадывается UI")]
     public async Task PreparationReportsActualStagesInOrder()
@@ -87,12 +87,17 @@ public sealed class AzurPilotOperatorServiceTests
         fixture.Runner.EnqueueOutcome(0, "Android Debug Bridge version 1.0.41\nVersion 35.0.2-test\n");
         fixture.Runner.EnqueueOutcome(0, InstanceResponse(selected, new AndroidEndpoint("127.0.0.1", 20312)));
         fixture.Runner.EnqueueOutcome(0, "offline\n");
+        List<AzurPilotOperatorAndroidPreparationOutcome> preparationOutcomes = [];
 
         ApplicationResult<AzurLaneGameLifecycleOutcome> result = await fixture.Service.StartAzurLaneAsync(
-            selected, CancellationToken.None);
+            selected, CancellationToken.None, onPreparationCompleted: preparationOutcomes.Add);
 
         Assert.True(result.IsFailure);
         Assert.Contains(expectedPostflightMessage, result.FailureInfo!.Message, StringComparison.Ordinal);
+        AzurPilotOperatorAndroidPreparationOutcome preparation = Assert.Single(
+            preparationOutcomes, outcome => outcome.Failure is not null);
+        Assert.Equal(postflightState, preparation.PostflightMuMuState);
+        Assert.Equal(preparation, preparationOutcomes[^1]);
         Assert.Empty(fixture.MuMuHost.MutationRequests);
     }
 

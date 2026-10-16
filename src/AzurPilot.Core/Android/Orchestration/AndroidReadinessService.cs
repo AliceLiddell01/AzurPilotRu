@@ -250,11 +250,13 @@ public sealed class AndroidReadinessService
     /// <param name="endpoint">Exact endpoint, ранее разрешённый для явно выбранной identity.</param>
     /// <param name="cancellationToken">Запрос отмены операции.</param>
     /// <param name="progress">Наблюдатель реально начатых этапов подготовки.</param>
+    /// <param name="mutationProgress">Сведения о попытке подключения и доказанном изменении transport.</param>
     /// <returns>Итог доказанной готовности либо ожидаемый отказ.</returns>
     public async Task<ApplicationResult<AndroidTransportPreparationOutcome>> PrepareTransportAsync(
         AndroidEndpoint endpoint,
         CancellationToken cancellationToken,
-        IProgress<AndroidReadinessStage>? progress = null)
+        IProgress<AndroidReadinessStage>? progress = null,
+        AndroidMutationProgress? mutationProgress = null)
     {
         long started = _timeProvider.GetTimestamp();
         TimeSpan readinessDeadline = _timings.ReadinessDeadline;
@@ -307,6 +309,11 @@ public sealed class AndroidReadinessService
         if (initialTransport.State == AndroidTransportState.Absent)
         {
             connectAttempted = true;
+            if (mutationProgress is not null)
+            {
+                mutationProgress.MutationAttempted = true;
+            }
+
             ApplicationResult<AndroidCommandOutcome> connect =
                 _host.ConnectTransport(endpoint, cancellationToken);
             if (connect.IsFailure)
@@ -349,6 +356,10 @@ public sealed class AndroidReadinessService
             }
 
             finalTransport = transport.Value!;
+            if (mutationProgress is not null)
+            {
+                mutationProgress.ChangeProven = true;
+            }
         }
         else if (initialTransport.State != AndroidTransportState.Device)
         {

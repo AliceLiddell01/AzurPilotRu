@@ -48,6 +48,24 @@ namespace AzurPilot.Core.Failures;
 /// </remarks>
 public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
 {
+    /// <summary>Ключ details с признаком попытки выполнить mutation.</summary>
+    public const string MutationAttemptedDetailKey = "mutation_attempted";
+
+    /// <summary>Недопустимый машинный запрос.</summary>
+    public const string InvalidArgument = "invalid_argument";
+
+    /// <summary>Другой процесс выполняет mutation того же экземпляра.</summary>
+    public const string TargetBusy = "target_busy";
+
+    /// <summary>Межпроцессная защита недоступна; mutation запрещена.</summary>
+    public const string MutationCoordinationUnavailable = "mutation_coordination_unavailable";
+
+    /// <summary>Истёк общий deadline машинного запроса.</summary>
+    public const string AgentDeadlineExceeded = "agent_deadline_exceeded";
+
+    /// <summary>Результат превышает ограничение машинного ответа.</summary>
+    public const string AgentOutputLimitExceeded = "agent_output_limit_exceeded";
+
     /// <summary>Код отказа: существующий файл конфигурации не читается или не соответствует своей схеме.</summary>
     public const string ConfigurationInvalid = "configuration_invalid";
 
@@ -144,6 +162,11 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     private static readonly FrozenSet<string> AllowedCodes =
         new[]
         {
+            InvalidArgument,
+            TargetBusy,
+            MutationCoordinationUnavailable,
+            AgentDeadlineExceeded,
+            AgentOutputLimitExceeded,
             ConfigurationInvalid,
             ConfigurationSchemaUnsupported,
             NativeUnavailable,

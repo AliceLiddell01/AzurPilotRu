@@ -15,6 +15,7 @@ verification/acceptance, troubleshooting и других деталей, кот�
 - `architecture/operator-tui.md` — устройство интерактивной операторской поверхности AzurPilot.
 - `reference/application-configuration.md` — схема и загрузка пользовательской конфигурации.
 - `reference/application-failures.md` — модель application failures и их проекция.
+- `reference/agent-cli.md` — машинные команды, JSON-контракт, mutation coordination и границы evidence.
 - `operations/runtime-diagnostics.md` — composition, logging, correlation и diagnostic snapshot.
 - `testing/verification.md` — что доказывают CI, native/managed tests и real acceptance.
 - `testing/android-acceptance.md` — подробности real/managed проверки Android/game lifecycle.
