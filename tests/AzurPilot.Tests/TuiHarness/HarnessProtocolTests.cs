@@ -42,6 +42,21 @@ public sealed class HarnessProtocolTests
     }
 
     [Fact]
+    public void DefaultSessionRootUsesCheckoutAndExplicitRelativeOutputUsesCurrentDirectory()
+    {
+        string currentDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string expectedDefault = Path.GetFullPath(Path.Combine(
+            PinnedVersions.RepositoryRoot, "artifacts", "tui-harness", "sessions"));
+
+        Assert.Equal(expectedDefault,
+            AzurPilot.TuiHarness.Program.ResolveSessionRoot(null, AppContext.BaseDirectory, currentDirectory));
+        Assert.Equal(Path.GetFullPath(Path.Combine(currentDirectory, "custom-output")),
+            AzurPilot.TuiHarness.Program.ResolveSessionRoot("custom-output", AppContext.BaseDirectory, currentDirectory));
+        Assert.Equal(Path.GetFullPath(Path.Combine(currentDirectory, "artifacts", "tui-harness", "sessions")),
+            AzurPilot.TuiHarness.Program.ResolveSessionRoot(null, Path.GetTempPath(), currentDirectory));
+    }
+
+    [Fact]
     public void LiveGrantRequiresExplicitExactTargetAndFixedScenario()
     {
         _ = Assert.Throws<ArgumentException>(() => HarnessRequest.Parse(["live-environment"]));

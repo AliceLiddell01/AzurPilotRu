@@ -13,16 +13,11 @@ internal static class Program
     {
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH")))
         {
-            DirectoryInfo? root = new(AppContext.BaseDirectory);
-            while (root is not null && !File.Exists(Path.Combine(root.FullName, "AzurPilot.slnx")))
-            {
-                root = root.Parent;
-            }
-
+            string? root = FindRepositoryRoot(AppContext.BaseDirectory);
             if (root is not null)
             {
                 Environment.SetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH",
-                    Path.Combine(root.FullName, "artifacts", "tui-harness", "browsers"));
+                    Path.Combine(root, "artifacts", "tui-harness", "browsers"));
             }
         }
 
@@ -76,10 +71,29 @@ internal static class Program
         return result.ExitCode;
     }
 
+    internal static string ResolveSessionRoot(string? output, string applicationBaseDirectory, string currentDirectory)
+    {
+        string path = output ?? Path.Combine(
+            FindRepositoryRoot(applicationBaseDirectory) ?? currentDirectory,
+            "artifacts", "tui-harness", "sessions");
+        return Path.GetFullPath(path, currentDirectory);
+    }
+
+    private static string? FindRepositoryRoot(string baseDirectory)
+    {
+        DirectoryInfo? root = new(Path.GetFullPath(baseDirectory));
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "AzurPilot.slnx")))
+        {
+            root = root.Parent;
+        }
+
+        return root?.FullName;
+    }
+
     internal static async Task<HarnessResponse> StartAsync(HarnessRequest request)
     {
         string id = request.Session ?? Guid.NewGuid().ToString("N");
-        string root = Path.GetFullPath(request.Output ?? Path.Combine("artifacts", "tui-harness", "sessions"));
+        string root = ResolveSessionRoot(request.Output, AppContext.BaseDirectory, Environment.CurrentDirectory);
         string directory = Path.Combine(root, id);
         _ = Directory.CreateDirectory(directory);
         HarnessRequest start = request with
