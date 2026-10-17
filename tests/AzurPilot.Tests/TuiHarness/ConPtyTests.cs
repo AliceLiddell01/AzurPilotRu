@@ -64,22 +64,30 @@ public sealed class ConPtyTests
     {
         string root = Path.Combine(Path.GetTempPath(), "azurpilot-job-start-" + Guid.NewGuid().ToString("N"));
         _ = Directory.CreateDirectory(root);
-        string shell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
-            "WindowsPowerShell", "v1.0", "powershell.exe");
+        string processName = "azurpilot-job-start-" + Guid.NewGuid().ToString("N");
+        string shell = Path.Combine(root, processName + ".exe");
         string marker = Path.Combine(root, "started.txt");
-        string script = Path.Combine(root, "start.ps1");
-        File.WriteAllText(script, "[System.IO.File]::WriteAllText('" + marker.Replace("'", "''", StringComparison.Ordinal)
-            + "', 'started')");
 
         try
         {
+            File.Copy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe"), shell);
             using SafeFileHandle invalidJob = new(new nint(-1), ownsHandle: false);
 
             Win32Exception exception = Assert.Throws<Win32Exception>(() => ConPty.StartInJob(shell,
-                ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", script], root, invalidJob));
+                ["/d", "/c", "echo started>\"" + marker + "\""], root, invalidJob));
 
             Assert.Equal(6, exception.NativeErrorCode);
             Assert.False(File.Exists(marker), "Процесс не должен выполниться до назначения в Job.");
+            Assert.True(SpinWait.SpinUntil(() =>
+            {
+                Process[] processes = Process.GetProcessesByName(processName);
+                foreach (Process process in processes)
+                {
+                    process.Dispose();
+                }
+
+                return processes.Length == 0;
+            }, TimeSpan.FromSeconds(5)), "При ошибке назначения приостановленный процесс должен быть завершён.");
         }
         finally
         {

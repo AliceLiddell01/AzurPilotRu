@@ -262,7 +262,7 @@ internal static partial class PhysicalSession
                     : "Windows Terminal может применить фактический размер окна; ConPTY сравнивается с измеренной сеткой production App.",
             };
             object conptyCapture = await CaptureConPtyAsync(exe, directory, profilePath,
-                comparisonColumns, comparisonRows);
+                comparisonColumns, comparisonRows, appRecord.ExeSha256, appRecord.AppDllSha256);
             report["conpty"] = conptyCapture;
             JsonElement conptyEvidence = JsonSerializer.SerializeToElement(conptyCapture, HarnessJson.Options);
             conptyMenuCellsPath = conptyEvidence.GetProperty("actionMenu").GetProperty("paths")
@@ -398,7 +398,8 @@ internal static partial class PhysicalSession
                 PngIntegrity: "PASS",
                 ContentGeometry: geometryProven ? "PASS" : "BLOCKED",
                 RgbMeasurement: pixelAnalysis.Status,
-                SeparateConPtyEvidence: "PASS",
+                SeparateConPtyEvidence: conptyEvidence.GetProperty("binaryIdentity").GetProperty("status").GetString()
+                    ?? "NOT_TESTED",
                 PhysicalInteraction: visualTransition ? "PASS" : "BLOCKED",
                 Cleanup: "NOT_TESTED",
                 UserConfigurationUnchanged: "NOT_TESTED",
@@ -579,7 +580,8 @@ internal static partial class PhysicalSession
     }
 
     private static async Task<object> CaptureConPtyAsync(
-        string exe, string directory, string profilePath, int columns, int rows)
+        string exe, string directory, string profilePath, int columns, int rows,
+        string expectedExeSha256, string? expectedAppDllSha256)
     {
         string output = Path.Combine(directory, "conpty");
         HarnessResponse started = await Program.StartAsync(new HarnessRequest
@@ -604,8 +606,16 @@ internal static partial class PhysicalSession
         HarnessResponse actionMenu;
         HarnessResponse escapeInput;
         HarnessResponse restored;
+        ConPtyBinaryIdentityEvidence binaryIdentity;
         try
         {
+            binaryIdentity = AssessConPtyBinaryIdentity(started.Data, expectedExeSha256, expectedAppDllSha256);
+            if (binaryIdentity.Status != "PASS")
+            {
+                throw new HarnessBlockedException("ConPTY binary identity does not match the physical App: "
+                    + binaryIdentity.Reason);
+            }
+
             capture = await Program.SendAsync(new HarnessRequest
             {
                 Command = "capture",
@@ -681,6 +691,7 @@ internal static partial class PhysicalSession
         return new
         {
             status = "PASS",
+            binaryIdentity,
             outputDirectory = output,
             session = started.Session,
             configurationPath = Path.Combine(output, started.Session,
@@ -706,6 +717,29 @@ internal static partial class PhysicalSession
             },
             evidence = "ConPTY → VT + xterm cells + Chromium PNG; это не физический Windows Terminal evidence.",
         };
+    }
+
+    internal static ConPtyBinaryIdentityEvidence AssessConPtyBinaryIdentity(
+        object? data, string expectedExeSha256, string? expectedAppDllSha256)
+    {
+        JsonElement response = JsonSerializer.SerializeToElement(data, HarnessJson.Options);
+        if (response.ValueKind != JsonValueKind.Object
+            || !response.TryGetProperty("identity", out JsonElement identity)
+            || identity.ValueKind != JsonValueKind.Object)
+        {
+            return new("BLOCKED", null, null, "В ConPTY startup response отсутствует identity.");
+        }
+
+        string? exeSha256 = TextProperty(identity, "exeSha256");
+        string? appDllSha256 = TextProperty(identity, "assemblySha256");
+        bool exeMatches = string.Equals(exeSha256, expectedExeSha256, StringComparison.OrdinalIgnoreCase);
+        bool appDllMatches = expectedAppDllSha256 is not null
+            && string.Equals(appDllSha256, expectedAppDllSha256, StringComparison.OrdinalIgnoreCase);
+        string reason = exeMatches && appDllMatches
+            ? "ConPTY сообщает SHA-256 тех же EXE/DLL, что и физический запуск."
+            : $"Ожидались EXE={expectedExeSha256}, DLL={expectedAppDllSha256 ?? "<нет>"}; "
+                + $"ConPTY сообщает EXE={exeSha256 ?? "<нет>"}, DLL={appDllSha256 ?? "<нет>"}.";
+        return new(exeMatches && appDllMatches ? "PASS" : "BLOCKED", exeSha256, appDllSha256, reason);
     }
 
     private static JsonElement GetCapturePaths(Dictionary<string, object?> report)
@@ -1196,24 +1230,28 @@ internal static partial class PhysicalSession
             ? value.GetString() : null;
     }
 
-    private static int IntProperty(JsonElement element, string name)
+    internal static int IntProperty(JsonElement element, string name)
     {
-        return element.TryGetProperty(name, out JsonElement value) && value.TryGetInt32(out int result) ? result : -1;
+        return element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out JsonElement value)
+            && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int result) ? result : -1;
     }
 
-    private static long Int64Property(JsonElement element, string name)
+    internal static long Int64Property(JsonElement element, string name)
     {
-        return element.TryGetProperty(name, out JsonElement value) && value.TryGetInt64(out long result) ? result : -1;
+        return element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out JsonElement value)
+            && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out long result) ? result : -1;
     }
 
-    private static int? OptionalInt(JsonElement element, string name)
+    internal static int? OptionalInt(JsonElement element, string name)
     {
-        return element.TryGetProperty(name, out JsonElement value) && value.TryGetInt32(out int result) ? result : null;
+        return element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out JsonElement value)
+            && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int result) ? result : null;
     }
 
-    private static double? OptionalDouble(JsonElement element, string name)
+    internal static double? OptionalDouble(JsonElement element, string name)
     {
-        return element.TryGetProperty(name, out JsonElement value) && value.TryGetDouble(out double result) ? result : null;
+        return element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out JsonElement value)
+            && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out double result) ? result : null;
     }
 
     private static async Task<WinAppCapture> CapturePhysicalAsync(WinAppCli winapp, WinAppWindow window, string path)
@@ -1838,6 +1876,9 @@ internal static partial class PhysicalSession
     private sealed record PhysicalAppStartRecord(int ProcessId, int HelperPid, string Exe, string ExeSha256,
         string? AppDllSha256, string[] Arguments, string? TerminalSessionId, string? TerminalProfileId,
         DateTimeOffset StartedUtc, int? Columns, int? Rows);
+
+    internal sealed record ConPtyBinaryIdentityEvidence(string Status, string? ExeSha256,
+        string? AppDllSha256, string Reason);
 
     private sealed record ContentRectangle(int X, int Y, int Width, int Height);
     private sealed record UiRectangle(int X, int Y, int Width, int Height, string Name);
