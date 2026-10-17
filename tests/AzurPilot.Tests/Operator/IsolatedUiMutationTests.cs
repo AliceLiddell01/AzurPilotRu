@@ -21,8 +21,22 @@ public sealed partial class AzurPilotOperatorServiceTests
         Assert.Equal(ApplicationFailure.InvalidArgument, (await fixture.Service.PrepareAndroidAsync(target, token)).FailureInfo!.Code);
         Assert.Equal(ApplicationFailure.InvalidArgument, (await fixture.Service.PrepareSelectedAndroidAsync(MuMuInstanceId.FromIndex("8"), token)).Failure!.Code);
         Assert.Equal(ApplicationFailure.InvalidArgument, (await fixture.Service.RunMuMuLifecycleAsync(MuMuInstanceId.FromIndex("8"), MuMuLifecycleOperation.Stop, token)).FailureInfo!.Code);
+        Assert.Equal(ApplicationFailure.InvalidArgument, (await fixture.Service.RunMuMuLifecycleAsync(target, MuMuLifecycleOperation.Restart, token)).FailureInfo!.Code);
         Assert.Empty(fixture.Runner.Requests);
         Assert.Empty(fixture.MuMuHost.MutationRequests);
+
+        fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
+        fixture.MuMuHost.MutationHandler = _ =>
+        {
+            fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Stopped, "stopped-after-stop");
+            return MuMuLifecycleTestContext.Command(0);
+        };
+        ApplicationResult<MuMuLifecycleOutcome> stopped = await fixture.Service.RunMuMuLifecycleAsync(
+            target, MuMuLifecycleOperation.Stop, token);
+        Assert.True(stopped.IsSuccess);
+        MuMuMutationRequest stopRequest = Assert.Single(fixture.MuMuHost.MutationRequests);
+        Assert.Equal(target, stopRequest.InstanceId);
+        Assert.Equal(MuMuLifecycleMutation.Stop, stopRequest.Mutation);
 
         fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
         EnqueueAndroidReady(fixture, target, new AndroidEndpoint("127.0.0.1", 20312));
