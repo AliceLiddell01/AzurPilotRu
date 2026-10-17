@@ -136,7 +136,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     /// <summary>Использует уже собранный снимок при запуске и общий источник логов хоста приложения.</summary>
     /// <param name="service">Владелец сценариев приложения.</param>
     /// <param name="initialDiagnostics">Диагностика текущего запуска без повторной инициализации.</param>
-    /// <param name="logSource">Потокобезопасный bounded источник логов для явно запрошенных деталей.</param>
+    /// <param name="logSource">Потокобезопасный ограниченный источник логов для явно запрошенных деталей.</param>
     /// <param name="mode">Режим интерфейса: объём доступных действий.</param>
     /// <param name="logViewerFailure">
     /// Отказ открытия отдельной лог-консоли либо <see langword="null"/>. Отказ просмотра не является
@@ -1176,7 +1176,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
             lines.Add("/details открывает технические детали результата или записи журнала; Esc возвращает назад.");
         }
 
-        lines.Add("Composer однострочный: многострочная вставка сохраняет первую строку.");
+        lines.Add("Поле ввода однострочное: многострочная вставка сохраняет первую строку.");
         AddMessage("Помощь", string.Join('\n', lines));
     }
 
@@ -1277,7 +1277,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _composer!.Enabled = false;
         _choices.Clear();
         _choices.Add(new PaletteChoice("Выбрать и сохранить точный экземпляр MuMu", Setting: SettingAction.Target));
-        _choices.Add(new PaletteChoice("Сохранить YAML / перенести legacy JSON с резервной копией", Setting: SettingAction.Save));
+        _choices.Add(new PaletteChoice("Сохранить YAML / перенести устаревший JSON с резервной копией", Setting: SettingAction.Save));
         _choices.Add(new PaletteChoice("Режим следующего запуска: normal", Setting: SettingAction.Normal));
         _choices.Add(new PaletteChoice("Режим следующего запуска: manual", Setting: SettingAction.Manual));
         _choices.Add(new PaletteChoice("Режим следующего запуска: diagnostic", Setting: SettingAction.Diagnostic));

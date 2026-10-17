@@ -629,7 +629,7 @@ public static class AzurPilotHost
             report = host.Services.GetRequiredService<AzurPilotDiagnosticService>().Capture();
         }
 
-        // MuMu, Android и игра собираются существующими read-only diagnostic path-ами. Этот шаг
+        // MuMu, Android и игра собираются существующими путями диагностики без изменения состояния. Этот шаг
         // ничего не запускает и не подключает; при отсутствии устройств host остаётся доступным TUI.
         LogMuMuDiagnostics(logger, operation.CorrelationId, report.MuMu);
         LogAndroidDiagnostics(logger, operation.CorrelationId, report.Android);
@@ -656,7 +656,7 @@ public static class AzurPilotHost
         return Task.FromResult(AzurPilotStartupResult.Success(operation.CorrelationId, report));
     }
 
-    /// <summary>Записывает bounded результат MuMu-диагностики в существующий structured log.</summary>
+    /// <summary>Записывает ограниченный результат MuMu-диагностики в существующий структурированный журнал.</summary>
     /// <remarks>
     /// Событие остаётся в существующей системе логирования и несёт correlation identifier операции, поэтому
     /// MuMu-диагностика одного запуска связана с остальными его событиями. Полный вывод утилита управления,
@@ -687,7 +687,7 @@ public static class AzurPilotHost
             muMu.SelectedInstanceId ?? string.Empty);
     }
 
-    /// <summary>Записывает bounded результат Android-диагностики в существующий structured log.</summary>
+    /// <summary>Записывает ограниченный результат Android-диагностики в существующий структурированный журнал.</summary>
     /// <remarks>
     /// Событие остаётся в существующей системе логирования и несёт correlation identifier операции, поэтому
     /// Android-диагностика одного запуска связана с остальными его событиями. Полный список устройств,
@@ -721,7 +721,7 @@ public static class AzurPilotHost
             transportState);
     }
 
-    /// <summary>Записывает bounded результат наблюдения состояния игры Azur Lane в structured log.</summary>
+    /// <summary>Записывает ограниченный результат наблюдения состояния игры Azur Lane в структурированный журнал.</summary>
     /// <remarks>
     /// Событие остаётся в существующей системе логирования и несёт correlation identifier операции, поэтому
     /// наблюдение одного запуска связано с остальными его событиями. Полный список процессов, вывод команд

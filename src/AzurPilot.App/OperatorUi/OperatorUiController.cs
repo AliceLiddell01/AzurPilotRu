@@ -730,7 +730,7 @@ public sealed class OperatorUiController : IDisposable
         string instance = string.IsNullOrWhiteSpace(_lastDiagnostics.MuMu.ConfiguredInstance)
             ? "не задан"
             : _lastDiagnostics.MuMu.ConfiguredInstance;
-        string text = "Действующая конфигурация применяется один раз при запуске; hot reload нет.\n"
+        string text = "Действующая конфигурация применяется один раз при запуске; автоматической перезагрузки нет.\n"
             + $"Источник: {source}\n"
             + $"Схема: эффективная v{configuration.SchemaVersion}, объявленная v{configuration.SourceSchemaVersion}\n"
             + $"Минимальный уровень журнала: {OperatorUiLogPresentation.LevelLabel(configuration.MinimumLevel)}\n"
