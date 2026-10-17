@@ -1,108 +1,200 @@
+<div align="center">
+
 # AzurPilotRu
 
-Персональная реализация проекта AzurPilot: Windows-only автоматизация на .NET/C# с отдельной native
-частью на C++ и OpenCV, связанными узким versioned C ABI.
+**Управление MuMu и окружением Azur Lane Global/EN из Windows.**
 
-В репозитории собраны managed solution из трёх boundaries, native CMake boundary с OpenCV и
-замороженный C ABI между ними, стандартный путь сборки и тестирования средствами CMake и .NET,
-Windows CI и автоматизация обновления зависимостей. Приложение уже является application host:
-строгая пользовательская конфигурация, application-level отказы, structured logging в `stderr` с
-correlation identity, runtime-диагностика и три реальные Windows-возможности: MuMu (обнаружение установки,
-выбор Android-экземпляра и host-side lifecycle с доказуемым postcondition), Android/ADB (точный endpoint,
-readiness и lifecycle Azur Lane Global/EN) и отдельная диагностика PNG capture с named region scan через
-существующий native RGB8 frame. Capture не запускается автоматически при старте приложения. Ввод,
-распознавание UI, OCR/ONNX, продуктовые CLI/REPL и agent CLI — будущие возможности.
+[![Проверки основной ветки](https://github.com/AliceLiddell01/AzurPilotRu/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AliceLiddell01/AzurPilotRu/actions/workflows/ci.yml?query=branch%3Amain)
+![Windows x64](https://img.shields.io/badge/Windows-x64-0078D4)
+[![Лицензия AGPL-3.0](https://img.shields.io/badge/AGPL--3.0-лицензия-2f81f7)](LICENSE)
 
-## Платформа
+Операторский TUI · Agent CLI / JSON · .NET / C# · C++ / OpenCV
 
-Windows, x64. Другие операционные системы не поддерживаются.
+[Возможности](#возможности) · [Быстрый старт](#быстрый-старт) · [Управление](#управление) · [Архитектура](#архитектура) · [Проверки](#проверки) · [Документация](#документация)
 
-## Требования
+</div>
 
-| Что нужно | Требование |
+AzurPilotRu — персональная реализация AzurPilot для Windows x64. Приложение помогает выбрать
+конкретный экземпляр MuMu, подготовить Android, запустить или остановить Azur Lane и проверить
+результат. Для оператора доступен русскоязычный интерфейс в терминале, для внешних агентов —
+отдельные команды с JSON-ответами. Оба интерфейса используют общие прикладные операции.
+
+**Текущий этап — управление окружением и диагностика.** Ввод в игру, распознавание игрового UI,
+OCR/ONNX и автоматическое прохождение игровых задач пока не реализованы.
+
+## Возможности
+
+| Возможность | Что реализовано |
 | --- | --- |
-| Windows | x64 |
-| .NET SDK | Версия и политика выбора из [`global.json`](global.json) |
-| Visual Studio | MSVC x64 compiler/toolset не ниже требований [`native/CMakeLists.txt`](native/CMakeLists.txt), workload «Desktop development with C++» |
-| CMake | Не ниже требования [`native/CMakeLists.txt`](native/CMakeLists.txt); команда `cmake` должна быть доступна в `PATH` |
-| Git | Доступен в `PATH` для тестов контрактов репозитория |
+| **Операторский TUI** | Интерактивная оболочка на Terminal.Gui: состояние окружения, запуск и остановка, настройки, помощь и режимы доступа к техническим операциям. |
+| **Управление MuMu** | Обнаружение установки и экземпляров поддерживаемого семейства MuMu 6, выбор точного экземпляра, запуск, остановка и перезапуск с проверкой результата. |
+| **Android / ADB** | Работа с поставляемым ADB, разрешение адреса выбранного экземпляра, проверка транспорта, shell и завершения загрузки Android. |
+| **Жизненный цикл игры** | Наблюдение за установкой, процессом и передним планом Azur Lane Global/EN; запуск и остановка через общий сервис управления. |
+| **Agent CLI** | Команды `agent` с обнаружением поддерживаемых операций, JSON-ответами, типизированными отказами и явной адресацией целевого экземпляра. |
+| **Диагностика скриншотов** | Получение PNG через Android, декодирование в нативный RGB8-кадр и анализ именованных областей `FullFrame` и `Center` средствами OpenCV. |
+| **Конфигурация и журнал** | Строгая конфигурация, сохранение настроек из TUI, структурированные журналы и отдельное окно просмотра журнала. |
 
-Пошаговая установка и диагностика — [docs/getting-started.md](docs/getting-started.md). Владельцы
-закреплённых версий и внешних зависимостей перечислены и описаны в
-[.codex/context/build-contracts.md](.codex/context/build-contracts.md).
+Точный набор команд и ограничения каждого режима: [операторский TUI](docs/architecture/operator-tui.md) и [Agent CLI](docs/reference/agent-cli.md).
 
-## Канонические команды
+Обычная диагностика читает состояние: она не запускает MuMu или игру и не выполняет ADB connect.
+Изменяющие состояние операции требуют однозначно выбранного экземпляра. `auto` разрешается только
+при единственном кандидате; первый экземпляр из списка не выбирается автоматически.
+Статистика пикселей показывает свойства изображения, но не определяет экран игрового UI.
 
-```text
-# Из native/
+## Быстрый старт
+
+### Что потребуется
+
+- **Windows x64** — единственная поддерживаемая платформа.
+- **.NET SDK** — точная версия и политика выбора в [`global.json`](global.json).
+- **Visual Studio 2026** с workload «Desktop development with C++» и x64 MSVC toolset.
+- **CMake** и **Git**, доступные из `PATH`. Минимум CMake и MSVC задан в
+  [`native/CMakeLists.txt`](native/CMakeLists.txt).
+- Сеть при первом получении OpenCV: CMake загружает и проверяет пакет по
+  [`native/opencv.json`](native/opencv.json), ручная установка OpenCV не требуется.
+
+Для управления нужны установленная **MuMuPlayer семейства 6** и, для игровых операций,
+**Azur Lane Global/EN** в выбранном Android-экземпляре. Приложение не устанавливает эмулятор или игру.
+Без MuMu оболочка остаётся доступна и показывает диагностическое состояние.
+Совместимость проверяется по ответам `MuMuManager`, а не только по номеру версии:
+подробности — в [описании интеграции MuMu](docs/architecture/mumu-lifecycle.md).
+
+### Сборка и запуск
+
+Откройте **PowerShell**:
+
+```powershell
+git clone https://github.com/AliceLiddell01/AzurPilotRu.git
+cd AzurPilotRu
+
+# Нативная библиотека и её тесты
+Push-Location native
 cmake --workflow --preset native-x64-release
+Pop-Location
 
-# Из корня репозитория
+# .NET: зависимости, сборка, проверки
 dotnet restore AzurPilot.slnx --locked-mode
 dotnet build AzurPilot.slnx --configuration Release --no-restore -warnaserror
 dotnet test tests/AzurPilot.Tests/AzurPilot.Tests.csproj --configuration Release --no-restore --no-build
+
+# Запуск интерактивного приложения
+dotnet run --project src/AzurPilot.App --configuration Release --no-build
 ```
 
-Native workflow выполняет configure (получение и проверку SHA256 OpenCV), build и CTest. Managed
-команды восстанавливают NuGet-граф в locked mode, собирают solution с предупреждениями как ошибками
-и запускают interop-тесты и тесты контрактов репозитория.
+Переходите к следующему шагу только после успешного завершения предыдущего. Native workflow
+подготавливает DLL, необходимые для managed-сборки и interop-тестов.
 
-CI использует эти стандартные команды напрямую. Для native Debug предусмотрен workflow preset
-`native-x64-debug`; подробности команд и проверок — [architecture.md](docs/architecture/overview.md)
-и [verification.md](docs/testing/verification.md).
+TUI открывается, когда stdin и stdout подключены к терминалу. Если любой из этих потоков
+перенаправлен, приложение выполняет одноразовую диагностику и завершается.
 
-## Приложение при запуске
+[Полная инструкция по сборке, запуску и устранению ошибок →](docs/getting-started.md)
 
-`AzurPilot.App` запускается как application host: собирает зависимости, загружает конфигурацию,
-выполняет runtime-диагностику и печатает короткий человекочитаемый итог.
+## Управление
 
-- Пользовательских опций запуска и командной строки нет: путь файла конфигурации startup вычисляет
-  сам через его владельца, а каталог конфигурации приложение не создаёт.
-- Отсутствие файла конфигурации — валидный сценарий запуска на встроенных defaults; существующий
-  невалидный файл не подменяется defaults и завершает запуск явным отказом с ненулевым кодом выхода.
-- В `stdout` уходит человекочитаемый итог, в `stderr` — structured runtime logs в JSON-формате с
-  correlation identifier операции.
-- Диагностика включает bounded MuMu-секцию: обнаружение установки, выбранный экземпляр и его
-  наблюдённое состояние. Запуск приложения экземпляр MuMu не запускает и не останавливает.
-- Диагностика включает bounded Android-секцию (доступность bundled ADB, точный endpoint выбранного
-  экземпляра, состояние ADB transport, доступность shell, завершение загрузки Android и версия Android) и
-  секцию состояния игры (product identity Global/EN, установлен ли пакет, запущен ли процесс, находится
-  ли игра на переднем плане и выведенное из этих фактов состояние). Диагностика только читает: запуск
-  приложения не подключает ADB, не запускает и не останавливает игру и эмулятор.
+### Первый запуск в TUI
 
-Путь конфигурации, правила схемы и коды отказа принадлежат
-[application-configuration.md](docs/reference/application-configuration.md) и
-[application-failures.md](docs/reference/application-failures.md), состав логирования и диагностики —
-[runtime-diagnostics.md](docs/operations/runtime-diagnostics.md), правила MuMu-capability —
-[mumu-lifecycle.md](docs/architecture/mumu-lifecycle.md), правила Android-слоя и lifecycle игры —
-[android-game-lifecycle.md](docs/architecture/android-game-lifecycle.md), проверяемые свойства —
-[verification.md](docs/testing/verification.md), устройство screenshot diagnostics —
-[screenshot-diagnostics.md](docs/architecture/screenshot-diagnostics.md), локальная приёмка —
-[screenshot-acceptance.md](docs/testing/screenshot-acceptance.md), а managed tests —
-`tests/AzurPilot.Tests/`.
+1. Нажмите `/` или `F2`, чтобы открыть палитру, и выберите **«Запустить окружение»**.
+2. Проверьте точный ID MuMu в подтверждении. При нескольких экземплярах выберите нужный;
+   выбор можно сохранить или использовать только для текущего действия.
+3. Дождитесь готовности MuMu и Android. Для запуска Azur Lane выберите **«Запустить игру»**;
+   это действие также умеет подготовить окружение самостоятельно.
 
-## Структура репозитория
+«Запустить окружение» подготавливает Android без запуска игры. «Остановить игру» и
+«Остановить окружение» — отдельные действия; остановка окружения останавливает выбранный MuMu.
+`F4` отменяет текущую операцию, но не откатывает уже выполненные действия: MuMu или игра могут
+остаться запущенными. Справка доступна через `/help` или пункт «Помощь» в палитре.
 
-- `AzurPilot.slnx` — managed solution: `src/AzurPilot.Core`, `src/AzurPilot.Windows`, `src/AzurPilot.App`.
-- `native/` — CMake boundary: C++ с OpenCV и C ABI, workflow presets, manifest и configure/staging helpers.
-- `tests/` — тестовые проекты: interop и application-проверки, проба для негативной проверки native
-  boundary и инструменты реальной приёмки MuMu и Android-слоя. Это инструменты проверки, а не boundaries
-  приложения.
-- `global.json`, `Directory.Packages.props` и `packages.lock.json` — манифесты зависимостей managed-проектов.
-- `artifacts/` — единственная исключённая из Git область для build outputs и полученных зависимостей.
+Через **«Настройки»** можно сохранить выбранный экземпляр, режим интерфейса и настройку отдельной
+лог-консоли. Конфигурация хранится в `%LOCALAPPDATA%\AzurPilot\config.yaml`. При отсутствии файла
+используются встроенные defaults; существующий невалидный файл вызывает явный отказ.
 
-Карта проекта, границы и правило зависимостей — [.codex/context/architecture.md](.codex/context/architecture.md).
-Развёрнутое описание устройства — [docs/architecture/overview.md](docs/architecture/overview.md).
+Режимы интерфейса:
+
+| Режим | Для чего |
+| --- | --- |
+| `normal` | Основные пользовательские операции, состояние, настройки. |
+| `manual` | Дополнительно — ручные действия с MuMu, Android и игрой. |
+| `diagnostic` | Дополнительно — подробная диагностика, скриншоты и технические сведения. |
+
+Режим можно выбрать при запуске:
+
+```powershell
+dotnet run --project src/AzurPilot.App -c Release --no-build -- --mode diagnostic
+```
+
+[Действия и клавиатура TUI](docs/architecture/operator-tui.md) · [Формат конфигурации](docs/reference/application-configuration.md)
+
+### Команды для внешних агентов
+
+Agent CLI не требует запуска интерактивного терминала. Его контракт можно получить из самого приложения:
+
+```powershell
+dotnet run --project src/AzurPilot.App -c Release --no-build -- agent discover
+dotnet run --project src/AzurPilot.App -c Release --no-build -- agent status
+dotnet run --project src/AzurPilot.App -c Release --no-build -- agent instances
+```
+
+Для интеграции вызывайте собранный `AzurPilot.App.exe agent …` напрямую: контракт приложения — один
+UTF-8 JSON-документ в `stdout`, диагностические сообщения отдельно в `stderr`.
+`discover` работает без конфигурации, MuMu и ADB и публикует поддерживаемые команды и аргументы.
+
+Для операций над экземпляром используйте `--target` с ID из `instances`. Вызов команды изменения
+состояния в Agent CLI уже является явным запросом: интерактивного подтверждения нет.
+Результат сообщает `effect`: `none`, `changed` или `mayHaveChanged`; отказ или отмена не означают,
+что состояние осталось прежним.
+
+[Справочник Agent CLI и формат результатов →](docs/reference/agent-cli.md)
+
+## Архитектура
+
+Проект состоит из **трёх .NET-компонентов приложения** и отдельной **нативной библиотеки**:
+
+```mermaid
+flowchart LR
+    App["AzurPilot.App"] --> Windows["AzurPilot.Windows"]
+    Windows --> Core["AzurPilot.Core"]
+    Windows -->|"версионируемый C ABI"| Native["C++ / OpenCV"]
+```
+
+| Компонент | Ответственность |
+| --- | --- |
+| [`AzurPilot.Core`](src/AzurPilot.Core) | Доменные контракты, конфигурация и orchestration lifecycle без Windows-адаптеров. |
+| [`AzurPilot.Windows`](src/AzurPilot.Windows) | Windows-адаптеры, MuMu, ADB и взаимодействие с нативной библиотекой. |
+| [`AzurPilot.App`](src/AzurPilot.App) | Composition root, общие операторские сценарии, TUI, Agent CLI, журнал и диагностика. |
+| [`native/`](native/) | CMake, C++20, OpenCV и версионируемый C ABI для нативных операций. |
+
+TUI и Agent CLI обращаются к общим операторским сервисам в `AzurPilot.App`. UI не формирует команды
+ADB и не выбирает endpoint самостоятельно. Проекты `tests/**` и `tools/**` служат для проверки
+и разработки и не являются продуктовыми компонентами.
+
+[Подробная схема архитектуры и границы компонентов →](docs/architecture/overview.md)
+
+## Проверки
+
+| Уровень | Что проверяется |
+| --- | --- |
+| **CMake / CTest** | Сборка нативной библиотеки и поведение ABI. |
+| **Тесты .NET** | Межъязыковое взаимодействие, конфигурация, сценарии отказа, управление окружением и контракты репозитория. |
+| **Windows CI** | Стандартные сборка и автоматические проверки в Windows. |
+| **Локальная приёмка** | Поведение на реальном MuMu/ADB/Azur Lane и проверка получения изображений; не заменяется имитациями в CI. |
+| **TUI Harness** | Запуск настоящего приложения через ConPTY, воспроизведение терминального вывода и визуальные проверки. |
+
+CI проверяет код и контролируемые сценарии, но **не подтверждает работу на конкретной установленной у пользователя MuMu или игре** — для этого предусмотрены отдельные процедуры приёмки.
+
+Harness проверяет терминальное представление; физическое окно Windows Terminal требует отдельной приёмки.
+
+[Что именно доказывают проверки →](docs/testing/verification.md) · [Проверка TUI →](docs/testing/tui-harness.md)
 
 ## Документация
 
-- [docs/README.md](docs/README.md) — карта развёрнутой документации проекта.
-- [docs/getting-started.md](docs/getting-started.md) — prerequisites, сборка, запуск и диагностика.
-- [docs/architecture/android-game-lifecycle.md](docs/architecture/android-game-lifecycle.md) — подробная архитектура Android/ADB и lifecycle игры.
-- [docs/architecture/screenshot-diagnostics.md](docs/architecture/screenshot-diagnostics.md) — read-only PNG capture, geometry и native region scan.
-- [AGENTS.md](AGENTS.md) — минимальный глобальный контракт для coding-agent.
-- [.codex/context/INDEX.md](.codex/context/INDEX.md) — маршрутизация короткого agent-critical контекста.
+- [Начало работы](docs/getting-started.md) — требования, сборка, запуск и диагностика ошибок.
+- [Операторский TUI](docs/architecture/operator-tui.md) — интерфейс, действия, режимы и подтверждения.
+- [Agent CLI](docs/reference/agent-cli.md) — доступные операции, JSON-контракт и ограничения.
+- [MuMu](docs/architecture/mumu-lifecycle.md) — выбор экземпляра и жизненный цикл.
+- [Android и игра](docs/architecture/android-game-lifecycle.md) — ADB, готовность устройства и Azur Lane.
+- [Скриншоты](docs/architecture/screenshot-diagnostics.md) — PNG, нативный кадр и анализ областей.
+- [Карта всей документации](docs/README.md) — дополнительные руководства и материалы для разработки.
 
 ## Лицензия
 
-AGPL-3.0 — см. [LICENSE](LICENSE).
+Исходный код распространяется по лицензии **GNU AGPL-3.0**. Условия — в файле [LICENSE](LICENSE).
