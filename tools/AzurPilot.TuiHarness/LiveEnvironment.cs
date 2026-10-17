@@ -16,7 +16,8 @@ internal static class LiveEnvironment
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        foreach (string argument in new[] { "agent", "mumu-observe", "--config", config, "--target", instance, "--timeout-ms", "15000" })
+        foreach (string argument in new[] { "agent", "mumu-observe", "--config", config, "--target", instance,
+            "--timeout-ms", HarnessTimeouts.LivePreflightAgentMs.ToString(System.Globalization.CultureInfo.InvariantCulture) })
         {
             info.ArgumentList.Add(argument);
         }
@@ -26,7 +27,7 @@ internal static class LiveEnvironment
         Task<string> error = process.StandardError.ReadToEndAsync();
         try
         {
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.LivePreflightProcessMs));
             string json = await output;
             _ = await error;
             if (json.Length > 262144)
@@ -42,7 +43,7 @@ internal static class LiveEnvironment
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
-                await process.WaitForExitAsync();
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.CleanupMs));
             }
         }
     }

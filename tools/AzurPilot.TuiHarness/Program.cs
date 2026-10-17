@@ -100,9 +100,12 @@ internal static class Program
         using Process owner = ConPty.StartOwner(Environment.ProcessPath!, assembly, file);
         try
         {
-            HarnessResponse response = await SendAsync(
+            using CancellationTokenSource startupStatus = new();
+            Task<HarnessResponse> status = SendAsync(
                 new HarnessRequest { Command = "status", Session = id, TimeoutMs = HarnessTimeouts.StartupResponseMs },
-                connectionTimeoutMs: StartStatusConnectionTimeoutMs);
+                connectionTimeoutMs: StartStatusConnectionTimeoutMs,
+                cancellationToken: startupStatus.Token);
+            HarnessResponse response = await AwaitStartupResponseAsync(status, owner.WaitForExitAsync(), startupStatus);
             if (response.Status != "PASS")
             {
                 _ = await SendAsync(new HarnessRequest { Command = "close", Session = id, TimeoutMs = 1000 });
@@ -131,6 +134,33 @@ internal static class Program
         }
     }
 
+    internal static async Task<HarnessResponse> AwaitStartupResponseAsync(
+        Task<HarnessResponse> status,
+        Task ownerExited,
+        CancellationTokenSource cancellation)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+        ArgumentNullException.ThrowIfNull(ownerExited);
+        ArgumentNullException.ThrowIfNull(cancellation);
+        if (await Task.WhenAny(status, ownerExited) == ownerExited && !status.IsCompleted)
+        {
+            await cancellation.CancelAsync();
+            try
+            {
+                _ = await status;
+            }
+            catch (Exception exception) when (exception is HarnessBlockedException or IOException
+                or OperationCanceledException or ObjectDisposedException)
+            {
+                // Исход старта читается из owner-error.json вызывающим catch.
+            }
+
+            throw new HarnessBlockedException("Владелец сессии завершился до готовности канала запуска.");
+        }
+
+        return await status;
+    }
+
     private static HarnessResponse InstallBrowser()
     {
         TextWriter original = Console.Out;
@@ -146,7 +176,10 @@ internal static class Program
         }
     }
 
-    internal static async Task<HarnessResponse> SendAsync(HarnessRequest request, int? connectionTimeoutMs = null)
+    internal static async Task<HarnessResponse> SendAsync(
+        HarnessRequest request,
+        int? connectionTimeoutMs = null,
+        CancellationToken cancellationToken = default)
     {
         if (request.Session is null)
         {
@@ -163,13 +196,15 @@ internal static class Program
 
         await using NamedPipeClientStream pipe = new(".", SessionOwner.PipeName(request.Session), PipeDirection.InOut,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-        using CancellationTokenSource timeout = new(TimeSpan.FromMilliseconds(connectTimeoutMs));
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromMilliseconds(connectTimeoutMs));
         bool connected = false;
         try
         {
             await pipe.ConnectAsync(connectTimeoutMs, timeout.Token);
             connected = true;
-            using CancellationTokenSource responseTimeout = new(TimeSpan.FromMilliseconds(request.TimeoutMs + HarnessTimeouts.ResponseGraceMs));
+            using CancellationTokenSource responseTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            responseTimeout.CancelAfter(TimeSpan.FromMilliseconds(request.TimeoutMs + HarnessTimeouts.ResponseGraceMs));
             await SessionOwner.WriteAsync(pipe, request, responseTimeout.Token);
             return await SessionOwner.ReadAsync<HarnessResponse>(pipe, responseTimeout.Token);
         }

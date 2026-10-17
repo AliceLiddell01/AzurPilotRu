@@ -108,8 +108,18 @@ public sealed class AzurPilotOperatorService
     {
         _liveEnvironmentTarget = null;
         _livePreparationAttempted = false;
+        if (!ExternalMutationsDisabled)
+        {
+            return ApplicationResult<bool>.Failure(IsolatedMutationFailure());
+        }
+
         ApplicationResult<MuMuInstanceState> observed = ObserveMuMu(instanceId);
-        if (!ExternalMutationsDisabled || observed.IsFailure || observed.Value!.State != MuMuLifecycleState.Stopped)
+        if (observed.IsFailure)
+        {
+            return ApplicationResult<bool>.Failure(observed.FailureInfo!);
+        }
+
+        if (observed.Value!.State != MuMuLifecycleState.Stopped)
         {
             return ApplicationResult<bool>.Failure(IsolatedMutationFailure());
         }

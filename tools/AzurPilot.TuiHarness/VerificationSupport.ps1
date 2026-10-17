@@ -8,10 +8,16 @@ function Test-DisplayedConfigurationPath([string[]]$Lines, [string]$ExpectedPath
     # Переносы пути заполняют строку; удалять значимые пробелы или склеивать слова нельзя.
     $end = $offset + $expected.Length
     $rowEnd = 0
-    foreach ($line in $Lines) {
+    for ($index = 0; $index -lt $Lines.Count; $index++) {
+        $line = $Lines[$index]
         $rowEnd += $line.Length
         if ($rowEnd -ge $end) {
-            return [string]::IsNullOrWhiteSpace($text.Substring($end, $rowEnd - $end))
+            if (-not [string]::IsNullOrWhiteSpace($text.Substring($end, $rowEnd - $end))) { return $false }
+            # Резервная копия имеет продолжение `.bak-*`; оно может начаться на следующей ячейке-строке,
+            # когда основной путь заканчивается ровно на границе терминального ряда.
+            if ($rowEnd -eq $end -and $index + 1 -lt $Lines.Count -and
+                $Lines[$index + 1].StartsWith('.bak', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+            return $true
         }
     }
     return $false
@@ -66,6 +72,34 @@ function Test-AbandonedHarnessStartup([string]$HarnessPath, [string]$AppPath, [s
         if ($owner.HasExited -or -not (Test-Path -LiteralPath $identityFile)) { throw 'Владелец не дошёл до запуска production child.' }
         $identity = Get-Content -LiteralPath $identityFile -Raw | ConvertFrom-Json
         $child = [Diagnostics.Process]::GetProcessById($identity.productionPid)
+        # Capture доказывает, что owner дошёл до готовой production UI и отвечает по IPC;
+        # status не вызываем, чтобы startup watchdog продолжал следить за исходным клиентом.
+        $probeInfo = [Diagnostics.ProcessStartInfo]::new($HarnessPath)
+        $probeInfo.UseShellExecute = $false
+        $probeInfo.CreateNoWindow = $true
+        $probeInfo.RedirectStandardOutput = $true
+        $probeInfo.RedirectStandardError = $true
+        foreach ($argument in @('capture', '--session', $identity.session, '--name', 'startup-ready', '--timeout-ms', '30000')) {
+            $probeInfo.ArgumentList.Add($argument)
+        }
+        $probe = [Diagnostics.Process]::Start($probeInfo)
+        $probeOutput = $probe.StandardOutput.ReadToEndAsync()
+        $probeError = $probe.StandardError.ReadToEndAsync()
+        try {
+            if (-not $probe.WaitForExit(45000)) { throw 'Production TUI не ответил на контрольный capture.' }
+            $probeResult = $probeOutput.GetAwaiter().GetResult() | ConvertFrom-Json
+            $null = $probeError.GetAwaiter().GetResult()
+            if ($probe.ExitCode -ne 0 -or $probeResult.status -ne 'PASS') {
+                throw 'Production TUI не прошёл контрольный capture до обрыва клиента.'
+            }
+        }
+        finally {
+            if (-not $probe.HasExited) { $probe.Kill(); if (-not $probe.WaitForExit(10000)) { throw 'Не завершился capture-процесс проверки.' } }
+            $probe.Dispose()
+        }
+        $owner.Refresh()
+        $child.Refresh()
+        if ($owner.HasExited -or $child.HasExited) { throw 'Владелец или production child завершился до обрыва клиента.' }
         $client.Kill()
         if (-not $owner.WaitForExit(10000) -or -not $child.WaitForExit(10000)) { throw 'Обрыв клиента оставил принадлежащий процесс.' }
         if ($unrelated.HasExited) { throw 'Обрыв клиента затронул посторонний процесс.' }

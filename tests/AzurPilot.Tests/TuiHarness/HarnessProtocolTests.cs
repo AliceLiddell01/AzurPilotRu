@@ -33,6 +33,15 @@ public sealed class HarnessProtocolTests
     }
 
     [Fact]
+    public void ParseUsesOwnedDefaultBudgets()
+    {
+        HarnessRequest request = HarnessRequest.Parse(["capture"]);
+
+        Assert.Equal(HarnessTimeouts.DefaultRequestTimeoutMs, request.TimeoutMs);
+        Assert.Equal(HarnessTimeouts.DefaultLifetimeSeconds, request.LifetimeSeconds);
+    }
+
+    [Fact]
     public void LiveGrantRequiresExplicitExactTargetAndFixedScenario()
     {
         _ = Assert.Throws<ArgumentException>(() => HarnessRequest.Parse(["live-environment"]));
@@ -63,7 +72,9 @@ public sealed class HarnessProtocolTests
         HarnessResponse response;
         try
         {
-            response = await AzurPilot.TuiHarness.Program.SendAsync(new HarnessRequest { Command = "status", Session = Guid.NewGuid().ToString("N"), TimeoutMs = 100 });
+            response = await AzurPilot.TuiHarness.Program.SendAsync(
+                new HarnessRequest { Command = "status", Session = Guid.NewGuid().ToString("N"), TimeoutMs = 100 },
+                cancellationToken: TestContext.Current.CancellationToken);
         }
         catch (HarnessBlockedException exception)
         {
@@ -93,11 +104,30 @@ public sealed class HarnessProtocolTests
         }, cancellation.Token);
 
         HarnessResponse response = await AzurPilot.TuiHarness.Program.SendAsync(
-            new HarnessRequest { Command = "status", Session = session, TimeoutMs = 100 }, connectionTimeoutMs: 1000);
+            new HarnessRequest { Command = "status", Session = session, TimeoutMs = 100 }, connectionTimeoutMs: 1000,
+            cancellationToken: TestContext.Current.CancellationToken);
         HarnessRequest received = await serverTask;
 
         Assert.Equal("status", received.Command);
         Assert.Equal("PASS", response.Status);
+    }
+
+    [Fact]
+    public async Task StartupStatusWaitIsCancelledWhenOwnerExitsBeforeCreatingPipe()
+    {
+        using CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            TestContext.Current.CancellationToken);
+        TaskCompletionSource ownerExited = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<HarnessResponse> status = WaitForCancellationAsync(cancellation.Token);
+        Task<HarnessResponse> waiting = AzurPilot.TuiHarness.Program.AwaitStartupResponseAsync(
+            status, ownerExited.Task, cancellation);
+        ownerExited.SetResult();
+
+        HarnessBlockedException failure = await Assert.ThrowsAsync<HarnessBlockedException>(
+            () => waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+
+        Assert.True(cancellation.IsCancellationRequested);
+        Assert.Contains("завершился до готовности канала", failure.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -108,7 +138,8 @@ public sealed class HarnessProtocolTests
             PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         CancellationToken token = TestContext.Current.CancellationToken;
         Task<HarnessResponse> response = AzurPilot.TuiHarness.Program.SendAsync(
-            new HarnessRequest { Command = "status", Session = session, TimeoutMs = 100 }, connectionTimeoutMs: 1000);
+            new HarnessRequest { Command = "status", Session = session, TimeoutMs = 100 }, connectionTimeoutMs: 1000,
+            cancellationToken: token);
         await server.WaitForConnectionAsync(token);
         HarnessRequest received = await SessionOwner.ReadAsync<HarnessRequest>(server, token);
         Assert.Equal("status", received.Command);
@@ -126,7 +157,8 @@ public sealed class HarnessProtocolTests
         await using NamedPipeServerStream server = new(SessionOwner.PipeName(session), PipeDirection.InOut, 1,
             PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         Task<HarnessResponse> response = AzurPilot.TuiHarness.Program.SendAsync(
-            new HarnessRequest { Command = "status", Session = session, TimeoutMs = 100 }, connectionTimeoutMs: 1000);
+            new HarnessRequest { Command = "status", Session = session, TimeoutMs = 100 }, connectionTimeoutMs: 1000,
+            cancellationToken: token);
         await server.WaitForConnectionAsync(token);
         _ = await SessionOwner.ReadAsync<HarnessRequest>(server, token);
 
@@ -141,9 +173,11 @@ public sealed class HarnessProtocolTests
     [Fact]
     public void StartupStatusConnectionBudgetCoversSequentialCreationStages()
     {
-        const int worstCaseCreateMs = 20_000 + 12_000 + 20_000 + 15_000 + 20_000; // Включая четыре ограниченных Git-запроса.
-
-        Assert.True(AzurPilot.TuiHarness.Program.StartStatusConnectionTimeoutMs >= worstCaseCreateMs);
+        Assert.Equal(HarnessTimeouts.StartConnectionMs,
+            HarnessTimeouts.ConsoleProfileBudgetMs + HarnessTimeouts.LivePreflightBudgetMs
+            + HarnessTimeouts.RendererCreationBudgetMs + HarnessTimeouts.SourceIdentityBudgetMs
+            + HarnessTimeouts.RendererStartupWaitMs + HarnessTimeouts.StartupMarginMs);
+        Assert.Equal(HarnessTimeouts.StartConnectionMs, AzurPilot.TuiHarness.Program.StartStatusConnectionTimeoutMs);
     }
 
     [Theory]
@@ -158,5 +192,11 @@ public sealed class HarnessProtocolTests
     {
         JsonElement color = JsonSerializer.SerializeToElement(new { mode = "palette", value = index });
         Assert.Equal(rgb, ColorSamples.Resolve(color, default, "background"));
+    }
+
+    private static async Task<HarnessResponse> WaitForCancellationAsync(CancellationToken cancellationToken)
+    {
+        await Task.Delay(Timeout.Infinite, cancellationToken);
+        return new HarnessResponse("PASS", null, "Недостижимый результат ожидания отмены.");
     }
 }

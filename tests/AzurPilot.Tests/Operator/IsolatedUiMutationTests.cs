@@ -74,7 +74,8 @@ public sealed partial class AzurPilotOperatorServiceTests
             Code = ApplicationFailure.MuMuStateUnproven,
             Message = "Наблюдение недоступно.",
         });
-        Assert.True(fixture.Service.InitializeLiveEnvironment(MuMuInstanceId.FromIndex("7")).IsFailure);
+        ApplicationResult<bool> observationFailure = fixture.Service.InitializeLiveEnvironment(MuMuInstanceId.FromIndex("7"));
+        Assert.Equal(ApplicationFailure.MuMuStateUnproven, observationFailure.FailureInfo!.Code);
         await AssertLiveProviderMutationsDenied(fixture);
         fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Stopped);
         Assert.True(fixture.Service.InitializeLiveEnvironment(MuMuInstanceId.FromIndex("8")).IsFailure);

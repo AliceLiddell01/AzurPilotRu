@@ -108,9 +108,11 @@ internal sealed class SessionOwner : IAsyncDisposable
         bool denyChildProcesses = start.LiveInstance is null && start.Providers == "disabled";
         ConPty pty = new(exe, arguments, directory, start.Columns, start.Rows, safe: denyChildProcesses,
             live: start.LiveInstance is not null, profilePath: profilePath);
+        TerminalRenderer? renderer = null;
         try
         {
-            TerminalRenderer renderer = await TerminalRenderer.CreateAsync(pty, profile, start.Columns, start.Rows);
+            renderer = await TerminalRenderer.CreateAsync(pty, profile, start.Columns, start.Rows);
+            renderer.DiagnosticDirectory = directory;
             FileVersionInfo version = FileVersionInfo.GetVersionInfo(assemblyPath);
             object identity = new
             {
@@ -153,12 +155,28 @@ internal sealed class SessionOwner : IAsyncDisposable
                 source = await SourceIdentityAsync(AppContext.BaseDirectory),
             };
             await File.WriteAllTextAsync(Path.Combine(directory, "identity.json"), JsonSerializer.Serialize(identity, HarnessJson.Options));
-            _ = await renderer.WaitAsync(start.Calibration ? "HARNESS COLOR CALIBRATION" : "AzurPilot", 15000);
+            _ = await renderer.WaitAsync(start.Calibration ? "HARNESS COLOR CALIBRATION" : "AzurPilot",
+                HarnessTimeouts.RendererStartupWaitMs);
             return new SessionOwner(start, directory, exe, exeHash, assemblyPath, assemblyHash, pty, renderer, identity);
         }
         catch
         {
-            await pty.DisposeAsync();
+            try
+            {
+                if (renderer is not null)
+                {
+                    await renderer.DisposeAsync();
+                }
+                else
+                {
+                    await pty.DisposeAsync();
+                }
+            }
+            catch
+            {
+                // Сохраняем исходный отказ старта; при выходе владельца его Job закроет дочерние процессы.
+            }
+
             throw;
         }
     }
@@ -414,7 +432,7 @@ internal sealed class SessionOwner : IAsyncDisposable
             Task<string> error = process.StandardError.ReadToEndAsync();
             try
             {
-                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.SourceIdentityGitMs));
                 _ = await error;
                 string result = (await output).Trim();
                 return process.ExitCode == 0 && result.Length <= 8192 ? result : null;
@@ -424,7 +442,7 @@ internal sealed class SessionOwner : IAsyncDisposable
                 if (!process.HasExited)
                 {
                     process.Kill(entireProcessTree: true);
-                    await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                    await process.WaitForExitAsync().WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.CleanupMs));
                 }
             }
         }

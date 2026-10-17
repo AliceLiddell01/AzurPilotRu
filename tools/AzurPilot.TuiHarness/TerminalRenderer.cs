@@ -35,7 +35,8 @@ internal sealed class TerminalRenderer : IAsyncDisposable
 
     internal static async Task<TerminalRenderer> CreateAsync(ConPty pty, JsonElement profile, int columns, int rows)
     {
-        IPlaywright playwright = await Playwright.CreateAsync();
+        IPlaywright playwright = await Playwright.CreateAsync()
+            .WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.PlaywrightDriverStartupMs));
         IBrowser? browser = null;
         try
         {
@@ -43,41 +44,58 @@ internal sealed class TerminalRenderer : IAsyncDisposable
             {
                 Headless = true,
                 Args = ["--force-color-profile=srgb"],
-                Timeout = 20000,
-            });
+                Timeout = HarnessTimeouts.ChromiumLaunchMs,
+            }).WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.ChromiumLaunchMs));
             IPage page = await browser.NewPageAsync(new BrowserNewPageOptions
             {
                 DeviceScaleFactor = 1,
                 ViewportSize = new ViewportSize { Width = 2000, Height = 1200 },
                 ColorScheme = ColorScheme.Dark,
                 ReducedMotion = ReducedMotion.Reduce,
-            });
-            page.SetDefaultTimeout(10000);
+            }).WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.RendererNewPageMs));
+            page.SetDefaultTimeout(HarnessTimeouts.PlaywrightDefaultTimeoutMs);
             // Никаких CDN, HTTP endpoint и доступа к пользовательскому браузерному профилю.
-            _ = await page.RouteAsync("**/*", route => route.AbortAsync());
-            await page.SetContentAsync("<!doctype html><html><head><meta charset='utf-8'></head><body></body></html>");
+            _ = await page.RouteAsync("**/*", route => route.AbortAsync())
+                .WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.RendererRouteMs));
+            await page.SetContentAsync("<!doctype html><html><head><meta charset='utf-8'></head><body></body></html>")
+                .WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.RendererSetContentMs));
             string renderer = Path.Combine(AppContext.BaseDirectory, "Renderer");
-            _ = await page.AddStyleTagAsync(new PageAddStyleTagOptions { Path = Path.Combine(renderer, "vendor", "xterm.css") });
+            _ = await page.AddStyleTagAsync(new PageAddStyleTagOptions { Path = Path.Combine(renderer, "vendor", "xterm.css") })
+                .WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.RendererAddStyleMs));
             foreach (string script in new[] { "vendor/xterm.js", "vendor/addon-unicode11.js", "terminal.js" })
             {
-                _ = await page.AddScriptTagAsync(new PageAddScriptTagOptions { Path = Path.Combine(renderer, script) });
+                _ = await page.AddScriptTagAsync(new PageAddScriptTagOptions { Path = Path.Combine(renderer, script) })
+                    .WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.RendererAddScriptMs));
             }
 
-            _ = await page.ExposeFunctionAsync("harnessInput", (string data) => pty.Send(data));
+            _ = await page.ExposeFunctionAsync("harnessInput", (string data) => pty.Send(data))
+                .WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.RendererExposeFunctionMs));
             JsonElement geometry = await page.EvaluateAsync<JsonElement>(
                 "async json => { const p = JSON.parse(json); return await harnessInitialize(p.profile, p.columns, p.rows); }",
-                JsonSerializer.Serialize(new { profile, columns, rows }, HarnessJson.Options));
-            await SetViewportAsync(page, geometry);
+                JsonSerializer.Serialize(new { profile, columns, rows }, HarnessJson.Options))
+                .WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.RendererInitializeMs));
+            await SetViewportAsync(page, geometry)
+                .WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.RendererSetViewportMs));
             return new TerminalRenderer(playwright, browser, page, pty);
         }
         catch
         {
-            if (browser is not null)
+            try
             {
-                await browser.CloseAsync();
+                if (browser is not null)
+                {
+                    await browser.CloseAsync().WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.CleanupMs));
+                }
+            }
+            catch
+            {
+                // Исходная ошибка создания renderer важнее ошибки ограниченной очистки.
+            }
+            finally
+            {
+                playwright.Dispose();
             }
 
-            playwright.Dispose();
             throw;
         }
     }

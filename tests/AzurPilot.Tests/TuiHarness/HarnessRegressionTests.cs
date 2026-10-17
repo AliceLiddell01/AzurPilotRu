@@ -65,9 +65,9 @@ public sealed class HarnessRegressionTests
     }
 
     [Theory]
-    [InlineData(46_000, true)]
-    [InlineData(89_999, true)]
-    [InlineData(101_001, false)]
+    [InlineData(246_999, true)]
+    [InlineData(247_999, true)]
+    [InlineData(248_001, false)]
     public async Task StartupWatchdogUsesDocumentedBudgetWithoutWallClockSleep(int readinessMs, bool expected)
     {
         ManualDeadlineClock clock = new();
@@ -114,6 +114,23 @@ public sealed class HarnessRegressionTests
         Assert.True(result.GetProperty("correct").GetBoolean());
         Assert.False(result.GetProperty("wrong").GetBoolean());
         Assert.False(result.GetProperty("suffix").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ConfigurationPathVerifierRejectsBackupSuffixOnNextRow()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "isolated", "config.yaml");
+        string expected = OperatorUiController.ConfigurationPathLabel + path;
+        string[] rows = [expected, ".bak-20261017"];
+        JsonElement result = JsonSerializer.Deserialize<JsonElement>(await PowerShell("""
+            . './tools/AzurPilot.TuiHarness/VerificationSupport.ps1'
+            $d = $env:AZURPILOT_TEST_DATA | ConvertFrom-Json
+            @{ backup = (Test-DisplayedConfigurationPath $d.rows $d.path)
+               exact = (Test-DisplayedConfigurationPath @($d.rows[0], 'Настройки сохранены') $d.path) } | ConvertTo-Json -Compress
+            """, new { rows, path }));
+
+        Assert.False(result.GetProperty("backup").GetBoolean());
+        Assert.True(result.GetProperty("exact").GetBoolean());
     }
 
     [Theory]

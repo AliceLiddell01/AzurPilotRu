@@ -84,8 +84,8 @@ internal sealed partial record HarnessRequest
             Rows = Number("rows", 30),
             X = Number("x", 0),
             Y = Number("y", 0),
-            TimeoutMs = Number("timeout-ms", 15000),
-            LifetimeSeconds = Number("lifetime-seconds", 600),
+            TimeoutMs = Number("timeout-ms", HarnessTimeouts.DefaultRequestTimeoutMs),
+            LifetimeSeconds = Number("lifetime-seconds", HarnessTimeouts.DefaultLifetimeSeconds),
         };
         if (values.Count > 0)
         {

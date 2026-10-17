@@ -212,10 +212,17 @@ bold/dim/inverse, скрытый курсор и Unicode widths. Кадры App 
 (public preview, не зависимость продукта). Сверьте установленную версию и `--help`. Запустите тот
 же EXE/DLL в отдельном окне Windows Terminal с `--mode diagnostic --isolated-ui <absolute-root>`
 и отдельным существующим YAML. Сохраните хеши, версии Terminal/WinApp, HWND, заголовок, DPI, шрифт,
-цветовую схему, строки/столбцы и размер PNG в локальных артефактах. Например, в новом окне Terminal:
+цветовую схему, строки/столбцы и размер PNG в локальных артефактах. Запустите App в одном окне, а
+инспекцию — во втором, пока TUI работает. В первом окне PowerShell задайте уникальный заголовок:
 
 ```powershell
+$Host.UI.RawUI.WindowTitle = 'AzurPilot physical smoke'
 & $app --mode diagnostic --isolated-ui $isolatedRoot
+```
+
+В отдельном окне PowerShell из корня checkout найдите это окно и сохраните инспекцию и снимок:
+
+```powershell
 $winapp = (Get-Command winapp.exe).Source
 New-Item -ItemType Directory -Force -Path 'artifacts/tui-harness/physical' | Out-Null
 $windows = & $winapp ui list-windows -a Terminal --json | ConvertFrom-Json

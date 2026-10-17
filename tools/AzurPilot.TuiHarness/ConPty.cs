@@ -72,7 +72,7 @@ internal sealed partial class ConPty : IAsyncDisposable
                                     $"{prefix}__console-profile \"{profilePath}\"", directory, _console, _job, breakAway: live);
                                 using (bootstrap)
                                 {
-                                    if (Native.WaitForSingleObject(bootstrap, 10000) != 0
+                                    if (Native.WaitForSingleObject(bootstrap, HarnessTimeouts.ConsoleProfileBootstrapMs) != 0
                                         || !Native.GetExitCodeProcess(bootstrap, out uint code) || code != 0)
                                     {
                                         throw new HarnessBlockedException("Не применён профиль виртуальной консоли; см. console-profile-error.json.");
@@ -90,7 +90,7 @@ internal sealed partial class ConPty : IAsyncDisposable
                                         break;
                                     }
 
-                                    if (released.Elapsed > TimeSpan.FromSeconds(2))
+                                    if (released.ElapsedMilliseconds > HarnessTimeouts.ConsoleProfileReleaseMs)
                                     {
                                         throw new HarnessBlockedException("Job не освободил завершившийся console bootstrap.");
                                     }
@@ -107,7 +107,7 @@ internal sealed partial class ConPty : IAsyncDisposable
                             _closing = true;
                             _ = _inputQueue.Writer.TryComplete();
                             _console.Dispose();
-                            _ = Task.WhenAll(_reader, _writer).Wait(TimeSpan.FromSeconds(5));
+                            _ = Task.WhenAll(_reader, _writer).Wait(TimeSpan.FromMilliseconds(HarnessTimeouts.CleanupMs));
                             _output.Dispose();
                             _input.Dispose();
                             throw;
@@ -209,13 +209,13 @@ internal sealed partial class ConPty : IAsyncDisposable
         _closing = true;
         _ = _inputQueue.Writer.TryComplete();
         _job.Dispose(); // Kill-on-close: только принадлежащий этой сессии процесс и его потомки.
-        if (Native.WaitForSingleObject(_process, 5000) != 0)
+        if (Native.WaitForSingleObject(_process, HarnessTimeouts.CleanupMs) != 0)
         {
             throw new TimeoutException("Процесс приложения не завершился после закрытия Job Object.");
         }
 
-        await Task.Run(_console.Dispose).WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.WhenAll(_reader, _writer).WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Run(_console.Dispose).WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.CleanupMs));
+        await Task.WhenAll(_reader, _writer).WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.CleanupMs));
         _input.Dispose();
         _output.Dispose();
         _process.Dispose();
