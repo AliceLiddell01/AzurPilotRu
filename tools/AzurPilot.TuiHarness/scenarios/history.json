@@ -1,0 +1,333 @@
+{
+  "name": "history-wheel-and-keyboard",
+  "steps": [
+    {
+      "contains": "AzurPilot",
+      "name": "startup",
+      "command": "capture"
+    },
+    {
+      "command": "text",
+      "value": "История 001"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 002"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 003"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 004"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 005"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 006"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 007"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 008"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 009"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 010"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 011"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 012"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 013"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 014"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 015"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 016"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 017"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 018"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "contains": "Помощь",
+      "name": "history-bottom",
+      "command": "capture"
+    },
+    {
+      "value": "wheel-up",
+      "command": "mouse",
+      "mouseHistoryFrom": "history-bottom"
+    },
+    {
+      "historyChangedFrom": "history-bottom",
+      "name": "history-wheel",
+      "command": "capture",
+      "historyMarkerPrefix": "> История "
+    },
+    {
+      "command": "key",
+      "value": "PageUp"
+    },
+    {
+      "historyChangedFrom": "history-wheel",
+      "name": "history-page-up",
+      "command": "capture",
+      "historyMarkerPrefix": "> История "
+    },
+    {
+      "command": "key",
+      "value": "Control+End"
+    },
+    {
+      "name": "history-end",
+      "historyEquals": "history-bottom",
+      "command": "capture"
+    }
+  ]
+}

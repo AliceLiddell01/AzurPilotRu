@@ -149,6 +149,19 @@ public sealed class AzurPilotApplicationProcessTests
         Assert.DoesNotContain(configurationPath, run.StandardError, StringComparison.Ordinal);
     }
 
+    [Fact(DisplayName = "Изолированный CLI использует единый отказ проверки конфигурации")]
+    public void IsolatedUiConfigurationValidationUsesApplicationFailureProjection()
+    {
+        ApplicationHostProcess application = ApplicationHostProcess.CreateStaged();
+        using TemporaryConfigurationDirectory directory = new();
+
+        ApplicationHostRun run = application.Run("--isolated-ui", directory.Root);
+
+        Assert.Equal(AzurPilotExitCode.InvalidArgument, run.ExitCode);
+        Assert.Empty(run.StandardOutput);
+        Assert.Contains("Изолированная UI-сессия требует существующий отдельный YAML.", run.StandardError, StringComparison.Ordinal);
+    }
+
     [Fact(DisplayName = "Неверный режим интерфейса отклоняет запуск вместо подстановки обычного режима")]
     public void InvalidModeIsRejected()
     {

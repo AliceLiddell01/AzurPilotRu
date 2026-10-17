@@ -50,6 +50,9 @@ jobs:
         working-directory: native
         run: cmake --workflow --preset native-x64-release
 
+      - name: Проверка хешей и подготовка файлов рендерера
+        run: pwsh -NoProfile -File tools/AzurPilot.TuiHarness/prepare.ps1 -AssetsOnly
+
       - name: Locked NuGet restore
         run: dotnet restore AzurPilot.slnx --locked-mode
 

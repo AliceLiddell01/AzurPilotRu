@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Terminal.Gui.Input;
+using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 using Xunit;
 
@@ -37,6 +38,25 @@ public sealed class OperatorUiComposerKeyBindingTests : IDisposable
             _host.Services.GetRequiredService<AzurPilotDiagnosticService>().Capture(),
             new OperatorUiLogSourceAdapter(static () => []), OperatorUiMode.Diagnostic);
         _ui.InitializeViews(_window);
+    }
+
+    [Fact]
+    public void LateTerminalBackgroundChangesPaletteWithoutLosingDraft()
+    {
+        View historyHeading = _window.SubViews.ElementAt(2);
+        Terminal.Gui.Drawing.Color initialForeground = historyHeading
+            .GetAttributeForRole(Terminal.Gui.Drawing.VisualRole.Normal).Foreground;
+        Terminal.Gui.Drawing.Color lightForeground = new("#5F6368");
+        Terminal.Gui.Drawing.Color darkForeground = new("#9A9A9A");
+        _ui.ComposerText = "черновик";
+        _ui.ApplyTerminalBackground(new Terminal.Gui.Drawing.Color("#F2F2F2"));
+        Assert.NotEqual(lightForeground, initialForeground);
+        Assert.Equal(lightForeground, historyHeading.GetAttributeForRole(Terminal.Gui.Drawing.VisualRole.Normal).Foreground);
+        _ui.ApplyTerminalBackground(Terminal.Gui.Drawing.Color.None);
+        Assert.Equal(lightForeground, historyHeading.GetAttributeForRole(Terminal.Gui.Drawing.VisualRole.Normal).Foreground);
+        _ui.ApplyTerminalBackground(new Terminal.Gui.Drawing.Color("#0C0C0C"));
+        Assert.Equal(darkForeground, historyHeading.GetAttributeForRole(Terminal.Gui.Drawing.VisualRole.Normal).Foreground);
+        Assert.Equal("черновик", _ui.ComposerText);
     }
 
     [Theory(DisplayName = "F2 сохраняет исходный текст при одном и повторных открытиях")]

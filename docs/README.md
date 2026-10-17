@@ -21,6 +21,7 @@ verification/acceptance, troubleshooting и других деталей, кот�
 - `testing/android-acceptance.md` — подробности real/managed проверки Android/game lifecycle.
 - `testing/screenshot-acceptance.md` — локальные PNG samples и read-only live screenshot acceptance.
 - `testing/operator-tui-acceptance.md` — приёмка самого TUI на Windows и live MuMu.
+- `testing/tui-harness.md` — постоянный ConPTY/xterm.js CLI, воспроизводимые PNG, ячейки и границы точности воспроизведения.
 
 ## Чем `docs/` отличается от agent context
 

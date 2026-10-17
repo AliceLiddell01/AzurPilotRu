@@ -15,6 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="AzurPilot.Tests" />
     <ProjectReference Include="..\AzurPilot.Core\AzurPilot.Core.csproj" />
   </ItemGroup>
 
