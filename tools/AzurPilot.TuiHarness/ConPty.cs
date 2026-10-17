@@ -251,6 +251,13 @@ internal sealed partial class ConPty : IAsyncDisposable
         Check(Native.AssignProcessToJobObject(job, process.SafeHandle));
     }
 
+    internal static void AssignProcessToJob(SafeFileHandle job, SafeHandle process)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentNullException.ThrowIfNull(process);
+        Check(Native.AssignProcessToJobObject(job, process));
+    }
+
     internal static Process StartOwner(string executable, string? assembly, string requestPath)
     {
         StartupEx startup = new();

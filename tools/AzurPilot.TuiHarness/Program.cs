@@ -46,6 +46,11 @@ internal static class Program
             return 0;
         }
 
+        if (args is ["__physical-app", string physicalRequestPath])
+        {
+            return await PhysicalSession.RunTerminalAppAsync(physicalRequestPath);
+        }
+
         HarnessResponse result;
         HarnessRequest? request = null;
         try
@@ -59,6 +64,7 @@ internal static class Program
                 "run" => await Scenarios.RunAsync(request),
                 "fidelity" => await Calibration.RunAsync(request),
                 "live-environment" => await LiveEnvironment.RunAsync(request),
+                "physical" => await PhysicalSession.RunAsync(request),
                 _ => await SendAsync(request),
             };
         }
@@ -236,6 +242,7 @@ internal static class Program
             "mouse --session ID --value click|move|wheel-up|wheel-down --x COLUMN --y ROW",
             "resize --session ID --columns N --rows N", "wait --session ID --contains TEXT",
             "capture --session ID [--name NAME] [--contains TEXT]", "fidelity [--profile JSON]",
+            "physical --exe PATH [--output DIR] [--columns N] [--rows N] [--terminal-scheme current|Campbell|Campbell Light] [--interactive true|false]",
             "live-environment --exe PATH --instance mumu:<index> --authorize prepare-and-restore", "install-browser"];
 
     private static HarnessResponse Help()
