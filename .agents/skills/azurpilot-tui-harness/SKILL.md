@@ -4,7 +4,7 @@ description: >-
   Проверяет визуальные изменения настоящего операторского TUI через постоянный ConPTY/xterm.js
   Harness: baseline, актуальная сборка, cells/assertions, PNG и самостоятельный осмотр. Применяй
   при визуально значимых изменениях TUI и проверке его ввода/resize; не заменяет physical Windows
-  Terminal и не разрешает live mutation.
+  Terminal или live acceptance через production Agent CLI.
 ---
 
 # Визуальная проверка production TUI
@@ -27,6 +27,10 @@ description: >-
 
 Default safe запрещает child processes и product mutations. `--providers read-only` разрешает
 настоящее read-only inventory при закрытом production mutation guard. Live environment запускай
-только при текущем явном разрешении exact target; подробные ограничения — в документе-владельце.
+в Harness только при текущем явном разрешении exact target; его возможности ограничены подготовкой
+окружения и возвратом исходного состояния. Это ограничение Harness не запрещает уместную live-приёмку
+через production Agent CLI по прямому поручению пользователя; exact target, preflight, postconditions
+и восстановление описаны в [документации Agent CLI](../../../docs/reference/agent-cli.md) и
+[Android acceptance](../../../docs/testing/android-acceptance.md).
 Не запускай дополнительные агенты при запрете пользователя. Не объявляй xterm PNG подтверждением
 поведения физического Windows Terminal.

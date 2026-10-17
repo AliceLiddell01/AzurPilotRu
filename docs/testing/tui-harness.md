@@ -91,7 +91,7 @@ pwsh -NoProfile -File tools/AzurPilot.TuiHarness/verify.ps1 -App $app -ReadOnlyP
 пользовательских YAML/JSON/backups до и после настроек; сохранение и backup должны появиться только
 в runtime-каталоге сессии. Настройки следующего запуска не включают viewer текущего safe host.
 
-Единственный live-сценарий — подготовка окружения и возвращение **исходно Stopped** exact target:
+Единственный live-сценарий самого Harness — подготовка окружения и возвращение **исходно Stopped** exact target:
 
 ```powershell
 # Выполнять только для явно разрешённого пользователем instance.
@@ -111,6 +111,13 @@ breakaway; Chromium/driver/conhost остаются под владельцем.
 может остаться запущенным, а восстановление не подтверждено. Повторение начинается с exact-target
 preflight. Координация production mutation не покрывает посторонние MuMu/ADB-клиенты; live smoke
 проводится при исключённом внешнем управлении выбранным target. Произвольные live-сценарии отсутствуют.
+
+Эти ограничения описывают live-flow самого Harness. По прямому поручению пользователя агент может
+выполнить ограниченную live-приёмку через production Agent CLI: exact target, read-only preflight и
+postflight, проверяемые postconditions и восстановление подтверждённого исходного состояния. Это
+отдельная acceptance boundary; она не открывает дополнительные действия внутри Harness и не заменяет
+его default safe isolation. См. [контракт Agent CLI](../reference/agent-cli.md) и
+[Android acceptance](android-acceptance.md).
 
 ## Capture и assertions
 
@@ -172,13 +179,47 @@ foreground core pixel. Если glyph полностью сглажен, сра�
 прозрачность, ligatures и произвольный DPI не эмулируются. Текстовое browser selection не равно
 выделению в приложении; в evidence фиксируется фактическое состояние, а не обещание полного parity.
 
-Для physical smoke откройте отдельный Windows Terminal с известным непрозрачным Campbell-профилем,
-Consolas 12pt, padding 0 и теми же rows/columns. Запустите **тот же** EXE/DLL с другим изолированным
-root, откройте то же меню, зафиксируйте binary hashes, DPI/font/profile/размер и сравните с PNG.
-До запуска скопируйте канонический YAML в отдельный root; без него изолированный запуск отклоняется.
-Не меняйте пользовательский default profile. Отдельно отметьте Unicode, wheel и resize ниже порога.
-Если захват/доступ к physical окну недоступен, результат — `BLOCKED` с этой зависимостью; browser
-captures его не заменяют. Установленный `wt.exe` сам по себе не подтверждает physical render.
+### Необязательный physical Windows Terminal smoke
+
+Для физического снимка можно использовать отдельный developer tool [Microsoft WinApp CLI](https://learn.microsoft.com/en-us/windows/apps/dev-tools/winapp-cli/)
+(public preview; не production dependency). Сверьте установленную версию и её `--help`. Запустите
+тот же production EXE/DLL в отдельном окне Windows Terminal с `--mode diagnostic` и
+`--isolated-ui <absolute-root>`; в root должен находиться отдельный `config.yaml`. Пользовательский
+config и профиль Windows Terminal не меняйте. Сохраняйте exact EXE/DLL hashes, версию Terminal/WinApp,
+HWND/title, DPI, font, color scheme, rows/columns и размер PNG в локальных artifacts. В PowerShell
+сам запуск выглядит так:
+
+```powershell
+# $app и $isolatedRoot — абсолютные пути к production EXE и отдельному root с config.yaml.
+& $app --mode diagnostic --isolated-ui $isolatedRoot
+```
+
+где `$app` — абсолютный путь к проверяемому EXE, а `$isolatedRoot` — отдельный каталог с существующим
+`config.yaml`. Запускайте эту команду в новой вкладке/окне Windows Terminal.
+
+```powershell
+$winapp = (Get-Command winapp.exe).Source
+New-Item -ItemType Directory -Force -Path 'artifacts/tui-harness/physical' | Out-Null
+$windows = & $winapp ui list-windows -a Terminal --json | ConvertFrom-Json
+$target = @($windows | Where-Object title -eq 'AzurPilot physical smoke')
+if ($target.Count -ne 1) { throw 'Не найдено единственное целевое окно Windows Terminal.' }
+$hwnd = [int]$target[0].hwnd
+& $winapp ui inspect -w $hwnd --json
+& $winapp ui screenshot -w $hwnd --output 'artifacts/tui-harness/physical/startup.png' --json
+```
+
+Выбирайте окно по уникальному заголовку и используйте полученный HWND. `inspect` показывает UIA-дерево
+Windows Terminal, но не содержимое ячеек TUI; оценивайте физический PNG отдельно. По умолчанию
+`screenshot` использует Windows Graphics Capture, тогда как `--capture-screen` снимает видимую область
+экрана и выводит окно на передний план. WGC может снять перекрытое окно, но это не доказывает работу на locked
+desktop или для свернутого окна. Синтетический ввод требует разблокированный интерактивный desktop;
+зафиксируйте фактическую возможность, а не выводите её из наличия `wt.exe` или `winapp.exe`. Сверьте
+одинаковые состояния, темы, строки/столбцы и образцы Unicode с xterm PNG, но не требуйте pixel parity
+разных рендереров. Отдельно укажите, проверялись ли физические Unicode, wheel и resize.
+
+В среде без GUI/HWND/WGC снимка физический этап имеет статус `BLOCKED`; browser captures не заменяют
+его. Установленный `wt.exe` или `winapp.exe` сам по себе не подтверждает physical render. Сведения о
+UIA, захвате окна и вводе см. в [WinApp CLI UI automation](https://github.com/microsoft/winappCli/blob/main/docs/ui-automation.md).
 
 ## Цикл агента и vision
 
@@ -188,11 +229,9 @@ captures его не заменяют. Установленный `wt.exe` са�
 В Codex PNG открывается инструментом просмотра локальных изображений; оценка должна называть
 видимый признак (например, взаимное положение символов и строк), статус и путь к осмотренному PNG.
 
-Для DSH нужен доказанный путь передачи PNG конкретной модели/профилю/provider. `dsh headless --help`
-проверяет CLI, но не vision. Если профиль принимает только текст и не установлена работа image tool,
-помечайте vision `BLOCKED`; не называйте чтение cells анализом изображения. При запрете пользователя
-на дополнительных агентов не запускайте отдельного DSH-агента ради проверки. Работающий Codex-путь
-остаётся пригодным независимо от этого ограничения.
+Проверка image route другого агента или provider, включая DSH, не входит в acceptance Harness:
+если она отдельно не выполнялась, укажите `NOT_TESTED`, а не blocker Harness. Не запускайте отдельный
+DSH-процесс лишь для завершения проверки, уже выполняемой в Codex.
 
 ## Первичные технические контракты
 

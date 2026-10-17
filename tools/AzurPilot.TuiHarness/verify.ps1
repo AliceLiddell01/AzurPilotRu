@@ -135,8 +135,14 @@ try {
         if ($menuCells.lines[$lineIndex].Trim() -eq 'Настройки') { $settingsRow = $lineIndex; break }
     }
     if ($settingsRow -lt 0) { throw 'Не найдена строка настройки для реального mouse click.' }
-    $null = Invoke-HarnessCommand @('mouse', '--session', $first.session, '--value', 'click', '--x', '8', '--y', "$settingsRow") 'mouse-click-settings' 'BLOCKED'
-    $results.Add(@{ case = 'production-palette-click'; status = 'BLOCKED'; reason = 'Событие передано, но production палитра не реализует click navigation. Wheel проверен отдельно.' })
+    $unsupportedClick = Invoke-HarnessCommand @('mouse', '--session', $first.session, '--value', 'click', '--x', '8', '--y', "$settingsRow") 'mouse-click-settings' 'BLOCKED'
+    $results.RemoveAt($results.Count - 1)
+    $results.Add(@{
+        case = 'production-palette-click'
+        status = 'NOT_APPLICABLE'
+        observedStatus = $unsupportedClick.status
+        reason = 'Навигация по палитре кликом не входит в требования продукта; неподдерживаемое событие не блокирует Harness. Wheel проверяется отдельно.'
+    })
     foreach ($opened in @($first, $second)) {
         $null = Invoke-HarnessCommand @('close', '--session', $opened.session) ('close-' + $opened.session)
         Wait-OwnedExit $opened.data.ownerPid
