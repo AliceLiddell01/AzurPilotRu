@@ -36,6 +36,8 @@ internal sealed partial record HarnessRequest
     public string? Authorization { get; init; }
     public string Providers { get; init; } = "disabled";
     public int StartupClientPid { get; init; }
+    public string TerminalScheme { get; init; } = "current";
+    public bool Interactive { get; init; }
 
     internal static HarnessRequest Parse(string[] args)
     {
@@ -65,6 +67,12 @@ internal sealed partial record HarnessRequest
                     ? int.Parse(value, System.Globalization.CultureInfo.InvariantCulture) : fallback;
         }
 
+        bool Boolean(string key, bool fallback)
+        {
+            return Take(key) is string value
+                ? bool.Parse(value) : fallback;
+        }
+
         HarnessRequest request = new()
         {
             Command = args[0],
@@ -75,7 +83,7 @@ internal sealed partial record HarnessRequest
             LiveInstance = Take("instance"),
             Authorization = Take("authorize"),
             Providers = Take("providers") ?? "disabled",
-            Mode = Take("mode") ?? "normal",
+            Mode = Take("mode") ?? (args[0] == "physical" ? "diagnostic" : "normal"),
             Value = Take("value"),
             Contains = Take("contains"),
             Name = Take("name"),
@@ -86,6 +94,8 @@ internal sealed partial record HarnessRequest
             Y = Number("y", 0),
             TimeoutMs = Number("timeout-ms", HarnessTimeouts.DefaultRequestTimeoutMs),
             LifetimeSeconds = Number("lifetime-seconds", HarnessTimeouts.DefaultLifetimeSeconds),
+            TerminalScheme = Take("terminal-scheme") ?? "current",
+            Interactive = Boolean("interactive", false),
         };
         if (values.Count > 0)
         {
@@ -99,7 +109,8 @@ internal sealed partial record HarnessRequest
     internal void Validate()
     {
         if (Command is not ("start" or "run" or "close" or "status" or "capture" or "wait" or "text" or "key"
-            or "resize" or "mouse" or "help" or "install-browser" or "fidelity" or "live-environment" or "wait-idle"))
+            or "resize" or "mouse" or "help" or "install-browser" or "fidelity" or "live-environment" or "wait-idle"
+            or "physical"))
         {
             throw new ArgumentException("Неизвестная команда harness.");
         }
@@ -111,7 +122,7 @@ internal sealed partial record HarnessRequest
 
         if (Name is not null && !CaptureNamePattern().IsMatch(Name))
         {
-            throw new ArgumentException("Имя capture: 1–64 буквы ASCII, цифры, '-' или '_'.");
+            throw new ArgumentException("Имя снимка: 1–64 буквы ASCII, цифры, '-' или '_'.");
         }
 
         CheckSize(Columns, Rows);
@@ -125,7 +136,7 @@ internal sealed partial record HarnessRequest
             || Value?.Length > 4096 || Contains?.Length > 256)
         {
             throw new ArgumentException(
-                $"Превышены границы timeout ({HarnessTimeouts.MinimumRequestTimeoutMs}–{HarnessTimeouts.MaximumRequestTimeoutMs} ms), "
+                $"Превышены границы времени ожидания ({HarnessTimeouts.MinimumRequestTimeoutMs}–{HarnessTimeouts.MaximumRequestTimeoutMs} ms), "
                 + $"lifetime ({HarnessTimeouts.MinimumLifetimeSeconds}–{HarnessTimeouts.MaximumLifetimeSeconds} s) или ввода (4096).");
         }
 
@@ -146,6 +157,23 @@ internal sealed partial record HarnessRequest
         else if (LiveInstance is not null || Authorization is not null)
         {
             throw new ArgumentException("Разрешение live допустимо только в ограниченном сценарии live-environment.");
+        }
+
+        if (Command == "physical")
+        {
+            if (Mode != "diagnostic" || Exe is null)
+            {
+                throw new ArgumentException("Физическая проверка запускает AzurPilot.App.exe только в режиме diagnostic и требует --exe.");
+            }
+
+            if (TerminalScheme is not ("current" or "Campbell" or "Campbell Light"))
+            {
+                throw new ArgumentException("Профиль Windows Terminal: current, Campbell или Campbell Light.");
+            }
+        }
+        else if (TerminalScheme != "current" || Interactive)
+        {
+            throw new ArgumentException("Параметры terminal-scheme и interactive допустимы только для команды physical.");
         }
     }
 

@@ -42,6 +42,30 @@ public sealed class HarnessProtocolTests
     }
 
     [Fact]
+    public void PhysicalCommandDefaultsToDiagnosticAndDoesNotInjectInput()
+    {
+        HarnessRequest request = HarnessRequest.Parse(["physical", "--exe", Path.Combine("build", "AzurPilot.App.exe")]);
+
+        Assert.Equal("diagnostic", request.Mode);
+        Assert.Equal("current", request.TerminalScheme);
+        Assert.False(request.Interactive);
+    }
+
+    [Theory]
+    [InlineData("physical", "--terminal-scheme", "Vintage")]
+    [InlineData("physical", "--mode", "normal")]
+    [InlineData("capture", "--terminal-scheme", "Campbell")]
+    [InlineData("capture", "--interactive", "true")]
+    public void PhysicalOnlyOptionsAndDiagnosticModeAreEnforced(string command, string option, string value)
+    {
+        string[] args = command == "physical"
+            ? [command, "--exe", Path.Combine("build", "AzurPilot.App.exe"), option, value]
+            : [command, option, value];
+
+        _ = Assert.Throws<ArgumentException>(() => HarnessRequest.Parse(args));
+    }
+
+    [Fact]
     public void DefaultSessionRootUsesCheckoutAndExplicitRelativeOutputUsesCurrentDirectory()
     {
         string currentDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
