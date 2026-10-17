@@ -322,20 +322,11 @@ public sealed class AzurPilotOperatorService
         string jsonPath = Path.Combine(configurationDirectory, Path.GetFileName(defaultJsonPath));
         if (ExternalMutationsDisabled)
         {
-            try
-            {
-                // Нет перехода к пользовательскому пути при потере отдельного снимка или файла.
-                WindowsConfigurationIsolation.Validate(_configuration.FilePath
-                    ?? throw new ArgumentException("Изолированная конфигурация не имеет отдельного пути."));
-            }
-            catch (Exception exception) when (exception is ArgumentException or IOException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
+            ApplicationResult validation = WindowsConfigurationIsolation.TryValidate(_configuration.FilePath);
+            if (validation.IsFailure)
             {
                 backupPath = null;
-                return ApplicationResult<AzurPilotConfigurationSnapshot>.Failure(new ApplicationFailure
-                {
-                    Code = ApplicationFailure.InvalidArgument,
-                    Message = exception.Message,
-                });
+                return ApplicationResult<AzurPilotConfigurationSnapshot>.Failure(validation.FailureInfo!);
             }
         }
 

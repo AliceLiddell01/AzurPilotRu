@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AzurPilot.App.OperatorUi;
 using AzurPilot.TuiHarness;
 using Xunit;
 
@@ -81,5 +82,20 @@ public sealed class LiveEnvironmentAndTerminalRendererTests
     public void WaitIdleClassifier_RecognizesOnlyTerminalOperationStates(string operation, bool expectedIdle)
     {
         Assert.Equal(expectedIdle, TerminalRenderer.IsOperationIdle(operation));
+    }
+
+    [Fact]
+    public void WaitIdleClassifierRecognizesProductionTerminalOperationTexts()
+    {
+        string[] terminalStates =
+        [
+            OperatorUiController.OperationIdleText,
+            OperatorUiController.OperationCompletedText,
+            OperatorUiController.OperationRejectedText,
+            OperatorUiController.OperationCancelledText,
+            OperatorUiController.OperationErrorText,
+        ];
+
+        Assert.All(terminalStates, state => Assert.True(TerminalRenderer.IsOperationIdle(state), state));
     }
 }

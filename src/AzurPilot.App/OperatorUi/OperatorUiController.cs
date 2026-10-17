@@ -15,11 +15,16 @@ namespace AzurPilot.App.OperatorUi;
 public sealed class OperatorUiController : IDisposable
 {
     internal const string ConfigurationPathLabel = "Расположение конфигурации: ";
+    internal const string OperationIdleText = "Операция: нет";
+    internal const string OperationCompletedText = "Операция: завершена";
+    internal const string OperationRejectedText = "Операция: отказ";
+    internal const string OperationCancelledText = "Операция: отменена";
+    internal const string OperationErrorText = "Операция: ошибка";
     private readonly AzurPilotOperatorService _service;
     private CancellationTokenSource? _cancellation;
     private Task<OperationPresentation>? _activeTask;
     private AzurPilotDiagnosticReport _lastDiagnostics;
-    private string _operationText = "Операция: нет";
+    private string _operationText = OperationIdleText;
     private string? _progressText;
     private AzurPilotConfigurationSnapshot _savedConfiguration;
     private bool _disposed;
@@ -169,8 +174,8 @@ public sealed class OperatorUiController : IDisposable
         {
             OperationPresentation result = _activeTask.GetAwaiter().GetResult();
             Volatile.Write(ref _progressText, null);
-            OperationText = result.Cancelled ? "Операция: отменена"
-                : result.Success ? "Операция: завершена" : "Операция: отказ";
+            OperationText = result.Cancelled ? OperationCancelledText
+                : result.Success ? OperationCompletedText : OperationRejectedText;
             LastOperationFailure = result.Failure;
             resolvedTarget = result.ResolvedTarget;
             string title = result.Cancelled ? "Отмена" : result.Kind switch
@@ -196,13 +201,13 @@ public sealed class OperatorUiController : IDisposable
         }
         catch (OperationCanceledException)
         {
-            OperationText = "Операция: отменена";
+            OperationText = OperationCancelledText;
             LastOperationFailure = null;
             Session.AddMessage("Отмена", "Операция завершила обработку отмены.", OperatorUiMessageKind.Warning);
         }
         catch (Exception exception)
         {
-            OperationText = "Операция: ошибка";
+            OperationText = OperationErrorText;
             LastOperationFailure = null;
             Session.AddMessage("Ошибка", "Неожиданная ошибка операции. Проверьте технические детали.",
                 OperatorUiMessageKind.Error,

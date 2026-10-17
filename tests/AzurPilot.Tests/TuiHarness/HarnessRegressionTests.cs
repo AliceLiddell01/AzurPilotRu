@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using AzurPilot.App;
 using AzurPilot.App.OperatorUi;
+using AzurPilot.Core.Failures;
 using AzurPilot.TuiHarness;
 using AzurPilot.Windows;
 using Xunit;
@@ -18,6 +19,11 @@ public sealed class HarnessRegressionTests
         string user = scratch.File("user/config.yaml");
         string userLegacyJson = scratch.File("user/config.json");
         string separate = scratch.File("separate/config.yaml");
+        Assert.True(WindowsConfigurationIsolation.TryValidateAgainst(separate, user, userLegacyJson).IsSuccess);
+        ApplicationResult rejectedUserPath = WindowsConfigurationIsolation.TryValidateAgainst(user, user, userLegacyJson);
+        Assert.Equal(ApplicationFailure.InvalidArgument, rejectedUserPath.FailureInfo!.Code);
+        Assert.Equal(ApplicationFailure.InvalidArgument,
+            WindowsConfigurationIsolation.TryValidateAgainst(null, user, userLegacyJson).FailureInfo!.Code);
         WindowsConfigurationIsolation.ValidateAgainst(separate, user, userLegacyJson);
         foreach (string alias in new[] { user, user.ToUpperInvariant(), Path.Combine(Path.GetDirectoryName(user)!, ".", "config.yaml"),
             Path.Combine(Path.GetDirectoryName(user)!, "..", "user", "config.yaml"), @"\\?\" + user })
@@ -47,11 +53,14 @@ public sealed class HarnessRegressionTests
     public async Task IsolatedHostRejectsUserDirectoryBeforeSessionCallback()
     {
         bool called = false;
-        ArgumentException failure = await Assert.ThrowsAsync<ArgumentException>(() => AzurPilotHost.RunInteractiveAsync(
+        AzurPilotInteractiveRunResult result = await AzurPilotHost.RunInteractiveAsync(
             (_, _, _, _, _, _) => { called = true; return Task.CompletedTask; },
             configurationPath: Core.Configuration.AzurPilotConfigurationPath.GetDefaultRuntimePath(),
-            isolatedUi: true, cancellationToken: TestContext.Current.CancellationToken));
-        Assert.Contains("Изолированная конфигурация не может находиться в пользовательском runtime-каталоге.", failure.Message, StringComparison.Ordinal);
+            isolatedUi: true, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.False(result.InteractiveSessionStarted);
+        Assert.Equal(ApplicationFailure.InvalidArgument, result.Startup.FailureInfo!.Code);
+        Assert.Contains("Изолированная конфигурация не может находиться в пользовательском runtime-каталоге.",
+            result.Startup.FailureInfo!.Message, StringComparison.Ordinal);
         Assert.False(called);
     }
 

@@ -1,5 +1,6 @@
 using AzurPilot.App;
 using AzurPilot.Core.Configuration;
+using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using Xunit;
 
@@ -11,9 +12,13 @@ public sealed class ApplicationArgumentsTests
     public async Task IsolatedUiCannotFallBackToUserSettingsWhenExplicitFileIsMissing()
     {
         string missing = Path.Combine(Path.GetTempPath(), "azurpilot-absent-" + Guid.NewGuid().ToString("N"), "config.yaml");
-        _ = await Assert.ThrowsAsync<ArgumentException>(() => AzurPilotHost.RunInteractiveAsync(
+        AzurPilotInteractiveRunResult result = await AzurPilotHost.RunInteractiveAsync(
             static (_, _, _, _, _, _) => Task.CompletedTask,
-            configurationPath: missing, isolatedUi: true, cancellationToken: TestContext.Current.CancellationToken));
+            configurationPath: missing, isolatedUi: true, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.False(result.InteractiveSessionStarted);
+        Assert.Equal(ApplicationFailure.InvalidArgument, result.Startup.FailureInfo!.Code);
+        Assert.Contains("Изолированная UI-сессия требует существующий отдельный YAML.",
+            result.Startup.FailureInfo!.Message, StringComparison.Ordinal);
         Assert.False(File.Exists(missing));
     }
 

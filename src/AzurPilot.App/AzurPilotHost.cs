@@ -134,7 +134,6 @@ public static class AzurPilotHost
         if (isolatedUi)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(configurationPath);
-            WindowsConfigurationIsolation.Validate(configurationPath);
         }
 
         if (liveEnvironmentTarget is not null && !isolatedUi)
@@ -155,6 +154,17 @@ public static class AzurPilotHost
 
         try
         {
+            if (isolatedUi)
+            {
+                ApplicationResult validation = WindowsConfigurationIsolation.TryValidate(configurationPath);
+                if (validation.IsFailure)
+                {
+                    return new AzurPilotInteractiveRunResult(
+                        AzurPilotStartupResult.Failure(operation.CorrelationId, validation.FailureInfo!),
+                        InteractiveSessionStarted: false);
+                }
+            }
+
             ApplicationResult<AzurPilotConfigurationSnapshot> configuration;
             try
             {

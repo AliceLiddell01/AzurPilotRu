@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using AzurPilot.Core.Configuration;
+using AzurPilot.Core.Failures;
 using Microsoft.Win32.SafeHandles;
 
 namespace AzurPilot.Windows;
@@ -8,11 +9,34 @@ namespace AzurPilot.Windows;
 /// <summary>Проверяет отдельный YAML до запуска изолированной сессии и перед сохранением.</summary>
 public static partial class WindowsConfigurationIsolation
 {
-    /// <summary>Отклоняет отсутствующий YAML и переадресацию в пользовательский runtime-каталог.</summary>
-    public static void Validate(string configurationPath)
-    {
-        ValidateAgainst(configurationPath, AzurPilotConfigurationPath.GetDefaultRuntimePath(),
+    private const string SeparateYamlRequired = "Изолированная UI-сессия требует существующий отдельный YAML.";
+
+    /// <summary>Проверяет отдельный YAML и возвращает ожидаемые отказы как application result.</summary>
+    /// <param name="configurationPath">Путь отдельной конфигурации.</param>
+    /// <returns>Успех либо отказ изоляции с кодом <see cref="ApplicationFailure.InvalidArgument"/>.</returns>
+    public static ApplicationResult TryValidate(string? configurationPath)
+        => TryValidateAgainst(configurationPath, AzurPilotConfigurationPath.GetDefaultRuntimePath(),
             AzurPilotConfigurationPath.GetLegacyJsonRuntimePath());
+
+    internal static ApplicationResult TryValidateAgainst(
+        string? configurationPath,
+        string userConfigurationPath,
+        string userLegacyJsonPath)
+    {
+        if (string.IsNullOrWhiteSpace(configurationPath))
+        {
+            return InvalidConfiguration(SeparateYamlRequired);
+        }
+
+        try
+        {
+            ValidateAgainst(configurationPath, userConfigurationPath, userLegacyJsonPath);
+            return ApplicationResult.Success();
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or Win32Exception or UnauthorizedAccessException)
+        {
+            return InvalidConfiguration(exception.Message);
+        }
     }
 
     internal static void ValidateAgainst(
@@ -22,7 +46,7 @@ public static partial class WindowsConfigurationIsolation
     {
         if (!Path.IsPathFullyQualified(configurationPath))
         {
-            throw new ArgumentException("Изолированная UI-сессия требует существующий отдельный YAML.", nameof(configurationPath));
+            throw new ArgumentException(SeparateYamlRequired, nameof(configurationPath));
         }
 
         string userDirectory = Resolve(Path.GetDirectoryName(Path.GetFullPath(userConfigurationPath))!);
@@ -39,7 +63,7 @@ public static partial class WindowsConfigurationIsolation
 
         if (!File.Exists(configurationPath))
         {
-            throw new ArgumentException("Изолированная UI-сессия требует существующий отдельный YAML.", nameof(configurationPath));
+            throw new ArgumentException(SeparateYamlRequired, nameof(configurationPath));
         }
 
         // Hard link не меняет окончательный путь, поэтому отдельно сравниваем идентичность файлов.
@@ -57,6 +81,13 @@ public static partial class WindowsConfigurationIsolation
             }
         }
     }
+
+    private static ApplicationResult InvalidConfiguration(string message)
+        => ApplicationResult.Failure(new ApplicationFailure
+        {
+            Code = ApplicationFailure.InvalidArgument,
+            Message = message,
+        });
 
     private static string Resolve(string path)
     {

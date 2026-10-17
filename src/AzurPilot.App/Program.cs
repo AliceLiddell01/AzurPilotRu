@@ -1,9 +1,10 @@
 using System.Text;
 using AzurPilot.App;
+using AzurPilot.App.Agent;
 using AzurPilot.App.LogViewer;
 using AzurPilot.App.OperatorUi;
 using AzurPilot.Core.Configuration;
-using AzurPilot.App.Agent;
+using AzurPilot.Core.Failures;
 
 // Точка входа приложения: разбирает минимальный CLI, запускает хост приложения и печатает
 // человекочитаемый итог. Вся runtime-логика (composition, диагностика, логирование) живёт в
@@ -54,14 +55,12 @@ string? isolatedConfiguration = arguments.IsolatedUiRoot is string root
     ? Path.Combine(root, Path.GetFileName(AzurPilotConfigurationPath.GetDefaultRuntimePath())) : null;
 if (isolatedConfiguration is not null)
 {
-    try
+    ApplicationResult validation = AzurPilot.Windows.WindowsConfigurationIsolation.TryValidate(isolatedConfiguration);
+    if (validation.IsFailure)
     {
-        AzurPilot.Windows.WindowsConfigurationIsolation.Validate(isolatedConfiguration);
-    }
-    catch (Exception exception) when (exception is ArgumentException or IOException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
-    {
-        Console.Error.WriteLine(exception.Message);
-        return AzurPilotExitCode.InvalidArgument;
+        ApplicationFailure failure = validation.FailureInfo!;
+        Console.Error.WriteLine(failure.Message);
+        return AzurPilotExitCode.FromFailure(failure);
     }
 }
 

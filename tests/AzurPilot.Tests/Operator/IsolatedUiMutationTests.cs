@@ -1,4 +1,5 @@
 using AzurPilot.Core.Android;
+using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Tests.MuMu;
@@ -147,8 +148,9 @@ public sealed partial class AzurPilotOperatorServiceTests
     {
         OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
         fixture.Service.ExternalMutationsDisabled = true;
-        Assert.True(fixture.Service.SaveConfiguration(fixture.Service.Configuration,
-            fixture.Service.Configuration.Configuration, out string? backup).IsFailure);
+        ApplicationResult<AzurPilotConfigurationSnapshot> result = fixture.Service.SaveConfiguration(fixture.Service.Configuration,
+            fixture.Service.Configuration.Configuration, out string? backup);
+        Assert.Equal(ApplicationFailure.InvalidArgument, result.FailureInfo!.Code);
         Assert.Null(backup);
         Assert.False(File.Exists(fixture.Service.Configuration.FilePath));
     }
