@@ -1,5 +1,6 @@
 using AzurPilot.App;
 using AzurPilot.Core.Configuration;
+using AzurPilot.Core.MuMu;
 using Xunit;
 
 namespace AzurPilot.Tests.Host;
@@ -26,6 +27,22 @@ public sealed class ApplicationArgumentsTests
         Assert.False(ApplicationArguments.Parse(["--isolated-ui", "relative"]).IsSuccess);
         Assert.False(ApplicationArguments.Parse(["--isolated-ui", root, "--log-viewer", "--log-viewer-pipe", "test"]).IsSuccess);
         Assert.Null(ApplicationArguments.Parse([]).IsolatedUiRoot);
+    }
+
+    [Fact]
+    public void LiveEnvironmentTargetRequiresIsolatedUiAndCanonicalExactIdentity()
+    {
+        string root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "azurpilot-isolated-ui"));
+        ApplicationArguments parsed = ApplicationArguments.Parse(
+            ["--isolated-ui", root, "--live-environment-target", "mumu:7"]);
+
+        Assert.True(parsed.IsSuccess);
+        Assert.Equal(MuMuInstanceId.FromIndex("7"), parsed.LiveEnvironmentTarget);
+        Assert.False(ApplicationArguments.Parse(["--live-environment-target", "mumu:7"]).IsSuccess);
+        Assert.False(ApplicationArguments.Parse(
+            ["--isolated-ui", root, "--live-environment-target", "auto"]).IsSuccess);
+        Assert.False(ApplicationArguments.Parse(
+            ["--isolated-ui", root, "--live-environment-target", "7"]).IsSuccess);
     }
 
     [Theory(DisplayName = "CLI выбирает точный режим без изменения настроек")]

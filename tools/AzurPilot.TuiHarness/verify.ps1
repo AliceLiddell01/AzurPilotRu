@@ -93,7 +93,9 @@ try {
     if (-not (Get-ChildItem (Split-Path $configPath) -Filter '*.bak-*')) { throw 'Не создан backup изолированного YAML.' }
     $settingsCells = Get-Content (Join-Path $settings.data.directory '001-settings.cells.json') -Raw | ConvertFrom-Json
     $unwrapped = ($settingsCells.lines | ForEach-Object { $_.TrimEnd() }) -join ''
-    if (-not $unwrapped.Contains($configPath)) { throw 'UI не показывает изолированный YAML.' }
+    $normalizedUnwrapped = $unwrapped -replace '\s', ''
+    $normalizedConfigPath = $configPath -replace '\s', ''
+    if (-not $normalizedUnwrapped.Contains($normalizedConfigPath)) { throw 'UI не показывает изолированный YAML.' }
     if ($ReadOnlyProviders) {
         $null = Invoke-HarnessCommand @('run', '--exe', $App, '--output', $reportRoot, '--providers', 'read-only',
             '--scenario', (Join-Path $PSScriptRoot 'scenarios/safe-confirmation.json')) 'safe-confirmation'
