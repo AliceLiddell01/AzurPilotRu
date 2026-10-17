@@ -262,7 +262,7 @@ internal static partial class PhysicalSession
                     : "Windows Terminal может применить фактический размер окна; ConPTY сравнивается с измеренной сеткой production App.",
             };
             object conptyCapture = await CaptureConPtyAsync(exe, directory, profilePath,
-                comparisonColumns, comparisonRows, appRecord.ExeSha256, appRecord.AppDllSha256);
+                comparisonColumns, comparisonRows, appRecord.ExeSha256, appRecord.AppDllSha256, report);
             report["conpty"] = conptyCapture;
             JsonElement conptyEvidence = JsonSerializer.SerializeToElement(conptyCapture, HarnessJson.Options);
             conptyMenuCellsPath = conptyEvidence.GetProperty("actionMenu").GetProperty("paths")
@@ -581,7 +581,7 @@ internal static partial class PhysicalSession
 
     private static async Task<object> CaptureConPtyAsync(
         string exe, string directory, string profilePath, int columns, int rows,
-        string expectedExeSha256, string? expectedAppDllSha256)
+        string expectedExeSha256, string? expectedAppDllSha256, Dictionary<string, object?> report)
     {
         string output = Path.Combine(directory, "conpty");
         HarnessResponse started = await Program.StartAsync(new HarnessRequest
@@ -607,6 +607,7 @@ internal static partial class PhysicalSession
         HarnessResponse escapeInput;
         HarnessResponse restored;
         ConPtyBinaryIdentityEvidence binaryIdentity;
+        ConPtySessionCleanupEvidence sessionCleanup;
         try
         {
             binaryIdentity = AssessConPtyBinaryIdentity(started.Data, expectedExeSha256, expectedAppDllSha256);
@@ -678,12 +679,13 @@ internal static partial class PhysicalSession
         }
         finally
         {
-            _ = await Program.SendAsync(new HarnessRequest
+            sessionCleanup = await CaptureConPtySessionCleanupEvidenceAsync(() => Program.SendAsync(new HarnessRequest
             {
                 Command = "close",
                 Session = started.Session,
                 TimeoutMs = 5_000,
-            });
+            }));
+            report["conptySessionCleanup"] = sessionCleanup;
         }
 
         await File.WriteAllTextAsync(Path.Combine(directory, "conpty-capture.json"),
@@ -692,6 +694,7 @@ internal static partial class PhysicalSession
         {
             status = "PASS",
             binaryIdentity,
+            sessionCleanup,
             outputDirectory = output,
             session = started.Session,
             configurationPath = Path.Combine(output, started.Session,
@@ -740,6 +743,31 @@ internal static partial class PhysicalSession
             : $"Ожидались EXE={expectedExeSha256}, DLL={expectedAppDllSha256 ?? "<нет>"}; "
                 + $"ConPTY сообщает EXE={exeSha256 ?? "<нет>"}, DLL={appDllSha256 ?? "<нет>"}.";
         return new(exeMatches && appDllMatches ? "PASS" : "BLOCKED", exeSha256, appDllSha256, reason);
+    }
+
+    internal static async Task<ConPtySessionCleanupEvidence> CaptureConPtySessionCleanupEvidenceAsync(
+        Func<Task<HarnessResponse>> closeSession)
+    {
+        ArgumentNullException.ThrowIfNull(closeSession);
+        try
+        {
+            HarnessResponse response = await closeSession();
+            string status = response.Status is "PASS" or "FAIL" or "BLOCKED" or "NOT_TESTED"
+                ? response.Status : "NOT_TESTED";
+            return new(status, status == "PASS" ? null : response.Message);
+        }
+        catch (Exception exception) when (exception is HarnessBlockedException or IOException or ObjectDisposedException)
+        {
+            return new("BLOCKED", exception.Message);
+        }
+    }
+
+    internal static bool MatchesMeasuredBackground(JsonElement cellBackground, JsonElement measuredBackground,
+        int? cellRgb, int? measuredRgb)
+    {
+        return cellBackground.ValueKind == JsonValueKind.Object && measuredBackground.ValueKind == JsonValueKind.Object
+            && (string.Equals(cellBackground.GetRawText(), measuredBackground.GetRawText(), StringComparison.Ordinal)
+                || cellRgb is int resolvedCellRgb && measuredRgb == resolvedCellRgb);
     }
 
     private static JsonElement GetCapturePaths(Dictionary<string, object?> report)
@@ -793,6 +821,8 @@ internal static partial class PhysicalSession
         JsonElement background = cellArray.EnumerateArray()
             .FirstOrDefault(cell => string.IsNullOrWhiteSpace(cell.GetProperty("text").GetString())
                 && !cell.GetProperty("dim").GetBoolean() && !cell.GetProperty("inverse").GetBoolean());
+        int? measuredBackgroundValue = background.ValueKind == JsonValueKind.Object
+            ? ColorSamples.TryResolve(background.GetProperty("bg"), appearance.Theme, "background") : null;
         PhysicalPixelSample? backgroundSample = null;
         PhysicalRgb? observedBackground = null;
         if (background.ValueKind == JsonValueKind.Object)
@@ -822,7 +852,13 @@ internal static partial class PhysicalSession
             }
 
             int? expected = ColorSamples.TryResolve(cell.GetProperty("fg"), appearance.Theme, "foreground");
-            int? backgroundRgb = ColorSamples.TryResolve(cell.GetProperty("bg"), appearance.Theme, "background");
+            JsonElement cellBackground = cell.GetProperty("bg");
+            int? backgroundRgb = ColorSamples.TryResolve(cellBackground, appearance.Theme, "background");
+            if (!MatchesMeasuredBackground(cellBackground, background, backgroundRgb, measuredBackgroundValue))
+            {
+                continue;
+            }
+
             if (expected is int expectedKnown && backgroundRgb is int backgroundKnown && expectedKnown == backgroundKnown)
             {
                 continue;
@@ -1502,7 +1538,8 @@ internal static partial class PhysicalSession
                 }
             }
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception exception) when (exception is InvalidOperationException
+            or System.ComponentModel.Win32Exception or HarnessBlockedException)
         {
             windowCloseStatus = "BLOCKED: " + exception.Message;
         }
@@ -1519,23 +1556,43 @@ internal static partial class PhysicalSession
             KillOwnedProcess(app.HelperPid, helperPath, processCleanup, "physical-helper");
         }
 
-        bool markerAbsent = FindExistingMarkerWindows(marker).Count == 0;
+        MarkerAbsenceEvidence markerAbsence = CheckMarkerAbsence(() => FindExistingMarkerWindows(marker).Count == 0);
         bool windowCloseConfirmed = window is null
-            ? markerAbsent && (windowCloseStatus is "NOT_TESTED" or "PASS")
+            ? markerAbsence.MarkerAbsent && (windowCloseStatus is "NOT_TESTED" or "PASS")
             : windowCloseStatus == "PASS" && !Native.IsWindow((nint)window.Hwnd);
         bool processesConfirmed = app is null
             ? processCleanup.Count == 0
             : processCleanup.Count == 2 && processCleanup.All(ProcessCleanupConfirmed);
+        bool cleanupConfirmed = windowCloseConfirmed && processesConfirmed && markerAbsence.Status == "PASS";
         return new
         {
-            status = windowCloseConfirmed && processesConfirmed ? "PASS" : "NOT_TESTED",
+            status = cleanupConfirmed ? "PASS" : markerAbsence.Status == "BLOCKED" ? "BLOCKED" : "NOT_TESTED",
             ownedWindowCloseRequested = windowCloseRequested,
             ownedWindowCloseStatus = windowCloseStatus,
             ownedWindowClosed = windowCloseConfirmed,
+            markerAbsent = markerAbsence.MarkerAbsent,
+            markerAbsenceStatus = markerAbsence.Status,
+            markerAbsenceReason = markerAbsence.Reason,
             exactWindowTitleRequired = marker,
             processes = processCleanup,
             note = "WindowsTerminal.exe не завершается целиком; cleanup адресует только HWND с точным marker и собственные child/helper PID.",
         };
+    }
+
+    internal static MarkerAbsenceEvidence CheckMarkerAbsence(Func<bool> markerIsAbsent)
+    {
+        ArgumentNullException.ThrowIfNull(markerIsAbsent);
+        try
+        {
+            bool absent = markerIsAbsent();
+            return absent
+                ? new(true, "PASS", null)
+                : new(false, "BLOCKED", "Маркерное окно осталось после cleanup.");
+        }
+        catch (HarnessBlockedException exception)
+        {
+            return new(false, "NOT_TESTED", exception.Message);
+        }
     }
 
     private static bool ProcessCleanupConfirmed(string result)
@@ -1879,6 +1936,8 @@ internal static partial class PhysicalSession
 
     internal sealed record ConPtyBinaryIdentityEvidence(string Status, string? ExeSha256,
         string? AppDllSha256, string Reason);
+    internal sealed record ConPtySessionCleanupEvidence(string Status, string? Reason);
+    internal sealed record MarkerAbsenceEvidence(bool MarkerAbsent, string Status, string? Reason);
 
     private sealed record ContentRectangle(int X, int Y, int Width, int Height);
     private sealed record UiRectangle(int X, int Y, int Width, int Height, string Name);

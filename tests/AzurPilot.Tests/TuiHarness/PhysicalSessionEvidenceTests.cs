@@ -63,6 +63,42 @@ public sealed class PhysicalSessionEvidenceTests
     }
 
     [Fact]
+    public async Task ConPtySessionCleanup_RecordsCloseFailureWithoutThrowing()
+    {
+        PhysicalSession.ConPtySessionCleanupEvidence evidence =
+            await PhysicalSession.CaptureConPtySessionCleanupEvidenceAsync(
+                () => Task.FromException<HarnessResponse>(new HarnessBlockedException("Владелец не ответил.")));
+
+        Assert.Equal("BLOCKED", evidence.Status);
+        Assert.Equal("Владелец не ответил.", evidence.Reason);
+    }
+
+    [Fact]
+    public void CleanupMarkerAbsence_RecordsEnumerationFailureAsNotTested()
+    {
+        PhysicalSession.MarkerAbsenceEvidence evidence = PhysicalSession.CheckMarkerAbsence(
+            () => throw new HarnessBlockedException("EnumWindows завершился ошибкой."));
+
+        Assert.False(evidence.MarkerAbsent);
+        Assert.Equal("NOT_TESTED", evidence.Status);
+        Assert.Equal("EnumWindows завершился ошибкой.", evidence.Reason);
+    }
+
+    [Fact]
+    public void ForegroundSample_RequiresTheMeasuredBlankCellBackground()
+    {
+        using JsonDocument blank = JsonDocument.Parse("""{"mode":"indexed","value":0}""");
+        using JsonDocument same = JsonDocument.Parse("""{"mode":"indexed","value":0}""");
+        using JsonDocument different = JsonDocument.Parse("""{"mode":"indexed","value":4}""");
+        using JsonDocument equivalentResolvedColor = JsonDocument.Parse("""{"mode":"default","value":0}""");
+
+        Assert.True(PhysicalSession.MatchesMeasuredBackground(same.RootElement, blank.RootElement, 0, 0));
+        Assert.False(PhysicalSession.MatchesMeasuredBackground(different.RootElement, blank.RootElement, 4, 0));
+        Assert.True(PhysicalSession.MatchesMeasuredBackground(equivalentResolvedColor.RootElement,
+            blank.RootElement, 0, 0));
+    }
+
+    [Fact]
     public void NumericJsonProperties_ReturnFallbackForWrongValueKindsAndNonObjects()
     {
         using JsonDocument wrongKinds = JsonDocument.Parse(

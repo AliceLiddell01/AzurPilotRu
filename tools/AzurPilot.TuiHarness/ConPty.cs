@@ -281,11 +281,11 @@ internal sealed partial class ConPty : IAsyncDisposable
         string fullExecutable = Path.GetFullPath(executable);
         StartupEx startup = new();
         startup.Startup.Size = (uint)Marshal.SizeOf<Startup>();
-        (SafeFileHandle process, int processId) = StartProcessInJob(fullExecutable,
+        var (processHandle, _, startedProcess) = StartProcessInJob(fullExecutable,
             BuildCommandLine(fullExecutable, arguments), directory, job, startup, CreateSuspended);
-        using (process)
+        using (processHandle)
         {
-            return Process.GetProcessById(processId);
+            return startedProcess;
         }
     }
 
@@ -322,8 +322,13 @@ internal sealed partial class ConPty : IAsyncDisposable
             startup.Startup.Flags = 0x100;
             startup.Attributes = attributes;
             char[] command = $"\"{exe}\" {arguments}\0".ToCharArray();
-            return StartProcessInJob(exe, command, directory, job, startup,
-                CreateSuspended | ExtendedStartupInfoPresent | (breakAway ? CreateBreakawayFromJob : 0u));
+            var (handle, processId, processObject) = StartProcessInJob(exe, command,
+                directory, job, startup, CreateSuspended | ExtendedStartupInfoPresent
+                    | (breakAway ? CreateBreakawayFromJob : 0u));
+            using (processObject)
+            {
+                return (handle, processId);
+            }
         }
         finally
         {
@@ -336,13 +341,14 @@ internal sealed partial class ConPty : IAsyncDisposable
         }
     }
 
-    private static (SafeFileHandle Process, int Pid) StartProcessInJob(string executable, char[] command,
+    private static (SafeFileHandle Handle, int ProcessId, Process ProcessObject) StartProcessInJob(string executable, char[] command,
         string directory, SafeFileHandle job, StartupEx startup, uint creationFlags)
     {
         Check(Native.CreateProcessW(executable, command, 0, 0, false, creationFlags, 0, directory,
             ref startup, out ProcessInformation info));
         SafeFileHandle process = new(info.Process, ownsHandle: true);
         using SafeFileHandle thread = new(info.Thread, ownsHandle: true);
+        Process? processObject = null;
         try
         {
             // Процесс остаётся приостановленным до подтверждения принадлежности Job.
@@ -355,12 +361,17 @@ internal sealed partial class ConPty : IAsyncDisposable
                 }
             }
 
+            processObject = Process.GetProcessById((int)info.ProcessId);
+            // Открыть managed-дескриптор, пока процесс приостановлен и исходный handle ещё жив.
+            _ = processObject.SafeHandle;
             return Native.ResumeThread(thread) == uint.MaxValue
                 ? throw new Win32Exception(Marshal.GetLastPInvokeError())
-                : ((SafeFileHandle Process, int Pid))(process, (int)info.ProcessId);
+                : ((SafeFileHandle Handle, int ProcessId, Process ProcessObject))
+                    (process, (int)info.ProcessId, processObject);
         }
         catch
         {
+            processObject?.Dispose();
             _ = Native.TerminateProcess(process, 1);
             process.Dispose();
             throw;

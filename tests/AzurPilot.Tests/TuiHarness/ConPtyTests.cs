@@ -96,6 +96,29 @@ public sealed class ConPtyTests
     }
 
     [Fact]
+    public async Task StartInJob_PreservesExitCodeForShortLivedProcess()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "azurpilot-job-exit-" + Guid.NewGuid().ToString("N"));
+        _ = Directory.CreateDirectory(root);
+        string shell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+
+        try
+        {
+            using SafeFileHandle job = ConPty.CreateJob(denyChildren: true);
+            using Process process = ConPty.StartInJob(shell, ["/d", "/c", "exit 23"], root, job);
+
+            await process.WaitForExitAsync(TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+            Assert.Equal(23, process.ExitCode);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task StartInJob_AssignsProcessBeforeRunningAndPreservesQuotedArguments()
     {
         string root = Path.Combine(Path.GetTempPath(), "azurpilot job start-" + Guid.NewGuid().ToString("N"));
