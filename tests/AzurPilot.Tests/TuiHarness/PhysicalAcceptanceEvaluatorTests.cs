@@ -89,5 +89,22 @@ public sealed class PhysicalAcceptanceEvaluatorTests
         CaptureProvenance: "PASS",
         ColorComparison: "MATCH",
         StateComparability: "PASS",
-        VisualAssessment: "PASS");
+        VisualAssessment: "PASS",
+        ConPtySessionCleanup: "PASS");
+
+    [Theory]
+    [InlineData("PASS", "PASS")]
+    [InlineData("BLOCKED", "BLOCKED")]
+    [InlineData("NOT_TESTED", "BLOCKED")]
+    [InlineData("FAIL", "FAIL")]
+    public void Evaluate_SeparateConPtyCleanupIsRequired(string cleanup, string expected)
+    {
+        PhysicalAcceptanceResult result = PhysicalAcceptanceEvaluator.Evaluate(
+            CompleteEvidence with { ConPtySessionCleanup = cleanup }, interactive: false);
+
+        Assert.Equal(expected, result.Status);
+        Assert.Equal(cleanup, result.Gates["conptySessionCleanup"]);
+        Assert.Equal("PASS", result.Gates["cleanup"]);
+        Assert.Equal("PASS", result.Gates["separateConPtyEvidence"]);
+    }
 }

@@ -13,7 +13,8 @@ internal sealed record PhysicalAcceptanceEvidence(
     string CaptureProvenance,
     string ColorComparison,
     string StateComparability,
-    string VisualAssessment);
+    string VisualAssessment,
+    string ConPtySessionCleanup = "NOT_TESTED");
 
 internal sealed record PhysicalAcceptanceResult(
     string Status,
@@ -22,7 +23,7 @@ internal sealed record PhysicalAcceptanceResult(
     IReadOnlyList<string> FailedGates,
     string Message);
 
-/// <summary>Сводит только обязательные технические результаты physical smoke.</summary>
+/// <summary>Сводит обязательные технические результаты физической контрольной проверки.</summary>
 internal static class PhysicalAcceptanceEvaluator
 {
     internal static PhysicalAcceptanceResult Evaluate(PhysicalAcceptanceEvidence evidence, bool interactive)
@@ -39,6 +40,7 @@ internal static class PhysicalAcceptanceEvaluator
             ["separateConPtyEvidence"] = Normalize(evidence.SeparateConPtyEvidence),
             ["physicalInteraction"] = interactive ? Normalize(evidence.PhysicalInteraction) : "NOT_TESTED",
             ["cleanup"] = Normalize(evidence.Cleanup),
+            ["conptySessionCleanup"] = Normalize(evidence.ConPtySessionCleanup),
             ["userConfigurationUnchanged"] = Normalize(evidence.UserConfigurationUnchanged),
             ["captureProvenance"] = Normalize(evidence.CaptureProvenance),
             ["colorComparison"] = NormalizeComparison(evidence.ColorComparison),
@@ -47,7 +49,7 @@ internal static class PhysicalAcceptanceEvaluator
         };
 
         string[] required = ["windowIdentity", "appIdentity", "pngIntegrity", "contentGeometry", "rgbMeasurement",
-            "separateConPtyEvidence", "cleanup", "userConfigurationUnchanged"];
+            "separateConPtyEvidence", "cleanup", "conptySessionCleanup", "userConfigurationUnchanged"];
         if (interactive)
         {
             required = [.. required, "physicalInteraction"];

@@ -35,6 +35,12 @@ using AzurPilot.Windows;
 
 Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
+if (args is ["--physical-owner-lifetime", string ownerPid, string ownerPath, string ownerStartTime, string recordPath])
+{
+    return await AzurPilot.NativeAbsenceProbe.PhysicalLifetimeProbe.RunAsync(ownerPid, ownerPath, ownerStartTime, recordPath)
+        .ConfigureAwait(false);
+}
+
 if (args.Length == 5 && args[0] == "--agent-mutation-seam")
 {
     return await AzurPilot.NativeAbsenceProbe.AgentMutationProbe.RunAsync(args[1], args[2], args[3], args[4])

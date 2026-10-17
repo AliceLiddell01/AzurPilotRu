@@ -24,6 +24,16 @@ internal sealed record TerminalAppearance(
     string? Limitation,
     object Evidence)
 {
+    internal bool PaletteStateConfirmed { get; init; }
+    internal string? AdjustIndistinguishableColors { get; init; }
+
+    internal bool CanCompareForeground(string colorMode)
+    {
+        return PaletteStateConfirmed
+        && (AdjustIndistinguishableColors == "never"
+            || (AdjustIndistinguishableColors == "indexed" && colorMode == "rgb"));
+    }
+
     internal static TerminalAppearance Unknown(string requestedScheme, string reason, string? settingsPath = null,
         string? profileId = null)
     {
@@ -54,7 +64,7 @@ internal static class TerminalAppearanceResolver
     internal static TerminalAppearance Resolve(string settingsJson, string requestedScheme, string? selectedProfileId,
         string? systemApplicationTheme, string? settingsPath = null, string? settingsHash = null,
         string? terminalDefaultsJson = null, string? terminalDefaultsPath = null, string? terminalDefaultsHash = null,
-        string? terminalDefaultsReadError = null)
+        string? terminalDefaultsReadError = null, bool? focused = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsJson);
         ArgumentException.ThrowIfNullOrWhiteSpace(requestedScheme);
@@ -71,6 +81,20 @@ internal static class TerminalAppearanceResolver
         JsonElement profileList = Property(profiles, "list");
         JsonElement selected = FindProfile(profileList, selectedProfileId);
         string? profileName = Text(selected, "name");
+        string? fontFamily = NestedText(selected, defaults, "font", "face");
+        int? fontSize = NestedInt(selected, defaults, "font", "size");
+        JsonElement unfocusedDefaults = Property(defaults, "unfocusedAppearance");
+        JsonElement unfocusedProfile = Property(selected, "unfocusedAppearance");
+        JsonElement unfocused = GetInherited(selected, defaults, "unfocusedAppearance");
+        bool hasUnfocused = unfocused.ValueKind == JsonValueKind.Object;
+        if (focused == false && hasUnfocused && selected.ValueKind == JsonValueKind.Object)
+        {
+            // Объект профиля наследует его обычное оформление; объект defaults — обычное оформление defaults.
+            selected = unfocusedProfile.ValueKind != JsonValueKind.Undefined
+                ? MergeAppearance(defaults, selected, unfocusedProfile)
+                : MergeAppearance(defaults, unfocusedDefaults);
+        }
+
         string? appTheme = ResolveApplicationTheme(root, systemApplicationTheme);
 
         JsonElement profileSchemeValue = Property(selected, "colorScheme");
@@ -109,40 +133,36 @@ internal static class TerminalAppearanceResolver
 
         if (palette is not null)
         {
-            bool defaultsApplied = ApplyAppearanceOverrides(palette, defaults, out string? defaultsError);
-            if (!defaultsApplied)
+            if (!ApplyAppearanceOverrides(palette, MergeAppearance(defaults, selected), out string? error))
             {
                 palette = null;
-                limitation = defaultsError;
-            }
-            else if (!ApplyAppearanceOverrides(palette, selected, out string? profileError))
-            {
-                palette = null;
-                limitation = profileError;
+                limitation = error;
             }
         }
 
-        string? fontFamily = NestedText(selected, defaults, "font", "face");
-        int? fontSize = NestedInt(selected, defaults, "font", "size");
         bool? useAcrylic = selected.ValueKind == JsonValueKind.Object
-            ? InheritedBoolean(selected, defaults, "useAcrylic") ?? false : null;
+            ? GetInherited(selected, defaults, "useAcrylic").ValueKind == JsonValueKind.Undefined
+                ? false : InheritedBoolean(selected, defaults, "useAcrylic") : null;
         double? opacity = selected.ValueKind == JsonValueKind.Object ? InheritedOpacity(selected, defaults) : null;
         bool? backgroundImage = selected.ValueKind == JsonValueKind.Object
             ? IsNonEmpty(InheritedText(selected, defaults, "backgroundImage")) : null;
-        bool? unfocusedAppearance = selected.ValueKind == JsonValueKind.Object
-            ? HasEffect(Property(selected, "unfocusedAppearance")) : null;
+        bool? unfocusedAppearance = selected.ValueKind == JsonValueKind.Object ? hasUnfocused : null;
+        bool paletteStateConfirmed = selected.ValueKind == JsonValueKind.Object && (focused is not null || !hasUnfocused);
+        string? adjustment = InheritedText(selected, defaults, "adjustIndistinguishableColors");
+        bool renderingEffects = HasEffect(GetInherited(selected, defaults, "experimental.retroTerminalEffect"))
+            || IsNonEmpty(InheritedText(selected, defaults, "experimental.pixelShaderPath"));
         bool opaque = palette is not null && useAcrylic == false && opacity == 100
-            && backgroundImage == false && unfocusedAppearance == false;
+            && backgroundImage == false && paletteStateConfirmed && !renderingEffects;
         bool comparisonReady = palette is not null && selected.ValueKind == JsonValueKind.Object && schemeName is not null;
         if (limitation is null && !opaque)
         {
-            limitation = "Ожидаемый фон после opacity/Acrylic, background image или unfocusedAppearance не выводится из одной палитры.";
+            limitation = "Ожидаемый RGB не подтверждён: неизвестен фокус либо действуют прозрачность, изображение фона или эффекты рендеринга.";
         }
 
         string? paletteSource = comparisonReady
             ? paletteReadFromTerminalDefaults
-                ? $"Точный defaults.json Windows Terminal ({terminalDefaultsPath}, SHA-256 {terminalDefaultsHash}): схема {schemeName}; profile/default overrides из settings.json"
-                : $"Точный settings.json: профиль {profileName} ({selectedProfileId}), схема {schemeName} с profile/default overrides"
+                ? $"Точный defaults.json Windows Terminal ({terminalDefaultsPath}, SHA-256 {terminalDefaultsHash}): схема {schemeName}; переопределения профиля и общих настроек из settings.json"
+                : $"Точный settings.json: профиль {profileName} ({selectedProfileId}), схема {schemeName} с переопределениями профиля и общих настроек"
             : null;
         return new TerminalAppearance(requestedScheme, comparisonReady ? schemeName : null,
             selectedProfileId, profileName, appTheme,
@@ -171,12 +191,19 @@ internal static class TerminalAppearanceResolver
                 opacityPercent = opacity,
                 backgroundImage,
                 unfocusedAppearance,
+                focused,
+                paletteStateConfirmed,
+                adjustIndistinguishableColors = adjustment ?? "UNKNOWN",
                 opaqueBackgroundConfirmed = opaque,
                 palette,
                 paletteSource,
                 limitation,
                 settingsWereReadOnly = true,
-            });
+            })
+        {
+            PaletteStateConfirmed = paletteStateConfirmed && !renderingEffects,
+            AdjustIndistinguishableColors = adjustment,
+        };
     }
 
     internal static string? ResolveSettingsPath(string executablePath, string localApplicationData)
@@ -259,13 +286,35 @@ internal static class TerminalAppearanceResolver
         }
 
         string normalized = NormalizeGuid(profileId);
-        return profileList.EnumerateArray().FirstOrDefault(profile =>
-            NormalizeGuid(Text(profile, "guid") ?? string.Empty) == normalized);
+        JsonElement[] matches = [.. profileList.EnumerateArray().Where(profile =>
+            NormalizeGuid(Text(profile, "guid") ?? string.Empty) == normalized)];
+        return matches.Length == 1 ? matches[0] : default;
     }
 
     private static string? ResolveApplicationTheme(JsonElement root, string? systemTheme)
     {
-        string? configured = Text(root, "theme");
+        JsonElement value = Property(root, "theme");
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            string? branch = NormalizeTheme(systemTheme);
+            if (branch is null)
+            {
+                return null;
+            }
+
+            value = Property(value, branch);
+            if (value.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+        }
+
+        string? configured = value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        if (value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.String))
+        {
+            return null;
+        }
+
         if (configured is null or "system")
         {
             return NormalizeTheme(systemTheme);
@@ -280,13 +329,24 @@ internal static class TerminalAppearanceResolver
         JsonElement themes = Property(root, "themes");
         if (themes.ValueKind == JsonValueKind.Array)
         {
-            JsonElement custom = themes.EnumerateArray().FirstOrDefault(item =>
-                string.Equals(Text(item, "name"), configured, StringComparison.OrdinalIgnoreCase));
-            string? applicationTheme = Text(Property(custom, "window"), "applicationTheme");
-            return NormalizeTheme(applicationTheme) ?? NormalizeTheme(systemTheme);
+            JsonElement[] matches = [.. themes.EnumerateArray().Where(item =>
+                string.Equals(Text(item, "name"), configured, StringComparison.Ordinal))];
+            if (matches.Length != 1)
+            {
+                return null;
+            }
+
+            JsonElement applicationTheme = Property(Property(matches[0], "window"), "applicationTheme");
+            if (applicationTheme.ValueKind == JsonValueKind.Undefined)
+            {
+                return "dark";
+            }
+
+            string? name = applicationTheme.ValueKind == JsonValueKind.String ? applicationTheme.GetString() : null;
+            return name == "system" ? NormalizeTheme(systemTheme) : NormalizeTheme(name);
         }
 
-        return NormalizeTheme(systemTheme);
+        return null;
     }
 
     private static string? SelectSchemeName(JsonElement configured, string? applicationTheme)
@@ -485,15 +545,40 @@ internal static class TerminalAppearanceResolver
 
     private static bool HasEffect(JsonElement appearance)
     {
-        if (appearance.ValueKind != JsonValueKind.Object || !appearance.EnumerateObject().Any())
+        if (appearance.ValueKind == JsonValueKind.True)
         {
-            return false;
+            return true;
         }
 
-        return true;
+        return appearance.ValueKind == JsonValueKind.Object && appearance.EnumerateObject().Any();
     }
 
     private static bool IsNonEmpty(string? value) => !string.IsNullOrWhiteSpace(value);
+
+    private static JsonElement MergeAppearance(params JsonElement[] sources)
+    {
+        Dictionary<string, JsonElement> properties = new(StringComparer.Ordinal);
+        foreach (JsonElement source in sources.Where(item => item.ValueKind == JsonValueKind.Object))
+        {
+            foreach (JsonProperty property in source.EnumerateObject())
+            {
+                if (property.Name == "colorScheme" && property.Value.ValueKind == JsonValueKind.Object
+                    && properties.TryGetValue(property.Name, out JsonElement inherited))
+                {
+                    JsonElement branches = inherited.ValueKind == JsonValueKind.String
+                        ? JsonSerializer.SerializeToElement(new { light = inherited.GetString(), dark = inherited.GetString() })
+                        : inherited;
+                    properties[property.Name] = MergeAppearance(branches, property.Value);
+                }
+                else
+                {
+                    properties[property.Name] = property.Value;
+                }
+            }
+        }
+
+        return JsonSerializer.SerializeToElement(properties);
+    }
 
     private static JsonElement GetInherited(JsonElement profile, JsonElement defaults, string property)
     {

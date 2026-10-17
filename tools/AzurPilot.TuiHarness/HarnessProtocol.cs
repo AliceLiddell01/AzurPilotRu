@@ -122,7 +122,7 @@ internal sealed partial record HarnessRequest
 
         if (Name is not null && !CaptureNamePattern().IsMatch(Name))
         {
-            throw new ArgumentException("Имя capture: 1–64 буквы ASCII, цифры, '-' или '_'.");
+            throw new ArgumentException("Имя снимка: 1–64 буквы ASCII, цифры, '-' или '_'.");
         }
 
         CheckSize(Columns, Rows);
@@ -136,7 +136,7 @@ internal sealed partial record HarnessRequest
             || Value?.Length > 4096 || Contains?.Length > 256)
         {
             throw new ArgumentException(
-                $"Превышены границы timeout ({HarnessTimeouts.MinimumRequestTimeoutMs}–{HarnessTimeouts.MaximumRequestTimeoutMs} ms), "
+                $"Превышены границы времени ожидания ({HarnessTimeouts.MinimumRequestTimeoutMs}–{HarnessTimeouts.MaximumRequestTimeoutMs} ms), "
                 + $"lifetime ({HarnessTimeouts.MinimumLifetimeSeconds}–{HarnessTimeouts.MaximumLifetimeSeconds} s) или ввода (4096).");
         }
 

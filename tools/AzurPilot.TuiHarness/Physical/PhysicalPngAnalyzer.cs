@@ -48,7 +48,7 @@ internal sealed class PhysicalPngImage(int width, int height, byte[] rgba)
     }
 }
 
-/// <summary>Анализирует байты PNG независимо от WinApp, renderer и выбора геометрии.</summary>
+/// <summary>Анализирует байты PNG независимо от WinApp, рендерера и выбора геометрии.</summary>
 internal static class PhysicalPngAnalyzer
 {
     private const int MaximumPixels = 16_777_216;
@@ -270,7 +270,7 @@ internal static class PhysicalPngAnalyzer
                 || ((long)bounds.X + bounds.Width) > image.Width
                 || ((long)bounds.Y + bounds.Height) > image.Height)
             {
-                throw new ArgumentException("Неверные семантика, цвет или границы pixel sample.", nameof(samples));
+                throw new ArgumentException("Неверные семантика, цвет или границы пиксельного образца.", nameof(samples));
             }
 
             totalArea += (long)bounds.Width * bounds.Height;
@@ -278,7 +278,7 @@ internal static class PhysicalPngAnalyzer
 
         if (totalArea > MaximumPixels * 4L)
         {
-            throw new ArgumentException("Общая площадь pixel samples превышает ограничение анализа.", nameof(samples));
+            throw new ArgumentException("Общая площадь пиксельных образцов превышает ограничение анализа.", nameof(samples));
         }
 
         return [.. samples.Select(sample => Measure(image, sample))];
@@ -361,7 +361,7 @@ internal static class PhysicalPngAnalyzer
         {
             measurementStatus = "NOT_TESTED";
             comparisonStatus = "NOT_TESTED";
-            reason = "Нет однозначного внутреннего foreground RGB или преобладающего background RGB.";
+            reason = "Нет однозначного внутреннего RGB текста или преобладающего RGB фона.";
         }
         else
         {

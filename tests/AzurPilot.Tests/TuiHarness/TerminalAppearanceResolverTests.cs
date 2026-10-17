@@ -9,6 +9,188 @@ public sealed class TerminalAppearanceResolverTests
     private const string DefaultProfileId = "{11111111-1111-1111-1111-111111111111}";
     private const string PowerShellProfileId = "{22222222-2222-2222-2222-222222222222}";
 
+    [Theory]
+    [InlineData("object", "light", "light", "Selected Light")]
+    [InlineData("object", "dark", "dark", "Selected Dark")]
+    [InlineData("object-inverted", "light", "dark", "Selected Dark")]
+    [InlineData("object-inverted", "dark", "light", "Selected Light")]
+    [InlineData("object", null, null, null)]
+    [InlineData("custom", "light", "dark", "Selected Dark")]
+    [InlineData("custom-system", "light", "light", "Selected Light")]
+    [InlineData("custom-system", null, null, null)]
+    [InlineData("dark", "light", "dark", "Selected Dark")]
+    [InlineData("light", "dark", "light", "Selected Light")]
+    [InlineData("system", "dark", "dark", "Selected Dark")]
+    [InlineData("system", null, null, null)]
+    [InlineData("missing", "light", null, null)]
+    [InlineData("invalid", "dark", null, null)]
+    [InlineData("duplicate", "light", null, null)]
+    [InlineData("invalid-application", "light", null, null)]
+    [InlineData("missing-branch", "light", null, null)]
+    public void Resolve_ThemeSelectionUsesApplicationThemeOfUniqueSelectedTheme(string configuration,
+        string? systemTheme, string? expectedTheme, string? expectedScheme)
+    {
+        JsonObject settings = Settings();
+        settings["themes"] = new JsonArray(
+            new JsonObject { ["name"] = "Custom Dark" },
+            new JsonObject { ["name"] = "Custom Light", ["window"] = new JsonObject { ["applicationTheme"] = "light" } },
+            new JsonObject { ["name"] = "Custom System", ["window"] = new JsonObject { ["applicationTheme"] = "system" } },
+            new JsonObject { ["name"] = "Invalid", ["window"] = new JsonObject { ["applicationTheme"] = "invalid" } });
+        settings["theme"] = configuration switch
+        {
+            "object" => new JsonObject { ["light"] = "Custom Light", ["dark"] = "Custom Dark" },
+            "object-inverted" => new JsonObject { ["light"] = "Custom Dark", ["dark"] = "Custom Light" },
+            "missing-branch" => new JsonObject { ["dark"] = "Custom Dark" },
+            "custom" or "duplicate" => JsonValue.Create("Custom Dark"),
+            "custom-system" => JsonValue.Create("Custom System"),
+            "invalid-application" => JsonValue.Create("Invalid"),
+            "invalid" => JsonValue.Create(42),
+            _ => JsonValue.Create(configuration),
+        };
+        if (configuration == "duplicate")
+        {
+            settings["themes"]!.AsArray().Add(new JsonObject { ["name"] = "Custom Dark" });
+        }
+
+        settings["profiles"]!["defaults"]!["colorScheme"] = new JsonObject { ["light"] = "Factory", ["dark"] = "Factory" };
+        settings["profiles"]!["list"]![1]!["colorScheme"] = new JsonObject
+        {
+            ["light"] = "Selected Light",
+            ["dark"] = "Selected Dark",
+        };
+        settings["schemes"]!.AsArray().Add(ColorScheme("Selected Light", "#EEEEEE", "#111111"));
+        settings["schemes"]!.AsArray().Add(ColorScheme("Selected Dark", "#111111", "#EEEEEE"));
+
+        TerminalAppearance result = TerminalAppearanceResolver.Resolve(settings.ToJsonString(), "current",
+            PowerShellProfileId, systemTheme);
+
+        Assert.Equal(expectedTheme, result.ApplicationTheme);
+        Assert.Equal(expectedScheme, result.SchemeName);
+        Assert.Equal(expectedScheme is not null, result.ComparisonReady);
+        Assert.Equal(PowerShellProfileId, result.ProfileId);
+        if (expectedScheme is null) { Assert.Null(result.Theme); }
+    }
+
+    [Theory]
+    [InlineData(true, false, "#202020", 100, true)]
+    [InlineData(false, false, "#123456", 60, false)]
+    [InlineData(false, true, "#ABCDEF", 100, true)]
+    [InlineData(null, false, "#202020", 100, false)]
+    public void Resolve_UnfocusedAppearanceSelectsProfileObjectBeforeDefaults(bool? focused,
+        bool profileOverride, string expectedBackground, int expectedOpacity, bool opaque)
+    {
+        JsonObject settings = Settings();
+        settings["profiles"]!["defaults"]!["unfocusedAppearance"] = new JsonObject
+        {
+            ["background"] = "#123456",
+            ["foreground"] = "#FEDCBA",
+            ["opacity"] = 60,
+        };
+        if (profileOverride)
+        {
+            settings["profiles"]!["list"]![1]!["unfocusedAppearance"] = new JsonObject
+            {
+                ["background"] = "#ABCDEF",
+                ["opacity"] = 100,
+            };
+        }
+
+        TerminalAppearance result = TerminalAppearanceResolver.Resolve(settings.ToJsonString(), "current",
+            PowerShellProfileId, "dark", focused: focused);
+
+        Assert.True(result.UnfocusedAppearance);
+        Assert.Equal(expectedBackground, result.Theme!["background"]);
+        Assert.Equal(expectedOpacity, result.OpacityPercent);
+        Assert.Equal(opaque, result.OpaqueBackgroundConfirmed);
+        Assert.Equal(focused is not null, result.PaletteStateConfirmed);
+        if (focused == false)
+        {
+            Assert.Equal(profileOverride ? "#CCCCCC" : "#FEDCBA", result.Theme["foreground"]);
+        }
+    }
+
+    [Theory]
+    [InlineData("never", "indexed", true)]
+    [InlineData("never", "palette", true)]
+    [InlineData("never", "rgb", true)]
+    [InlineData("indexed", "indexed", false)]
+    [InlineData("indexed", "palette", false)]
+    [InlineData("indexed", "default", false)]
+    [InlineData("indexed", "rgb", true)]
+    [InlineData("always", "rgb", false)]
+    [InlineData(null, "rgb", false)]
+    [InlineData("invalid", "rgb", false)]
+    public void Resolve_ForegroundComparisonDoesNotGuessAdjustedColors(string? adjustment, string mode, bool comparable)
+    {
+        JsonObject settings = Settings();
+        if (adjustment is not null)
+        {
+            settings["profiles"]!["defaults"]!["adjustIndistinguishableColors"] = "always";
+            settings["profiles"]!["list"]![1]!["adjustIndistinguishableColors"] = adjustment;
+        }
+
+        TerminalAppearance result = TerminalAppearanceResolver.Resolve(settings.ToJsonString(), "current",
+            PowerShellProfileId, "dark", focused: true);
+
+        Assert.Equal(comparable, result.CanCompareForeground(mode));
+        Assert.Equal("#202020", result.Theme!["background"]);
+        Assert.True(result.OpaqueBackgroundConfirmed);
+    }
+
+    [Fact]
+    public void Resolve_UnfocusedDefaultsDoNotBorrowSelectedProfilesNormalOverrides()
+    {
+        JsonObject settings = Settings();
+        settings["profiles"]!["defaults"]!["unfocusedAppearance"] = new JsonObject { ["foreground"] = "#FEDCBA" };
+        settings["profiles"]!["list"]![1]!["background"] = "#654321";
+        settings["profiles"]!["list"]![1]!["opacity"] = 20;
+
+        TerminalAppearance result = TerminalAppearanceResolver.Resolve(settings.ToJsonString(), "current",
+            PowerShellProfileId, "dark", focused: false);
+
+        Assert.Equal("#202020", result.Theme!["background"]);
+        Assert.Equal("#FEDCBA", result.Theme["foreground"]);
+        Assert.Equal(100, result.OpacityPercent);
+        Assert.True(result.OpaqueBackgroundConfirmed);
+        Assert.Equal("PowerShell", result.ProfileName);
+    }
+
+    [Fact]
+    public void Resolve_UnfocusedProfileSelectsSchemeAndInheritsItsNormalOverrides()
+    {
+        JsonObject settings = Settings();
+        settings["schemes"]!.AsArray().Add(ColorScheme("Inactive", "#456789", "#ABCDEF"));
+        _ = settings["profiles"]!["defaults"]!.AsObject().Remove("background");
+        settings["profiles"]!["list"]![1]!["foreground"] = "#FEDCBA";
+        settings["profiles"]!["list"]![1]!["unfocusedAppearance"] = new JsonObject { ["colorScheme"] = "Inactive" };
+
+        TerminalAppearance result = TerminalAppearanceResolver.Resolve(settings.ToJsonString(), "current",
+            PowerShellProfileId, "dark", focused: false);
+
+        Assert.Equal("Inactive", result.SchemeName);
+        Assert.Equal("#456789", result.Theme!["background"]);
+        Assert.Equal("#FEDCBA", result.Theme["foreground"]);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void Resolve_UnfocusedAcrylicUsesChosenAppearanceObject(bool overrideInProfile, bool expectedAcrylic)
+    {
+        JsonObject settings = Settings();
+        settings["profiles"]!["defaults"]!["unfocusedAppearance"] = new JsonObject { ["useAcrylic"] = true };
+        if (overrideInProfile)
+        {
+            settings["profiles"]!["list"]![1]!["unfocusedAppearance"] = new JsonObject { ["useAcrylic"] = false };
+        }
+
+        TerminalAppearance result = TerminalAppearanceResolver.Resolve(settings.ToJsonString(), "current",
+            PowerShellProfileId, "dark", focused: false);
+
+        Assert.Equal(expectedAcrylic, result.UseAcrylic);
+        Assert.Equal(!expectedAcrylic, result.OpaqueBackgroundConfirmed);
+    }
+
     [Fact]
     public void Resolve_CurrentUsesTheExactWtProfileAndEffectiveDarkSchemeWithItsOverrides()
     {
@@ -166,7 +348,7 @@ public sealed class TerminalAppearanceResolverTests
 
         Assert.Null(result.Theme);
         Assert.False(result.ComparisonReady);
-        Assert.Contains("defaults.json", result.Limitation!, StringComparison.Ordinal);
+        Assert.Contains("defaults.json", result.Limitation, StringComparison.Ordinal);
     }
 
     [Fact]

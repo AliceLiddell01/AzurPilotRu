@@ -134,6 +134,38 @@ public sealed class WinAppCliTests : IDisposable
         Assert.True(File.Exists(outputPath));
     }
 
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, null)]
+    [InlineData(null, true, null)]
+    [InlineData(null, null, null)]
+    public async Task Capture_ConfirmsFocusOnlyWhenBothObservationsAgree(bool? before, bool? after, bool? expected)
+    {
+        string path = Path.Combine(directory, "focus.png");
+        int listings = 0;
+        WinAppCli cli = new(runner: async (_, arguments, token) =>
+        {
+            if (arguments.Contains("list-windows"))
+            {
+                return Success(JsonSerializer.Serialize(new[]
+                {
+                    WindowJson(Marker, OwnedWindow().Hwnd, OwnedWindow().ProcessId, "WindowsTerminal",
+                        1, 1, ++listings == 1 ? before : after),
+                }));
+            }
+
+            await File.WriteAllBytesAsync(path, OnePixelPng(), token);
+            return Success(CaptureMetadata(path).ToJsonString());
+        });
+
+        WinAppCapture capture = await cli.CaptureAsync(OwnedWindow(), path, TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected, capture.Focused);
+        Assert.Equal(2, listings);
+        Assert.True(capture.TargetRevalidated);
+    }
+
     [Fact]
     public async Task ScreenshotWithoutIdentityFieldsUsesExactRequestedHwndAndRevalidatesIt()
     {
@@ -581,7 +613,7 @@ public sealed class WinAppCliTests : IDisposable
 
     private static byte[] OnePixelPng()
     {
-        // Fixture проверяет файловый контракт адаптера и не является physical evidence.
+        // Тестовый образец проверяет файловый контракт адаптера и не является свидетельством физической проверки.
         return Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2pAAAAABJRU5ErkJggg==");
     }
 }

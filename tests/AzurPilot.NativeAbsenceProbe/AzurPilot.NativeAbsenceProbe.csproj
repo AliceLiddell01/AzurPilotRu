@@ -17,6 +17,7 @@
          управляет тест. Ссылка на продукт, а не его копия: проба остаётся тестовым инструментом. -->
     <ProjectReference Include="..\..\src\AzurPilot.App\AzurPilot.App.csproj" />
     <ProjectReference Include="..\..\src\AzurPilot.Windows\AzurPilot.Windows.csproj" />
+    <ProjectReference Include="..\..\tools\AzurPilot.TuiHarness\AzurPilot.TuiHarness.csproj" />
   </ItemGroup>
 
 </Project>

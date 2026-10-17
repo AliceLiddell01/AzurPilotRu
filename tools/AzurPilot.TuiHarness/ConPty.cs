@@ -162,7 +162,7 @@ internal sealed partial class ConPty : IAsyncDisposable
                 if (!Output.Writer.TryWrite((sequence, buffer.AsSpan(0, count).ToArray())))
                 {
                     // Продолжаем читать канал, но при потере VT-потока дальнейший захват недопустим.
-                    Volatile.Write(ref _fault, "Превышен бюджет VT: renderer не успевает за ConPTY.");
+                    Volatile.Write(ref _fault, "Превышен бюджет VT: рендерер не успевает за ConPTY.");
                 }
             }
         }

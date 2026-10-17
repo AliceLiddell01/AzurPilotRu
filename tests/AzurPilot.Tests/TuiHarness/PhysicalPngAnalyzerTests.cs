@@ -16,7 +16,7 @@ public sealed class PhysicalPngAnalyzerTests
     [InlineData(4)]
     public void Decode_ReconstructsIndependentRgbScanlineFixtures(int filter)
     {
-        // Остатки заданы явно: fixture не содержит копии production filter encoder.
+        // Остатки заданы явно: тестовый образец не содержит копии продуктового кодировщика фильтров.
         byte[][] rows = filter switch
         {
             0 => [[10, 20, 30, 40, 50, 60], [70, 80, 90, 100, 110, 120]],

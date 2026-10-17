@@ -51,7 +51,7 @@ public sealed class ConPtyTests
 
             output = text.ToString();
             Assert.True(pty.Alive);
-            Assert.False(File.Exists(marker), "Job должен блокировать child до исполнения команды записи.");
+            Assert.False(File.Exists(marker), "Job должен блокировать дочерний процесс до исполнения команды записи.");
             Assert.Contains("CHILD_DENIED", output, StringComparison.Ordinal);
             Assert.DoesNotContain("unexpected-child\r\n", output, StringComparison.Ordinal);
         }

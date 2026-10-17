@@ -90,7 +90,7 @@ internal sealed class TerminalRenderer : IAsyncDisposable
             }
             catch
             {
-                // Исходная ошибка создания renderer важнее ошибки ограниченной очистки.
+                // Исходная ошибка создания рендерера важнее ошибки ограниченной очистки.
             }
             finally
             {

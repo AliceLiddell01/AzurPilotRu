@@ -12,7 +12,8 @@ internal sealed record WinAppWindow(long Hwnd, int ProcessId, string ProcessName
 
 internal sealed record WinAppCapture(string Path, int Width, int Height, string CaptureMethod,
     string Limitation, JsonElement RawMetadata, bool TargetRevalidated, WinAppWindow Target,
-    int SourceWindowWidth, int SourceWindowHeight, int CompositeHeaderHeight);
+    int SourceWindowWidth, int SourceWindowHeight, int CompositeHeaderHeight,
+    bool? Focused = null);
 
 internal sealed record WinAppProcessResult(int ExitCode, string StandardOutput, string StandardError);
 
@@ -231,7 +232,7 @@ internal sealed class WinAppCli
         if (!string.Equals(System.IO.Path.GetExtension(fullPath), ".png", StringComparison.OrdinalIgnoreCase)
             || File.Exists(fullPath) || Directory.Exists(fullPath))
         {
-            throw new HarnessBlockedException("PNG должен иметь новое имя: исходные evidence не перезаписываются.");
+            throw new HarnessBlockedException("PNG должен иметь новое имя: исходные свидетельства не перезаписываются.");
         }
 
         WinAppWindow beforeCapture = await SelectWindowAsync(window.Title, cancellationToken);
@@ -289,13 +290,14 @@ internal sealed class WinAppCli
             _ => "Unknown",
         };
         string limitation = captureMethod == "Unknown"
-            ? "WinApp screenshot JSON не сообщает фактический mode; WGC и fallback PrintWindow не различаются."
+            ? "WinApp screenshot JSON не сообщает фактический mode; WGC и резервный PrintWindow не различаются."
             : captureMethod == "WGC"
                 ? "WGC подтверждён метаданными WinApp; --focus и --capture-screen не запрашивались."
                 : $"WinApp сообщил mode={mode}; требуемый WGC этим захватом не подтверждён.";
         return new WinAppCapture(fullPath, (int)width, (int)height, captureMethod,
             limitation, metadata.Clone(), TargetRevalidated: true, window,
-            sourceWidth, sourceHeight, compositeHeaderHeight);
+            sourceWidth, sourceHeight, compositeHeaderHeight,
+            beforeCapture.IsForeground == afterCapture.IsForeground ? beforeCapture.IsForeground : null);
     }
 
     private static void EnsureSameWindow(WinAppWindow expected, WinAppWindow actual)
@@ -455,7 +457,7 @@ internal sealed class WinAppCli
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
-        // Отдельные вызовы не продолжают случайный desktop workflow родительского shell.
+        // Отдельные вызовы не продолжают случайный сценарий автоматизации рабочего стола родительской оболочки.
         _ = start.Environment.Remove("WINAPP_UI_WORKFLOW_ID");
         foreach (string argument in arguments)
         {

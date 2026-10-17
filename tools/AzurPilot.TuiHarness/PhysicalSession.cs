@@ -3,21 +3,21 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Microsoft.Win32;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.TuiHarness.Physical;
+using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 
 namespace AzurPilot.TuiHarness;
 
-/// <summary>Оркестрирует отдельное owned-окно Windows Terminal для физического TUI smoke.</summary>
+/// <summary>Управляет принадлежащим проверке окном Windows Terminal для физической контрольной проверки TUI.</summary>
 internal static partial class PhysicalSession
 {
     private static readonly string[] PixelAnalysisCaveats =
     [
         "Метод захвата остаётся Unknown, если WinApp не сообщает его в JSON именно этого кадра.",
-        "ClearType/сглаживание, glyph fallback, HDR, Acrylic/Mica и DWM могут изменить края или композицию.",
+        "ClearType/сглаживание, резервный шрифт для глифов, HDR, Acrylic/Mica и DWM могут изменить края или композицию.",
     ];
     private const int WindowStartupMs = 25_000;
     private const int WindowCleanupMs = 5_000;
@@ -88,7 +88,7 @@ internal static partial class PhysicalSession
         {
             if (!OperatingSystem.IsWindows())
             {
-                throw new HarnessBlockedException("Физическая проверка требует Windows desktop.");
+                throw new HarnessBlockedException("Физическая проверка требует рабочего стола Windows.");
             }
 
             userConfigurationPath = AzurPilotConfigurationPath.GetDefaultRuntimePath();
@@ -123,14 +123,14 @@ internal static partial class PhysicalSession
 
             if (FindExistingMarkerWindows(marker).Count != 0)
             {
-                throw new HarnessBlockedException("Уникальный marker уже принадлежит существующему окну; новый сеанс не запущен.");
+                throw new HarnessBlockedException("Уникальный маркер уже принадлежит существующему окну; новый сеанс не запущен.");
             }
 
             desktopSemaphore = new Semaphore(1, 1, "Local\\AzurPilot.TuiHarness.PhysicalDesktop");
             ownsDesktopSemaphore = desktopSemaphore.WaitOne(0);
             if (!ownsDesktopSemaphore)
             {
-                throw new HarnessBlockedException("Другой физический TUI прогон уже владеет desktop semaphore.");
+                throw new HarnessBlockedException("Другой физический TUI прогон уже владеет семафором рабочего стола.");
             }
 
             string desktop = GetInputDesktopName();
@@ -160,7 +160,7 @@ internal static partial class PhysicalSession
                 version = winappVersion,
                 help = Path.Combine(directory, "winapp-help.json"),
                 requiredCommandsValidated = help.Keys.ToArray(),
-                captureMethod = "Reported per PNG when WinApp returns a capture mode; otherwise Unknown.",
+                captureMethod = "Указывается для каждого PNG, если WinApp сообщает способ захвата; иначе Unknown.",
                 captureMethodReason = "Unknown остаётся Unknown; точный HWND подтверждается отдельно от механизма захвата.",
             };
 
@@ -193,7 +193,9 @@ internal static partial class PhysicalSession
                 appDirectoryPath,
                 appStartPath,
                 expectedExeHash,
-                HashIfPresent(Path.ChangeExtension(exe, ".dll")));
+                HashIfPresent(Path.ChangeExtension(exe, ".dll")),
+                Environment.ProcessId,
+                Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks);
             await File.WriteAllTextAsync(launchRequestPath, JsonSerializer.Serialize(launchRequest, HarnessJson.Options));
 
             using Process? launcher = StartWindowsTerminal(wt, marker, request, launchRequestPath);
@@ -245,8 +247,8 @@ internal static partial class PhysicalSession
                 path = profilePath,
                 sha256 = HashIfPresent(profilePath),
                 source = appearance.ComparisonReady
-                    ? "Фактическая схема выбранного профиля с overrides Windows Terminal"
-                    : "Запасной профиль только для ConPTY; он не используется как expected values физического окна",
+                    ? "Фактическая схема выбранного профиля с переопределениями Windows Terminal"
+                    : "Запасной профиль только для ConPTY; он не используется как ожидаемые значения физического окна",
             };
             int comparisonColumns = appRecord.Columns is > 0 ? appRecord.Columns.Value : request.Columns;
             int comparisonRows = appRecord.Rows is > 0 ? appRecord.Rows.Value : request.Rows;
@@ -294,6 +296,8 @@ internal static partial class PhysicalSession
 
             await Task.Delay(PhysicalSettleMs);
             WinAppCapture startup = await CapturePhysicalAsync(winapp, ownedWindow, Path.Combine(appDirectoryPath, "startup.png"));
+            appearance = ReadTerminalAppearance(request.TerminalScheme, ownedWindow, appRecord.TerminalProfileId, startup.Focused);
+            report["terminalAppearance"] = appearance.Evidence;
             report["physicalStartup"] = new
             {
                 png = startup.Path,
@@ -304,6 +308,7 @@ internal static partial class PhysicalSession
                 captureMethod = startup.CaptureMethod,
                 captureLimitation = startup.Limitation,
                 targetRevalidated = startup.TargetRevalidated,
+                focused = startup.Focused,
                 sourceWindowWidth = startup.SourceWindowWidth,
                 sourceWindowHeight = startup.SourceWindowHeight,
                 compositeHeaderHeight = startup.CompositeHeaderHeight,
@@ -329,23 +334,25 @@ internal static partial class PhysicalSession
                 WinAppWindow focusedWindow = await winapp.SelectWindowAsync(marker, CancellationToken.None);
                 if (!SameOwnedWindow(foregroundWindow, focusedWindow) || focusedWindow.IsForeground != true)
                 {
-                    throw new HarnessBlockedException("После UIA focus не подтверждены тот же HWND/PID и foreground.");
+                    throw new HarnessBlockedException("После установки фокуса UIA не подтверждены прежние HWND/PID и активность окна.");
                 }
 
                 JsonElement inputF2 = await winapp.SendKeysAsync(focusedWindow, "f2", CancellationToken.None);
                 await Task.Delay(500);
                 WinAppCapture palette = await CapturePhysicalAsync(winapp, ownedWindow, Path.Combine(appDirectoryPath, "palette.png"));
+                TerminalAppearance paletteAppearance = ReadTerminalAppearance(request.TerminalScheme, ownedWindow,
+                    appRecord.TerminalProfileId, palette.Focused);
                 palettePixelAnalysis = conptyMenuCellsPath is null
-                    ? new("NOT_TESTED", "ConPTY action-menu cells отсутствуют; сравнение этой физической сцены не выполнялось.", [],
-                        new { status = "NOT_TESTED", reason = "Нет xterm cells для того же F2 action-menu состояния." })
-                    : await AnalyzePhysicalPngAsync(palette.Path, conptyMenuCellsPath, content, appRecord, appearance);
+                    ? new("NOT_TESTED", "Ячейки ConPTY меню действий отсутствуют; сравнение этой физической сцены не выполнялось.", [],
+                        new { status = "NOT_TESTED", reason = "Нет ячеек xterm для того же состояния меню действий F2." })
+                    : await AnalyzePhysicalPngAsync(palette.Path, conptyMenuCellsPath, content, appRecord, paletteAppearance);
                 report["palettePixelAnalysis"] = palettePixelAnalysis.Evidence;
                 JsonElement paletteInspect = await winapp.InspectAsync(ownedWindow, CancellationToken.None);
                 await File.WriteAllTextAsync(Path.Combine(appDirectoryPath, "palette-inspect.json"), paletteInspect.GetRawText());
                 WinAppWindow beforeEscape = await winapp.SelectWindowAsync(marker, CancellationToken.None);
                 if (!SameOwnedWindow(focusedWindow, beforeEscape) || beforeEscape.IsForeground != true)
                 {
-                    throw new HarnessBlockedException("Перед Escape не подтверждены foreground и идентичность принадлежащего HWND.");
+                    throw new HarnessBlockedException("Перед Escape не подтверждены активность окна и идентичность принадлежащего проверке HWND.");
                 }
 
                 JsonElement inputEscape = await winapp.SendKeysAsync(beforeEscape, "esc", CancellationToken.None);
@@ -370,11 +377,11 @@ internal static partial class PhysicalSession
                     inputEscape,
                     restoredPng = restored.Path,
                     paletteInspect = Path.Combine(appDirectoryPath, "palette-inspect.json"),
-                    visualDifferenceMetric = "Доля пикселей content rectangle с отличающимся точным RGB; PASS при ≥0.5% на обоих переходах.",
+                    visualDifferenceMetric = "Доля пикселей области содержимого с отличающимся точным RGB; PASS при ≥0.5% на обоих переходах.",
                     paletteChangedFraction = paletteChange,
                     restoreChangedFraction = restoreChange,
-                    reason = visualTransition ? "Оба физических кадра отличаются в content rectangle после доставки F2/Escape." :
-                        "WinApp подтвердил ввод, но видимый переход не удалось подтвердить по двум PNG и доказанной content geometry.",
+                    reason = visualTransition ? "Оба физических кадра отличаются в области содержимого после доставки F2/Escape." :
+                        "WinApp подтвердил ввод, но видимый переход не удалось подтвердить по двум PNG и доказанной геометрии содержимого.",
                 };
             }
             else
@@ -382,7 +389,7 @@ internal static partial class PhysicalSession
                 report["palettePixelAnalysis"] = new
                 {
                     status = "NOT_TESTED",
-                    reason = "Физическое взаимодействие выключено; action-menu PNG и соответствующие xterm cells не создавались.",
+                    reason = "Физическое взаимодействие выключено; PNG меню действий и соответствующие ячейки xterm не создавались.",
                 };
                 report["physicalInteraction"] = new
                 {
@@ -406,9 +413,11 @@ internal static partial class PhysicalSession
                 CaptureProvenance: startup.CaptureMethod == "Unknown" ? "NOT_TESTED" : "PASS",
                 ColorComparison: pixelAnalysis.ComparisonStatus,
                 StateComparability: "NOT_TESTED",
-                VisualAssessment: "NOT_TESTED");
+                VisualAssessment: "NOT_TESTED",
+                ConPtySessionCleanup: conptyEvidence.GetProperty("sessionCleanup").GetProperty("status").GetString()
+                    ?? "NOT_TESTED");
             report["physicalAcceptance"] = "NOT_TESTED";
-            report["acceptanceNote"] = "Финальный технический статус будет вычислен после проверки cleanup и пользовательской конфигурации.";
+            report["acceptanceNote"] = "Финальный технический статус будет вычислен после проверки освобождения ресурсов и пользовательской конфигурации.";
         }
         catch (Exception exception)
         {
@@ -456,7 +465,7 @@ internal static partial class PhysicalSession
                 {
                     status = "NOT_TESTED",
                     path = userConfigurationPath,
-                    reason = "Не удалось перечитать user configuration после физического прогона: " + exception.Message,
+                    reason = "Не удалось перечитать пользовательскую конфигурацию после физического прогона: " + exception.Message,
                 };
                 if (acceptanceEvidence is not null)
                 {
@@ -510,14 +519,16 @@ internal static partial class PhysicalSession
         {
             request = JsonSerializer.Deserialize<PhysicalAppLaunchRequest>(
                 await File.ReadAllTextAsync(requestPath), HarnessJson.Options)
-                ?? throw new InvalidDataException("Пустой physical launch request.");
+                ?? throw new InvalidDataException("Пустой запрос запуска физической проверки.");
             startedPath = request.AppStartPath;
+            using Process owner = OpenOwnedProcess(request.OwnerPid,
+                Environment.ProcessPath ?? string.Empty, request.OwnerStartTimeTicks);
             string exe = Path.GetFullPath(request.Exe);
             string isolationRoot = Path.GetFullPath(request.IsolationRoot);
             if (!File.Exists(exe) || !Directory.Exists(isolationRoot) || HashFile(exe) != request.ExpectedExeSha256
                 || HashIfPresent(Path.ChangeExtension(exe, ".dll")) != request.ExpectedAppDllSha256)
             {
-                throw new HarnessBlockedException("EXE/DLL изменились до запуска physical child.");
+                throw new HarnessBlockedException("EXE/DLL изменились до запуска дочернего процесса физической проверки.");
             }
 
             string[] appArguments = ["--mode", "diagnostic", "--isolated-ui", isolationRoot];
@@ -529,7 +540,7 @@ internal static partial class PhysicalSession
 
             job = ConPty.CreateJob(denyChildren: true);
             app = ConPty.StartInJob(exe, appArguments, request.WorkingDirectory, job);
-            string appPath = app.MainModule?.FileName is string modulePath ? Path.GetFullPath(modulePath) : string.Empty;
+            string appPath = ReadProcessPath(app);
             if (!string.Equals(appPath, exe, StringComparison.OrdinalIgnoreCase))
             {
                 throw new HarnessBlockedException("Запущенный процесс не совпал с заданным AzurPilot.App.exe.");
@@ -548,9 +559,11 @@ internal static partial class PhysicalSession
                 Environment.GetEnvironmentVariable("WT_PROFILE_ID"),
                 DateTimeOffset.UtcNow,
                 columns,
-                rows);
+                rows,
+                app.StartTime.ToUniversalTime().Ticks,
+                Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks);
             await WriteAtomicJsonAsync(startedPath, record);
-            await app.WaitForExitAsync();
+            await WaitForOwnedAppAsync(app, owner, job, CancellationToken.None);
             await WriteAtomicJsonAsync(Path.Combine(request.WorkingDirectory, "app-exit.json"),
                 new { processId = app.Id, exitCode = app.ExitCode, exitedUtc = DateTimeOffset.UtcNow });
             return app.ExitCode;
@@ -579,12 +592,82 @@ internal static partial class PhysicalSession
         }
     }
 
-    private static async Task<object> CaptureConPtyAsync(
-        string exe, string directory, string profilePath, int columns, int rows,
-        string expectedExeSha256, string? expectedAppDllSha256, Dictionary<string, object?> report)
+    internal static async Task WaitForOwnedAppAsync(Process app, Process owner, SafeFileHandle job,
+        CancellationToken cancellationToken)
     {
+        // Дескриптор владельца удерживает конкретный объект процесса даже после повторного использования PID.
+        using CancellationTokenSource watcher = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task appExit = app.WaitForExitAsync(CancellationToken.None);
+        Task ownerExit = owner.WaitForExitAsync(watcher.Token);
+        try
+        {
+            await await Task.WhenAny(appExit, ownerExit);
+        }
+        finally
+        {
+            job.Dispose();
+            await watcher.CancelAsync();
+            try { await ownerExit; }
+            catch (OperationCanceledException) when (watcher.IsCancellationRequested) { }
+
+            await appExit.WaitAsync(TimeSpan.FromMilliseconds(WindowCleanupMs), CancellationToken.None);
+        }
+    }
+
+    internal static Process OpenOwnedProcess(int processId, string expectedPath, long expectedStartTimeTicks,
+        bool allowExited = false)
+    {
+        Process process = Process.GetProcessById(processId);
+        try
+        {
+            // Открыть и удержать дескриптор до проверки идентичности и любой попытки завершения.
+            _ = process.SafeHandle;
+            if (allowExited && process.HasExited)
+            {
+                return process;
+            }
+
+            return expectedStartTimeTicks <= 0 || process.StartTime.ToUniversalTime().Ticks != expectedStartTimeTicks
+                || !ReadProcessPath(process)
+                    .Equals(Path.GetFullPath(expectedPath), StringComparison.OrdinalIgnoreCase)
+                ? throw new HarnessBlockedException("Не подтверждены путь и время создания исходного процесса.")
+                : process;
+        }
+        catch
+        {
+            process.Dispose();
+            throw;
+        }
+    }
+
+    internal static unsafe string ReadProcessPath(Process process)
+    {
+        char[] path = new char[32768];
+        uint length = (uint)path.Length;
+        fixed (char* buffer = path)
+        {
+            if (!Native.QueryFullProcessImageName(process.SafeHandle, 0, buffer, ref length))
+            {
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastPInvokeError());
+            }
+        }
+
+        return Path.GetFullPath(new string(path, 0, (int)length));
+    }
+
+    internal static async Task<object> CaptureConPtyAsync(
+        string exe, string directory, string profilePath, int columns, int rows,
+        string expectedExeSha256, string? expectedAppDllSha256, Dictionary<string, object?> report,
+        Func<HarnessRequest, Task<HarnessResponse>>? runner = null)
+    {
+        Task<HarnessResponse> InvokeAsync(HarnessRequest command)
+        {
+            return runner is not null ? runner(command)
+            : command.Command == "start" ? Program.StartAsync(command) : Program.SendAsync(command);
+        }
+
         string output = Path.Combine(directory, "conpty");
-        HarnessResponse started = await Program.StartAsync(new HarnessRequest
+        HarnessResponse started = await InvokeAsync(new HarnessRequest
         {
             Command = "start",
             Exe = exe,
@@ -598,9 +681,16 @@ internal static partial class PhysicalSession
         });
         if (started.Status != "PASS" || started.Session is null)
         {
-            throw new HarnessBlockedException("ConPTY comparison session did not start: " + started.Message);
+            throw new HarnessBlockedException("Сравнительная сессия ConPTY не запустилась: " + started.Message);
         }
 
+        Dictionary<string, object?> partial = new(StringComparer.Ordinal)
+        {
+            ["session"] = started.Session,
+            ["outputDirectory"] = output,
+            ["status"] = "NOT_TESTED",
+        };
+        report["conpty"] = partial;
         HarnessResponse capture;
         HarnessResponse actionInput;
         HarnessResponse actionMenu;
@@ -611,13 +701,14 @@ internal static partial class PhysicalSession
         try
         {
             binaryIdentity = AssessConPtyBinaryIdentity(started.Data, expectedExeSha256, expectedAppDllSha256);
+            partial["binaryIdentity"] = binaryIdentity;
             if (binaryIdentity.Status != "PASS")
             {
-                throw new HarnessBlockedException("ConPTY binary identity does not match the physical App: "
+                throw new HarnessBlockedException("Бинарные файлы ConPTY не совпадают с физическим запуском App: "
                     + binaryIdentity.Reason);
             }
 
-            capture = await Program.SendAsync(new HarnessRequest
+            capture = await InvokeAsync(new HarnessRequest
             {
                 Command = "capture",
                 Session = started.Session,
@@ -626,10 +717,15 @@ internal static partial class PhysicalSession
             });
             if (capture.Status != "PASS")
             {
-                throw new HarnessBlockedException("ConPTY startup capture failed: " + capture.Message);
+                throw new HarnessBlockedException("Не удалось захватить начальный кадр ConPTY: " + capture.Message);
             }
 
-            actionInput = await Program.SendAsync(new HarnessRequest
+            partial["capture"] = capture.Data;
+            partial["paths"] = GetCapturePaths(capture.Data);
+            await File.WriteAllTextAsync(Path.Combine(directory, "conpty-capture.json"),
+                JsonSerializer.Serialize(capture, HarnessJson.Options));
+
+            actionInput = await InvokeAsync(new HarnessRequest
             {
                 Command = "key",
                 Session = started.Session,
@@ -638,10 +734,10 @@ internal static partial class PhysicalSession
             });
             if (actionInput.Status != "PASS")
             {
-                throw new HarnessBlockedException("ConPTY F2 action-menu input failed: " + actionInput.Message);
+                throw new HarnessBlockedException("Не удалось передать F2 для открытия меню действий ConPTY: " + actionInput.Message);
             }
 
-            actionMenu = await Program.SendAsync(new HarnessRequest
+            actionMenu = await InvokeAsync(new HarnessRequest
             {
                 Command = "capture",
                 Session = started.Session,
@@ -650,10 +746,12 @@ internal static partial class PhysicalSession
             });
             if (actionMenu.Status != "PASS")
             {
-                throw new HarnessBlockedException("ConPTY action-menu capture failed: " + actionMenu.Message);
+                throw new HarnessBlockedException("Не удалось захватить меню действий ConPTY: " + actionMenu.Message);
             }
 
-            escapeInput = await Program.SendAsync(new HarnessRequest
+            partial["actionMenu"] = actionMenu.Data;
+
+            escapeInput = await InvokeAsync(new HarnessRequest
             {
                 Command = "key",
                 Session = started.Session,
@@ -662,10 +760,10 @@ internal static partial class PhysicalSession
             });
             if (escapeInput.Status != "PASS")
             {
-                throw new HarnessBlockedException("ConPTY Escape input failed: " + escapeInput.Message);
+                throw new HarnessBlockedException("Не удалось передать Escape в ConPTY: " + escapeInput.Message);
             }
 
-            restored = await Program.SendAsync(new HarnessRequest
+            restored = await InvokeAsync(new HarnessRequest
             {
                 Command = "capture",
                 Session = started.Session,
@@ -674,22 +772,21 @@ internal static partial class PhysicalSession
             });
             if (restored.Status != "PASS")
             {
-                throw new HarnessBlockedException("ConPTY restored capture failed: " + restored.Message);
+                throw new HarnessBlockedException("Не удалось захватить восстановленный кадр ConPTY: " + restored.Message);
             }
         }
         finally
         {
-            sessionCleanup = await CaptureConPtySessionCleanupEvidenceAsync(() => Program.SendAsync(new HarnessRequest
+            sessionCleanup = await CaptureConPtySessionCleanupEvidenceAsync(() => InvokeAsync(new HarnessRequest
             {
                 Command = "close",
                 Session = started.Session,
                 TimeoutMs = 5_000,
             }));
             report["conptySessionCleanup"] = sessionCleanup;
+            partial["sessionCleanup"] = sessionCleanup;
         }
 
-        await File.WriteAllTextAsync(Path.Combine(directory, "conpty-capture.json"),
-            JsonSerializer.Serialize(capture, HarnessJson.Options));
         return new
         {
             status = "PASS",
@@ -703,7 +800,7 @@ internal static partial class PhysicalSession
                 "runtime",
                 Path.GetFileName(AzurPilotConfigurationPath.GetDefaultRuntimePath()))),
             providers = "disabled",
-            grid = new { columns, rows, source = "Фактическая screen-buffer geometry production App" },
+            grid = new { columns, rows, source = "Фактическая геометрия экранного буфера настоящего App" },
             capture = capture.Data,
             paths = GetCapturePaths(capture.Data),
             actionMenu = new
@@ -718,7 +815,7 @@ internal static partial class PhysicalSession
                 capture = restored.Data,
                 paths = GetCapturePaths(restored.Data),
             },
-            evidence = "ConPTY → VT + xterm cells + Chromium PNG; это не физический Windows Terminal evidence.",
+            evidence = "ConPTY → VT + ячейки xterm + PNG Chromium; отдельный источник свидетельств от физического Windows Terminal.",
         };
     }
 
@@ -730,7 +827,7 @@ internal static partial class PhysicalSession
             || !response.TryGetProperty("identity", out JsonElement identity)
             || identity.ValueKind != JsonValueKind.Object)
         {
-            return new("BLOCKED", null, null, "В ConPTY startup response отсутствует identity.");
+            return new("BLOCKED", null, null, "В начальном ответе ConPTY отсутствует identity.");
         }
 
         string? exeSha256 = TextProperty(identity, "exeSha256");
@@ -756,7 +853,8 @@ internal static partial class PhysicalSession
                 ? response.Status : "NOT_TESTED";
             return new(status, status == "PASS" ? null : response.Message);
         }
-        catch (Exception exception) when (exception is HarnessBlockedException or IOException or ObjectDisposedException)
+        catch (Exception exception) when (exception is HarnessBlockedException or IOException or ObjectDisposedException
+            or UnauthorizedAccessException or TimeoutException or OperationCanceledException)
         {
             return new("BLOCKED", exception.Message);
         }
@@ -767,7 +865,7 @@ internal static partial class PhysicalSession
     {
         return cellBackground.ValueKind == JsonValueKind.Object && measuredBackground.ValueKind == JsonValueKind.Object
             && (string.Equals(cellBackground.GetRawText(), measuredBackground.GetRawText(), StringComparison.Ordinal)
-                || cellRgb is int resolvedCellRgb && measuredRgb == resolvedCellRgb);
+                || (cellRgb is int resolvedCellRgb && measuredRgb == resolvedCellRgb));
     }
 
     private static JsonElement GetCapturePaths(Dictionary<string, object?> report)
@@ -793,18 +891,23 @@ internal static partial class PhysicalSession
         if (content is null || app.Columns is null || app.Rows is null
             || app.Columns <= 0 || app.Rows <= 0)
         {
-            return new("NOT_TESTED", "Для semantic samples не подтверждены content bounds или фактическая grid.", [],
+            return new("NOT_TESTED", "Для цветовых образцов не подтверждены границы содержимого или фактическая сетка ячеек.", [],
                 new { status = "NOT_TESTED", reason = "Недостаточно наблюдаемых геометрии; произвольные координаты не подставляются." });
         }
 
         using JsonDocument cellsDocument = JsonDocument.Parse(await File.ReadAllTextAsync(cellsPath));
-        JsonElement snapshot = cellsDocument.RootElement;
+        return AnalyzePhysicalPixels(image, cellsDocument.RootElement, content, app.Columns.Value, app.Rows.Value, appearance);
+    }
+
+    internal static PhysicalPngAnalysis AnalyzePhysicalPixels(PhysicalPngImage image, JsonElement snapshot,
+        ContentRectangle content, int physicalColumns, int physicalRows, TerminalAppearance appearance)
+    {
         int columns = snapshot.GetProperty("columns").GetInt32();
         int rows = snapshot.GetProperty("rows").GetInt32();
-        if (columns != app.Columns || rows != app.Rows)
+        if (columns != physicalColumns || rows != physicalRows)
         {
-            return new("NOT_TESTED", "Размеры сравниваемых ConPTY и physical grid различаются.", [],
-                new { status = "NOT_TESTED", xtermColumns = columns, xtermRows = rows, physicalColumns = app.Columns, physicalRows = app.Rows });
+            return new("NOT_TESTED", "Размеры сравниваемых ConPTY и физической сетки ячеек различаются.", [],
+                new { status = "NOT_TESTED", xtermColumns = columns, xtermRows = rows, physicalColumns, physicalRows });
         }
 
         JsonElement xtermGeometry = snapshot.GetProperty("geometry");
@@ -812,7 +915,7 @@ internal static partial class PhysicalSession
         double cellHeight = (double)content.Height / rows;
         if (cellWidth < 4 || cellHeight < 5 || cellWidth > 100 || cellHeight > 100)
         {
-            return new("NOT_TESTED", "Размеры ячейки вне ожидаемого диапазона UIA content bounds.", [],
+            return new("NOT_TESTED", "Размеры ячейки вне ожидаемого диапазона границ содержимого UIA.", [],
                 new { status = "NOT_TESTED", cellWidth, cellHeight });
         }
 
@@ -864,12 +967,10 @@ internal static partial class PhysicalSession
                 continue;
             }
 
-            string semantic = FindSemanticRole(snapshot, cell,
-                expected is int rgb ? FromRgb(rgb) : null, appearance.Theme);
             string expectedKey = expected?.ToString("X6", CultureInfo.InvariantCulture) ?? "UNKNOWN";
             string backgroundKey = backgroundRgb?.ToString("X6", CultureInfo.InvariantCulture) ?? "UNKNOWN";
             int row = cell.GetProperty("y").GetInt32();
-            string key = $"{semantic}:{expectedKey}:{backgroundKey}:{row}";
+            string key = $"{expectedKey}:{backgroundKey}:{row}";
             if (!foregroundSamples.ContainsKey(key))
             {
                 foregroundSamples.Add(key, cell.Clone());
@@ -879,23 +980,28 @@ internal static partial class PhysicalSession
         foreach ((string key, JsonElement cell) in foregroundSamples.Take(MaxPhysicalSamples - samples.Count))
         {
             string[] colors = key.Split(':');
-            string semantic = colors[0];
-            PhysicalRgb? expected = colors[1] == "UNKNOWN" ? null : ParseRgb(colors[1]);
+            PhysicalRgb? expected = colors[0] == "UNKNOWN" ? null : ParseRgb(colors[0]);
+            string semantic = FindSemanticRole(snapshot, cell, expected, appearance.Theme);
+            if (!appearance.CanCompareForeground(cell.GetProperty("fg").GetProperty("mode").GetString() ?? string.Empty))
+            {
+                expected = null;
+            }
+
             int x = cell.GetProperty("x").GetInt32();
             int y = cell.GetProperty("y").GetInt32();
             PhysicalPixelRectangle rectangle = CellRectangle(content, columns, rows, x, y, 1, 1);
             string glyph = cell.GetProperty("text").GetString()!;
             if (observedBackground is not null)
             {
-                samples.Add(new($"{semantic}-{EscapeSampleName(glyph)}-{colors[1]}", rectangle, "foreground", expected,
+                samples.Add(new($"{semantic}-{EscapeSampleName(glyph)}-{colors[0]}", rectangle, "foreground", expected,
                     observedBackground));
             }
         }
 
         if (samples.Count == 0)
         {
-            return new("NOT_TESTED", "В production TUI не обнаружены однозначные background/foreground ячейки.", [],
-                new { status = "NOT_TESTED", reason = "Ни один sample не выдуман." });
+            return new("NOT_TESTED", "В настоящем TUI не обнаружены однозначные ячейки фона или текста.", [],
+                new { status = "NOT_TESTED", reason = "Ни один образец не был создан искусственно." });
         }
 
         IReadOnlyList<PhysicalPixelMeasurement> measurements = PhysicalPngAnalyzer.Analyze(image, samples);
@@ -907,13 +1013,14 @@ internal static partial class PhysicalSession
         string comparison = measurements.Any(measurement => measurement.ComparisonStatus == "FAIL") ? "DIFFERENT"
             : result == "PASS" && measurements.All(measurement => measurement.ComparisonStatus == "PASS") ? "MATCH" : "NOT_TESTED";
         return new(result, result == "PASS" ? "Измерен фактический RGB фона; измерения текста и сравнение с ожидаемыми цветами отражены отдельно."
-            : "Для RGB evidence нужен однозначно измеренный фактический RGB фона.", measurements,
+            : "Для свидетельства RGB нужен однозначно измеренный фактический RGB фона.", measurements,
             new
             {
                 status = result,
                 comparisonStatus = comparison,
-                metric = "Фактический dominant opaque RGB для фона и однородный 3×3 interior foreground измеряются независимо от ожидаемой палитры; если expected определён, сравнение точное и без tolerance.",
+                metric = "Преобладающий непрозрачный RGB фона и однородный внутренний участок текста 3×3 измеряются независимо от ожидаемой палитры; при известном ожидаемом RGB сравнение точное, без допуска.",
                 expectedPalette = appearance.ComparisonReady ? appearance.PaletteSource : "NOT_TESTED",
+                foregroundComparisonLimitation = "При неизвестном фокусе или возможной adjustIndistinguishableColors ожидаемый RGB текста не вычисляется.",
                 measuredBackgroundSamples = measuredBackground,
                 measuredForegroundSamples = measuredForeground,
                 notTestedForegroundSamples = measurements.Count(measurement => measurement.Kind == "foreground"
@@ -934,11 +1041,11 @@ internal static partial class PhysicalSession
                 stateComparability = new
                 {
                     status = "NOT_TESTED",
-                    reason = "ConPTY cells и физический PNG принадлежат раздельным процессам; соответствие видимых состояний требует визуального осмотра.",
+                    reason = "Ячейки ConPTY и физический PNG принадлежат раздельным процессам; соответствие видимых состояний требует визуального осмотра.",
                 },
                 samples = measurements,
                 caveats = PixelAnalysisCaveats.Concat([appearance.Limitation
-                    ?? "Ожидаемые цвета profile/default были применены в порядке Windows Terminal."]).ToArray(),
+                    ?? "Цвета профиля и общих настроек были применены в порядке Windows Terminal."]).ToArray(),
             }, comparison);
     }
 
@@ -1021,7 +1128,7 @@ internal static partial class PhysicalSession
             || Int64Property(windows[0], "hwnd") != window.Hwnd
             || TextProperty(windows[0], "title") != window.Title)
         {
-            return new { status = "NOT_TESTED", reason = "UIA inspect не сохранил единственную точную HWND/marker identity." };
+            return new { status = "NOT_TESTED", reason = "UIA inspect не сохранил единственную точную идентичность HWND и маркера." };
         }
 
         if (capture.Target.Hwnd != window.Hwnd || capture.Target.ProcessId != window.ProcessId
@@ -1037,13 +1144,13 @@ internal static partial class PhysicalSession
         if (!inspectedWindow.TryGetProperty("elements", out JsonElement elements)
             || elements.ValueKind != JsonValueKind.Array)
         {
-            return new { status = "NOT_TESTED", reason = "UIA не вернул дерево elements." };
+            return new { status = "NOT_TESTED", reason = "UIA не вернул дерево элементов." };
         }
 
         foreach (JsonElement element in Descendants(elements))
         {
             if (TextProperty(element, "type") != "Custom"
-                || element.TryGetProperty("isOffscreen", out JsonElement offscreen) && offscreen.ValueKind == JsonValueKind.True)
+                || (element.TryGetProperty("isOffscreen", out JsonElement offscreen) && offscreen.ValueKind == JsonValueKind.True))
             {
                 continue;
             }
@@ -1082,10 +1189,10 @@ internal static partial class PhysicalSession
             ScaleCoordinate(rawBounds.Right, scale.Value),
             ScaleCoordinate(rawBounds.Bottom, scale.Value));
         NativeRect visibleBounds = GetVerifiedVisibleWindowRect(window);
-        int outerWidthDiff = Math.Abs((outerBounds.Right - outerBounds.Left) - window.Width);
-        int outerHeightDiff = Math.Abs((outerBounds.Bottom - outerBounds.Top) - window.Height);
-        int captureWidthDiff = Math.Abs((visibleBounds.Right - visibleBounds.Left) - capture.SourceWindowWidth);
-        int captureHeightDiff = Math.Abs((visibleBounds.Bottom - visibleBounds.Top) - capture.SourceWindowHeight);
+        int outerWidthDiff = Math.Abs(outerBounds.Right - outerBounds.Left - window.Width);
+        int outerHeightDiff = Math.Abs(outerBounds.Bottom - outerBounds.Top - window.Height);
+        int captureWidthDiff = Math.Abs(visibleBounds.Right - visibleBounds.Left - capture.SourceWindowWidth);
+        int captureHeightDiff = Math.Abs(visibleBounds.Bottom - visibleBounds.Top - capture.SourceWindowHeight);
         if (outerWidthDiff > 2 || outerHeightDiff > 2 || captureWidthDiff > 2
             || captureHeightDiff > 2 || surfaces.Count == 0)
         {
@@ -1093,7 +1200,7 @@ internal static partial class PhysicalSession
             {
                 status = "NOT_TESTED",
                 reason = surfaces.Count == 0 ? "UIA не сообщил пригодную Custom-поверхность Windows Terminal."
-                    : "DPI-нормализованный HWND bounds, DWM visible frame и геометрия источника WinApp расходятся.",
+                    : "Границы HWND с учётом DPI, видимая рамка DWM и геометрия источника WinApp расходятся.",
                 winApp = new { window.Width, window.Height },
                 win32 = new { width = outerBounds.Right - outerBounds.Left, height = outerBounds.Bottom - outerBounds.Top },
                 rawWin32 = new { width = rawBounds.Right - rawBounds.Left, height = rawBounds.Bottom - rawBounds.Top },
@@ -1115,7 +1222,7 @@ internal static partial class PhysicalSession
             return new
             {
                 status = "NOT_TESTED",
-                reason = "UIA Custom-поверхность отсутствует, неоднозначна или размеры physical grid не наблюдались.",
+                reason = "UIA Custom-поверхность отсутствует, неоднозначна или размеры физической сетки ячеек не наблюдались.",
                 customSurfaceCount = surfaces.Count,
                 largestSurfaceCount = largest.Length,
                 windowDpi,
@@ -1131,14 +1238,14 @@ internal static partial class PhysicalSession
         if (candidate.X < 0 || candidate.Y < 0 || candidate.X + candidate.Width > capture.Width
             || candidate.Y + candidate.Height > capture.Height)
         {
-            return new { status = "NOT_TESTED", reason = "UIA Custom-поверхность находится вне screenshot HWND bounds.", surface };
+            return new { status = "NOT_TESTED", reason = "UIA Custom-поверхность находится вне границ HWND захваченного изображения.", surface };
         }
 
         content = candidate;
         return new
         {
             status = "PASS",
-            source = "exact HWND WinApp target + DPI-normalized GetWindowRect + DWM visible frame + one captured WinApp source + largest unique UIA Custom surface in physical screen pixels; used for coordinates only, not terminal text/cells",
+            source = "Точный HWND WinApp, GetWindowRect с учётом DPI, видимая рамка DWM, один захваченный источник WinApp и единственная наибольшая поверхность UIA Custom в физических пикселях; источник координат, текст и ячейки терминала им не подтверждаются",
             contentRectangle = candidate,
             surface = new { surface.Name, surface.X, surface.Y, surface.Width, surface.Height },
             win32Bounds = outerBounds,
@@ -1169,7 +1276,7 @@ internal static partial class PhysicalSession
         double scaled = Math.Round(coordinate * scale, MidpointRounding.AwayFromZero);
         if (!double.IsFinite(scaled) || scaled is < int.MinValue or > int.MaxValue)
         {
-            throw new HarnessBlockedException("DPI-преобразование HWND geometry вышло за допустимый диапазон.");
+            throw new HarnessBlockedException("DPI-преобразование геометрии HWND вышло за допустимый диапазон.");
         }
 
         return (int)scaled;
@@ -1240,7 +1347,7 @@ internal static partial class PhysicalSession
             current = await winapp.SelectWindowAsync(marker, CancellationToken.None);
             if (!SameOwnedWindow(ownedWindow, current))
             {
-                throw new HarnessBlockedException("Во время ожидания foreground изменились HWND/PID/marker окна.");
+                throw new HarnessBlockedException("Во время ожидания активности окна изменились HWND/PID/marker окна.");
             }
 
             if (current.IsForeground == true)
@@ -1314,6 +1421,7 @@ internal static partial class PhysicalSession
                 capture.CaptureMethod,
                 capture.Limitation,
                 capture.TargetRevalidated,
+                capture.Focused,
                 capture.RawMetadata,
             }, HarnessJson.Options));
         return capture;
@@ -1349,20 +1457,20 @@ internal static partial class PhysicalSession
             {
                 PhysicalAppStartRecord? record = JsonSerializer.Deserialize<PhysicalAppStartRecord>(
                     await File.ReadAllTextAsync(path), HarnessJson.Options);
-                return record ?? throw new HarnessBlockedException("Physical child identity record пуст.");
+                return record ?? throw new HarnessBlockedException("Запись идентичности дочернего процесса физической проверки пуста.");
             }
 
             string failurePath = Path.Combine(Path.GetDirectoryName(path)!, "app-start-error.json");
             if (File.Exists(failurePath))
             {
                 HarnessResponse? failure = JsonSerializer.Deserialize<HarnessResponse>(await File.ReadAllTextAsync(failurePath), HarnessJson.Options);
-                throw new HarnessBlockedException(failure?.Message ?? "Physical child не удалось запустить.");
+                throw new HarnessBlockedException(failure?.Message ?? "Дочерний процесс физической проверки не удалось запустить.");
             }
 
             await Task.Delay(100);
         }
 
-        throw new HarnessBlockedException("Physical app process не сообщил PID до истечения срока запуска.");
+        throw new HarnessBlockedException("Процесс App физической проверки не сообщил PID до истечения срока запуска.");
     }
 
     private static Process? StartWindowsTerminal(string wt, string marker, HarnessRequest request, string launchRequest)
@@ -1398,16 +1506,14 @@ internal static partial class PhysicalSession
     {
         if (record.ProcessId <= 0 || record.HelperPid <= 0
             || !Path.GetFullPath(record.Exe).Equals(expectedExe, StringComparison.OrdinalIgnoreCase)
-            || record.ExeSha256 != expectedHash || !string.IsNullOrEmpty(record.TerminalSessionId)
-                && record.TerminalSessionId.Length > 128)
+            || record.ExeSha256 != expectedHash || (!string.IsNullOrEmpty(record.TerminalSessionId)
+                && record.TerminalSessionId.Length > 128))
         {
-            throw new HarnessBlockedException("Child identity record не совпал с запрошенным EXE/args.");
+            throw new HarnessBlockedException("Запись идентичности дочернего процесса не совпала с запрошенным EXE и аргументами.");
         }
 
-        using Process process = Process.GetProcessById(record.ProcessId);
-        string? path = process.MainModule?.FileName;
-        if (!Path.GetFullPath(path ?? string.Empty).Equals(expectedExe, StringComparison.OrdinalIgnoreCase)
-            || process.HasExited)
+        using Process process = OpenOwnedProcess(record.ProcessId, expectedExe, record.ProcessStartTimeTicks);
+        if (process.HasExited)
         {
             throw new HarnessBlockedException("Фактический PID не принадлежит запущенному AzurPilot.App.exe.");
         }
@@ -1418,7 +1524,7 @@ internal static partial class PhysicalSession
         if (window.Hwnd <= 0 || window.ProcessId <= 0 || window.Title != marker
             || !window.ProcessName.Equals("WindowsTerminal", StringComparison.OrdinalIgnoreCase))
         {
-            throw new HarnessBlockedException("Выбранное HWND не принадлежит точному owned Windows Terminal окну.");
+            throw new HarnessBlockedException("Выбранное HWND не принадлежит точному окну Windows Terminal, принадлежащему проверке.");
         }
 
         _ = GetVerifiedWindowRect(window);
@@ -1431,7 +1537,7 @@ internal static partial class PhysicalSession
             || Native.GetWindowThreadProcessId(handle, out uint processId) == 0 || processId != window.ProcessId
             || !Native.GetWindowRect(handle, out NativeRect rect))
         {
-            throw new HarnessBlockedException("Win32 HWND ownership/geometry не совпала с WinApp exact window.");
+            throw new HarnessBlockedException("Принадлежность и геометрия HWND из Win32 не совпали с точным окном WinApp.");
         }
 
         string title = GetWindowTitle(handle);
@@ -1451,7 +1557,7 @@ internal static partial class PhysicalSession
             (uint)Marshal.SizeOf<NativeRect>());
         if (result != 0 || bounds.Right <= bounds.Left || bounds.Bottom <= bounds.Top)
         {
-            throw new HarnessBlockedException("DWM не подтвердил физические visible bounds выбранного HWND.");
+            throw new HarnessBlockedException("DWM не подтвердил физические видимые границы выбранного HWND.");
         }
 
         return bounds;
@@ -1549,11 +1655,11 @@ internal static partial class PhysicalSession
         {
             if (expectedExe is not null)
             {
-                KillOwnedProcess(app.ProcessId, expectedExe, processCleanup, "AzurPilot.App");
+                processCleanup.Add("AzurPilot.App:" + KillOwnedProcess(app.ProcessId, expectedExe, app.ProcessStartTimeTicks));
             }
 
             string helperPath = Environment.ProcessPath ?? string.Empty;
-            KillOwnedProcess(app.HelperPid, helperPath, processCleanup, "physical-helper");
+            processCleanup.Add("physical-helper:" + KillOwnedProcess(app.HelperPid, helperPath, app.HelperStartTimeTicks));
         }
 
         MarkerAbsenceEvidence markerAbsence = CheckMarkerAbsence(() => FindExistingMarkerWindows(marker).Count == 0);
@@ -1575,7 +1681,7 @@ internal static partial class PhysicalSession
             markerAbsenceReason = markerAbsence.Reason,
             exactWindowTitleRequired = marker,
             processes = processCleanup,
-            note = "WindowsTerminal.exe не завершается целиком; cleanup адресует только HWND с точным marker и собственные child/helper PID.",
+            note = "WindowsTerminal.exe не завершается целиком; освобождение ресурсов адресует только HWND с точным маркером и PID собственных дочерних процессов.",
         };
     }
 
@@ -1587,7 +1693,7 @@ internal static partial class PhysicalSession
             bool absent = markerIsAbsent();
             return absent
                 ? new(true, "PASS", null)
-                : new(false, "BLOCKED", "Маркерное окно осталось после cleanup.");
+                : new(false, "BLOCKED", "Маркерное окно осталось после освобождения ресурсов.");
         }
         catch (HarnessBlockedException exception)
         {
@@ -1623,43 +1729,50 @@ internal static partial class PhysicalSession
         }
     }
 
-    private static void KillOwnedProcess(int processId, string expectedPath, List<string> results, string label)
+    internal static string KillOwnedProcess(int processId, string expectedPath, long expectedStartTimeTicks)
     {
         if (processId <= 0 || string.IsNullOrWhiteSpace(expectedPath))
         {
-            results.Add(label + ":NOT_TESTED");
-            return;
+            return "NOT_TESTED";
         }
 
         try
         {
-            using Process process = Process.GetProcessById(processId);
-            string actualPath = Path.GetFullPath(process.MainModule?.FileName ?? string.Empty);
-            if (!actualPath.Equals(Path.GetFullPath(expectedPath), StringComparison.OrdinalIgnoreCase))
+            if (!Path.IsPathFullyQualified(expectedPath))
             {
-                results.Add(label + ":BLOCKED:pid-path-mismatch");
-                return;
+                return "NOT_TESTED";
             }
+
+            _ = Path.GetFullPath(expectedPath);
+        }
+        catch (ArgumentException)
+        {
+            return "BLOCKED:invalid-path";
+        }
+
+        try
+        {
+            using Process process = OpenOwnedProcess(processId, expectedPath, expectedStartTimeTicks, allowExited: true);
 
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: false);
                 if (!process.WaitForExit(WindowCleanupMs))
                 {
-                    results.Add(label + ":BLOCKED:cleanup-timeout");
-                    return;
+                    return "BLOCKED:cleanup-timeout";
                 }
             }
 
-            results.Add(label + ":PASS");
+            return "PASS";
         }
         catch (ArgumentException)
         {
-            results.Add(label + ":PASS:already-exited");
+            return "PASS:already-exited";
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception
+            or HarnessBlockedException)
         {
-            results.Add(label + ":BLOCKED:" + exception.Message);
+            return "BLOCKED:" + exception.Message;
         }
     }
 
@@ -1745,7 +1858,8 @@ internal static partial class PhysicalSession
         return path;
     }
 
-    private static TerminalAppearance ReadTerminalAppearance(string requestedScheme, WinAppWindow window, string? profileId)
+    private static TerminalAppearance ReadTerminalAppearance(string requestedScheme, WinAppWindow window, string? profileId,
+        bool? focused = null)
     {
         string? settingsPath;
         string? terminalPath;
@@ -1800,7 +1914,7 @@ internal static partial class PhysicalSession
             string? systemTheme = ReadSystemApplicationTheme();
             return TerminalAppearanceResolver.Resolve(json, requestedScheme, profileId, systemTheme,
                 settingsPath, HashFile(settingsPath), terminalDefaultsJson, terminalDefaultsPath,
-                terminalDefaultsHash, terminalDefaultsReadError);
+                terminalDefaultsHash, terminalDefaultsReadError, focused);
         }
         catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -1907,7 +2021,7 @@ internal static partial class PhysicalSession
         using SafeFileHandle desktop = Native.OpenInputDesktop(0, false, DesktopReadObjects);
         if (desktop.IsInvalid)
         {
-            throw new HarnessBlockedException("Windows не предоставила текущий input desktop.");
+            throw new HarnessBlockedException("Windows не предоставила текущий рабочий стол ввода.");
         }
 
         const int Capacity = 256;
@@ -1917,7 +2031,7 @@ internal static partial class PhysicalSession
             if (!Native.GetUserObjectInformation(desktop, UserObjectName, buffer,
                 Capacity * sizeof(char), out _))
             {
-                throw new HarnessBlockedException("Не удалось определить имя текущего input desktop.");
+                throw new HarnessBlockedException("Не удалось определить имя текущего рабочего стола ввода.");
             }
 
             return Marshal.PtrToStringUni(buffer) ?? string.Empty;
@@ -1928,21 +2042,23 @@ internal static partial class PhysicalSession
         }
     }
     private sealed record PhysicalAppLaunchRequest(string Exe, string IsolationRoot, string WorkingDirectory,
-        string AppStartPath, string ExpectedExeSha256, string? ExpectedAppDllSha256);
+        string AppStartPath, string ExpectedExeSha256, string? ExpectedAppDllSha256,
+        int OwnerPid, long OwnerStartTimeTicks);
 
     private sealed record PhysicalAppStartRecord(int ProcessId, int HelperPid, string Exe, string ExeSha256,
         string? AppDllSha256, string[] Arguments, string? TerminalSessionId, string? TerminalProfileId,
-        DateTimeOffset StartedUtc, int? Columns, int? Rows);
+        DateTimeOffset StartedUtc, int? Columns, int? Rows,
+        long ProcessStartTimeTicks, long HelperStartTimeTicks);
 
     internal sealed record ConPtyBinaryIdentityEvidence(string Status, string? ExeSha256,
         string? AppDllSha256, string Reason);
     internal sealed record ConPtySessionCleanupEvidence(string Status, string? Reason);
     internal sealed record MarkerAbsenceEvidence(bool MarkerAbsent, string Status, string? Reason);
 
-    private sealed record ContentRectangle(int X, int Y, int Width, int Height);
+    internal sealed record ContentRectangle(int X, int Y, int Width, int Height);
     private sealed record UiRectangle(int X, int Y, int Width, int Height, string Name);
     private sealed record Win32Window(long Hwnd, int ProcessId);
-    private sealed record PhysicalPngAnalysis(string Status, string Reason,
+    internal sealed record PhysicalPngAnalysis(string Status, string Reason,
         IReadOnlyList<PhysicalPixelMeasurement> Measurements, object Evidence,
         string ComparisonStatus = "NOT_TESTED");
 
@@ -1983,6 +2099,11 @@ internal static partial class PhysicalSession
 
     private static partial class Native
     {
+        [LibraryImport("kernel32.dll", EntryPoint = "QueryFullProcessImageNameW", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static unsafe partial bool QueryFullProcessImageName(SafeProcessHandle process, uint flags,
+            char* path, ref uint length);
+
         [LibraryImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static partial bool IsWindow(nint hwnd);
