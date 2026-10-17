@@ -16,38 +16,42 @@ public sealed class HarnessRegressionTests
     {
         using Scratch scratch = new();
         string user = scratch.File("user/config.yaml");
+        string userLegacyJson = scratch.File("user/config.json");
         string separate = scratch.File("separate/config.yaml");
-        WindowsConfigurationIsolation.ValidateAgainst(separate, user);
+        WindowsConfigurationIsolation.ValidateAgainst(separate, user, userLegacyJson);
         foreach (string alias in new[] { user, user.ToUpperInvariant(), Path.Combine(Path.GetDirectoryName(user)!, ".", "config.yaml"),
             Path.Combine(Path.GetDirectoryName(user)!, "..", "user", "config.yaml"), @"\\?\" + user })
         {
-            _ = Assert.Throws<ArgumentException>(() => WindowsConfigurationIsolation.ValidateAgainst(alias, user));
+            _ = Assert.Throws<ArgumentException>(() => WindowsConfigurationIsolation.ValidateAgainst(alias, user, userLegacyJson));
         }
 
         string link = Path.Combine(scratch.Root, "junction");
         _ = await PowerShell("$d = $env:AZURPILOT_TEST_DATA | ConvertFrom-Json; New-Item -ItemType Junction -Path $d.link -Target $d.target | Out-Null", new { link, target = Path.GetDirectoryName(user) });
-        _ = Assert.Throws<ArgumentException>(() => WindowsConfigurationIsolation.ValidateAgainst(Path.Combine(link, "config.yaml"), user));
+        _ = Assert.Throws<ArgumentException>(() => WindowsConfigurationIsolation.ValidateAgainst(Path.Combine(link, "config.yaml"), user, userLegacyJson));
         Directory.Delete(link);
         _ = await PowerShell("$d = $env:AZURPILOT_TEST_DATA | ConvertFrom-Json; New-Item -ItemType Junction -Path $d.link -Target $d.target | Out-Null", new { link, target = Path.GetDirectoryName(separate) });
-        WindowsConfigurationIsolation.ValidateAgainst(Path.Combine(link, "config.yaml"), user);
+        WindowsConfigurationIsolation.ValidateAgainst(Path.Combine(link, "config.yaml"), user, userLegacyJson);
         Directory.Delete(link);
 
         string hardlink = Path.Combine(scratch.Root, "hardlink.yaml");
         _ = await PowerShell("$d = $env:AZURPILOT_TEST_DATA | ConvertFrom-Json; New-Item -ItemType HardLink -Path $d.link -Target $d.target | Out-Null", new { link = hardlink, target = user });
-        _ = Assert.Throws<ArgumentException>(() => WindowsConfigurationIsolation.ValidateAgainst(hardlink, user));
-        _ = Assert.Throws<ArgumentException>(() => WindowsConfigurationIsolation.ValidateAgainst(Path.Combine(scratch.Root, "absent.yaml"), user));
+        _ = Assert.Throws<ArgumentException>(() => WindowsConfigurationIsolation.ValidateAgainst(hardlink, user, userLegacyJson));
+        _ = Assert.Throws<ArgumentException>(() => WindowsConfigurationIsolation.ValidateAgainst(Path.Combine(scratch.Root, "absent.yaml"), user, userLegacyJson));
+        string legacyHardlink = Path.Combine(scratch.Root, "legacy-hardlink.yaml");
+        _ = await PowerShell("$d = $env:AZURPILOT_TEST_DATA | ConvertFrom-Json; New-Item -ItemType HardLink -Path $d.link -Target $d.target | Out-Null", new { link = legacyHardlink, target = userLegacyJson });
+        _ = Assert.Throws<ArgumentException>(() => WindowsConfigurationIsolation.ValidateAgainst(legacyHardlink, user, userLegacyJson));
         Assert.Equal("schemaVersion: 3", await File.ReadAllTextAsync(user, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task IsolatedHostRejectsUserDirectoryBeforeSessionCallback()
     {
-        // Проверка пути не должна зависеть от наличия config.yaml на машине теста.
         bool called = false;
-        _ = await Assert.ThrowsAsync<ArgumentException>(() => AzurPilotHost.RunInteractiveAsync(
+        ArgumentException failure = await Assert.ThrowsAsync<ArgumentException>(() => AzurPilotHost.RunInteractiveAsync(
             (_, _, _, _, _, _) => { called = true; return Task.CompletedTask; },
             configurationPath: Core.Configuration.AzurPilotConfigurationPath.GetDefaultRuntimePath(),
             isolatedUi: true, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Contains("Изолированная конфигурация не может находиться в пользовательском runtime-каталоге.", failure.Message, StringComparison.Ordinal);
         Assert.False(called);
     }
 
@@ -71,6 +75,7 @@ public sealed class HarnessRegressionTests
         Assert.Equal(expected, await watched);
         Assert.True(HarnessTimeouts.StartProcessMs > HarnessTimeouts.StartConnectionMs + HarnessTimeouts.StartupResponseMs + HarnessTimeouts.ResponseGraceMs);
         Assert.Equal(45_000, HarnessTimeouts.CommandProcessMs);
+        Assert.True(HarnessTimeouts.ScenarioProcessMs > HarnessTimeouts.CommandProcessMs);
     }
 
     [Fact]

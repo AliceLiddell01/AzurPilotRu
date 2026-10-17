@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using AzurPilot.Core.Configuration;
 
 namespace AzurPilot.TuiHarness;
 
@@ -91,7 +92,10 @@ internal static class LiveEnvironment
         string id = start.Session!;
         JsonElement data = JsonSerializer.SerializeToElement(start.Data, HarnessJson.Options);
         string directory = data.GetProperty("directory").GetString()!;
-        string config = Path.Combine(directory, "runtime", "config.yaml");
+        string config = Path.Combine(
+            directory,
+            "runtime",
+            Path.GetFileName(AzurPilotConfigurationPath.GetDefaultRuntimePath()));
         string exe = Path.GetFullPath(request.Exe!);
         List<HarnessResponse> trace = [];
         string status = "PASS";

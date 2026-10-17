@@ -35,7 +35,8 @@ if (arguments.Failure is ApplicationArgumentFailure argumentFailure)
 if (arguments.Help)
 {
     Console.WriteLine("Использование: AzurPilot.App [--mode " + string.Join("|", OperatorUiModeNames.All) + "]");
-    Console.WriteLine("Без аргументов: ui.mode из config.yaml; по умолчанию normal.");
+    Console.WriteLine(
+        $"Без аргументов: ui.mode из {Path.GetFileName(AzurPilotConfigurationPath.GetDefaultRuntimePath())}; по умолчанию normal.");
     Console.WriteLine("При перенаправлении stdin или stdout: одноразовая read-only диагностика.");
     Console.WriteLine("Машинный JSON-интерфейс: AzurPilot.App agent discover.");
     Console.WriteLine("UI для разработки: --isolated-ui <directory>; по умолчанию внешние изменения состояния и окно просмотра журнала отключены.");
@@ -49,7 +50,8 @@ if (arguments.LogViewer)
     return await AzurPilotLogViewerHost.RunAsync(args).ConfigureAwait(false);
 }
 
-string? isolatedConfiguration = arguments.IsolatedUiRoot is string root ? Path.Combine(root, "config.yaml") : null;
+string? isolatedConfiguration = arguments.IsolatedUiRoot is string root
+    ? Path.Combine(root, Path.GetFileName(AzurPilotConfigurationPath.GetDefaultRuntimePath())) : null;
 if (isolatedConfiguration is not null)
 {
     try

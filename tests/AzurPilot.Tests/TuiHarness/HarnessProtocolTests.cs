@@ -119,6 +119,26 @@ public sealed class HarnessProtocolTests
     }
 
     [Fact]
+    public async Task OperationFailureResponseIsDeliveredOnTheConnectedPipe()
+    {
+        string session = Guid.NewGuid().ToString("N");
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using NamedPipeServerStream server = new(SessionOwner.PipeName(session), PipeDirection.InOut, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        Task<HarnessResponse> response = AzurPilot.TuiHarness.Program.SendAsync(
+            new HarnessRequest { Command = "status", Session = session, TimeoutMs = 100 }, connectionTimeoutMs: 1000);
+        await server.WaitForConnectionAsync(token);
+        _ = await SessionOwner.ReadAsync<HarnessRequest>(server, token);
+
+        await SessionOwner.WriteResponseAsync(server,
+            new HarnessResponse("BLOCKED", session, "Ответ об ограниченной операции."));
+        HarnessResponse received = await response.WaitAsync(TimeSpan.FromSeconds(5), token);
+
+        Assert.Equal("BLOCKED", received.Status);
+        Assert.Equal("Ответ об ограниченной операции.", received.Message);
+    }
+
+    [Fact]
     public void StartupStatusConnectionBudgetCoversSequentialCreationStages()
     {
         const int worstCaseCreateMs = 20_000 + 12_000 + 20_000 + 15_000 + 20_000; // Включая четыре ограниченных Git-запроса.

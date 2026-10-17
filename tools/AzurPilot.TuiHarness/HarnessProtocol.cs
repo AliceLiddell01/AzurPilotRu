@@ -29,8 +29,8 @@ internal sealed partial record HarnessRequest
     public int Rows { get; init; } = 30;
     public int X { get; init; }
     public int Y { get; init; }
-    public int TimeoutMs { get; init; } = 15000;
-    public int LifetimeSeconds { get; init; } = 600;
+    public int TimeoutMs { get; init; } = HarnessTimeouts.DefaultRequestTimeoutMs;
+    public int LifetimeSeconds { get; init; } = HarnessTimeouts.DefaultLifetimeSeconds;
     public bool Calibration { get; init; }
     public string? LiveInstance { get; init; }
     public string? Authorization { get; init; }
@@ -120,9 +120,13 @@ internal sealed partial record HarnessRequest
             throw new ArgumentException("Providers: disabled или read-only. Политика safe-сессии запрещает изменения состояния.");
         }
 
-        if (TimeoutMs is < 100 or > 30000 || LifetimeSeconds is < 30 or > 900 || Value?.Length > 4096 || Contains?.Length > 256)
+        if (TimeoutMs is < HarnessTimeouts.MinimumRequestTimeoutMs or > HarnessTimeouts.MaximumRequestTimeoutMs
+            || LifetimeSeconds is < HarnessTimeouts.MinimumLifetimeSeconds or > HarnessTimeouts.MaximumLifetimeSeconds
+            || Value?.Length > 4096 || Contains?.Length > 256)
         {
-            throw new ArgumentException("Превышены границы timeout (100–30000 ms), lifetime (30–900 s) или ввода (4096).");
+            throw new ArgumentException(
+                $"Превышены границы timeout ({HarnessTimeouts.MinimumRequestTimeoutMs}–{HarnessTimeouts.MaximumRequestTimeoutMs} ms), "
+                + $"lifetime ({HarnessTimeouts.MinimumLifetimeSeconds}–{HarnessTimeouts.MaximumLifetimeSeconds} s) или ввода (4096).");
         }
 
         if (Mode is not ("normal" or "manual" or "diagnostic"))

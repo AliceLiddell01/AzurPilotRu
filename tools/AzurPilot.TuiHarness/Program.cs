@@ -195,7 +195,12 @@ internal static class Program
         {
             commands = Commands,
             exitCodes = new { PASS = 0, FAIL = 1, BLOCKED = 2, NOT_TESTED = 3 },
-            commandTimeouts = new { start = HarnessTimeouts.StartProcessMs, other = HarnessTimeouts.CommandProcessMs },
+            commandTimeouts = new
+            {
+                start = HarnessTimeouts.StartProcessMs,
+                scenario = HarnessTimeouts.ScenarioProcessMs,
+                other = HarnessTimeouts.CommandProcessMs,
+            },
             configurationPaths = new
             {
                 yaml = Core.Configuration.AzurPilotConfigurationPath.GetDefaultRuntimePath(),

@@ -50,15 +50,24 @@ internal sealed class SessionOwner : IAsyncDisposable
         string configRoot = Path.Combine(directory, "runtime");
         _ = Directory.CreateDirectory(configRoot);
         // Настоящий строгий YAML. Настройки сохраняются рядом с этим снимком.
-        string configPath = Path.Combine(configRoot, "config.yaml");
+        string configPath = Path.Combine(
+            configRoot,
+            Path.GetFileName(AzurPilotConfigurationPath.GetDefaultRuntimePath()));
+        string legacyJsonPath = Path.Combine(
+            configRoot,
+            Path.GetFileName(AzurPilotConfigurationPath.GetLegacyJsonRuntimePath()));
         AzurPilotConfiguration defaults = AzurPilotConfigurationDefaults.Create();
         if (start.LiveInstance is string liveTarget)
         {
             defaults = defaults with { MuMu = defaults.MuMu with { Instance = liveTarget } };
         }
 
-        ApplicationResult<AzurPilotConfigurationSnapshot> configuration = AzurPilotConfigurationStore.Save(configPath, Path.Combine(configRoot, "config.json"),
-            AzurPilotConfigurationLoader.Load(configPath).Value!, defaults, out _);
+        ApplicationResult<AzurPilotConfigurationSnapshot> configuration = AzurPilotConfigurationStore.Save(
+            configPath,
+            legacyJsonPath,
+            AzurPilotConfigurationLoader.Load(configPath).Value!,
+            defaults,
+            out _);
         if (configuration.IsFailure)
         {
             throw new HarnessBlockedException(configuration.FailureInfo!.Message);
@@ -138,7 +147,7 @@ internal sealed class SessionOwner : IAsyncDisposable
                     allowedLiveMutations = start.LiveInstance is null ? "none" : "environment-prepare,mumu-stop",
                     assignedWhileSuspended = true,
                     killOnClose = true,
-                    isolatedConfiguration = Path.Combine(configRoot, "config.yaml"),
+                    isolatedConfiguration = configPath,
                     externalViewerDisabled = true
                 },
                 source = await SourceIdentityAsync(AppContext.BaseDirectory),
@@ -282,7 +291,7 @@ internal sealed class SessionOwner : IAsyncDisposable
                     close = exception is TimeoutException or OperationCanceledException;
                 }
 
-                await WriteAsync(pipe, response, idle.Token);
+                await WriteResponseAsync(pipe, response);
                 if (startupStatus)
                 {
                     _ = ready.TrySetResult();
@@ -339,6 +348,12 @@ internal sealed class SessionOwner : IAsyncDisposable
         await stream.WriteAsync(BitConverter.GetBytes(bytes.Length), cancellationToken);
         await stream.WriteAsync(bytes, cancellationToken);
         await stream.FlushAsync(cancellationToken);
+    }
+
+    internal static async Task WriteResponseAsync(Stream stream, HarnessResponse response)
+    {
+        using CancellationTokenSource reply = new(TimeSpan.FromMilliseconds(HarnessTimeouts.CleanupMs));
+        await WriteAsync(stream, response, reply.Token);
     }
 
     private static string Hash(string path)

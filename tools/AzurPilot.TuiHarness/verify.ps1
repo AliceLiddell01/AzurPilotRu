@@ -26,7 +26,9 @@ function Start-HarnessCommand([string[]]$Arguments) {
 }
 function Complete-HarnessCommand($Invocation, [string]$Case, [string]$Expected = 'PASS') {
     try {
-        $budget = if ($Invocation.Command -eq 'start') { $commandTimeouts.start } else { $commandTimeouts.other }
+        if ($Invocation.Command -eq 'start') { $budget = $commandTimeouts.start }
+        elseif ($Invocation.Command -in @('run', 'fidelity', 'live-environment')) { $budget = $commandTimeouts.scenario }
+        else { $budget = $commandTimeouts.other }
         if (-not $Invocation.Process.WaitForExit($budget)) {
             $Invocation.Process.Kill($true)
             throw "Истёк срок ожидания CLI: $Case"
@@ -70,7 +72,7 @@ function Get-SettingsDigest {
     $files = if (Test-Path -LiteralPath $directory) { @(Get-ChildItem -LiteralPath $directory -File -Filter 'config*' | Sort-Object Name) } else { @() }
     return ConvertTo-Json -Compress -InputObject @($files | ForEach-Object { [ordered]@{ name = $_.Name; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } })
 }
-$commandTimeouts = @{ start = 0; other = 45000 }
+$commandTimeouts = @{ start = 0; scenario = 0; other = 45000 }
 $help = Invoke-HarnessCommand @('help') 'protocol-budgets'
 $commandTimeouts = $help.data.commandTimeouts
 $settingsBefore = Get-SettingsDigest
@@ -99,7 +101,8 @@ try {
         '--scenario', (Join-Path $PSScriptRoot 'scenarios/history.json')) 'history'
     $settings = Invoke-HarnessCommand @('run', '--exe', $App, '--output', $reportRoot,
         '--scenario', (Join-Path $PSScriptRoot 'scenarios/settings.json')) 'settings'
-    $configPath = [IO.Path]::GetFullPath((Join-Path $settings.data.directory 'runtime/config.yaml'))
+    $yamlName = Split-Path -Leaf $help.data.configurationPaths.yaml
+    $configPath = [IO.Path]::GetFullPath((Join-Path $settings.data.directory (Join-Path 'runtime' $yamlName)))
     if (-not (Get-ChildItem (Split-Path $configPath) -Filter '*.bak-*')) { throw 'Не создана резервная копия изолированного YAML.' }
     $settingsCells = Get-Content (Join-Path $settings.data.directory '001-settings.cells.json') -Raw | ConvertFrom-Json
     if (-not (Test-DisplayedConfigurationPath $settingsCells.lines $configPath)) { throw 'UI не показывает точный изолированный YAML.' }

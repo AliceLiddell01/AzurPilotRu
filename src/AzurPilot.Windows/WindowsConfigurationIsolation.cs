@@ -11,20 +11,23 @@ public static partial class WindowsConfigurationIsolation
     /// <summary>Отклоняет отсутствующий YAML и переадресацию в пользовательский runtime-каталог.</summary>
     public static void Validate(string configurationPath)
     {
-        ValidateAgainst(configurationPath, AzurPilotConfigurationPath.GetDefaultRuntimePath());
+        ValidateAgainst(configurationPath, AzurPilotConfigurationPath.GetDefaultRuntimePath(),
+            AzurPilotConfigurationPath.GetLegacyJsonRuntimePath());
     }
 
-    internal static void ValidateAgainst(string configurationPath, string userConfigurationPath)
+    internal static void ValidateAgainst(
+        string configurationPath,
+        string userConfigurationPath,
+        string userLegacyJsonPath)
     {
-        if (!Path.IsPathFullyQualified(configurationPath) || !File.Exists(configurationPath))
+        if (!Path.IsPathFullyQualified(configurationPath))
         {
             throw new ArgumentException("Изолированная UI-сессия требует существующий отдельный YAML.", nameof(configurationPath));
         }
 
         string userDirectory = Resolve(Path.GetDirectoryName(Path.GetFullPath(userConfigurationPath))!);
         string directory = Path.GetDirectoryName(Path.GetFullPath(configurationPath))!;
-        foreach (string path in new[] { directory, configurationPath, Path.Combine(directory,
-            Path.GetFileName(AzurPilotConfigurationPath.GetLegacyJsonRuntimePath())) })
+        foreach (string path in new[] { directory, configurationPath, Path.Combine(directory, Path.GetFileName(userLegacyJsonPath)) })
         {
             string resolved = Resolve(path);
             if (resolved.Equals(userDirectory, StringComparison.OrdinalIgnoreCase)
@@ -34,10 +37,15 @@ public static partial class WindowsConfigurationIsolation
             }
         }
 
+        if (!File.Exists(configurationPath))
+        {
+            throw new ArgumentException("Изолированная UI-сессия требует существующий отдельный YAML.", nameof(configurationPath));
+        }
+
         // Hard link не меняет окончательный путь, поэтому отдельно сравниваем идентичность файлов.
         using SafeFileHandle isolated = Open(configurationPath);
         FileIdentity candidate = Identity(isolated);
-        foreach (string path in new[] { userConfigurationPath, Path.ChangeExtension(userConfigurationPath, ".json") })
+        foreach (string path in new[] { userConfigurationPath, userLegacyJsonPath })
         {
             if (File.Exists(path))
             {
