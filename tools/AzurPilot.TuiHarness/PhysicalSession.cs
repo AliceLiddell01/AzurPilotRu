@@ -957,7 +957,8 @@ internal static partial class PhysicalSession
             int? expected = ColorSamples.TryResolve(cell.GetProperty("fg"), appearance.Theme, "foreground");
             JsonElement cellBackground = cell.GetProperty("bg");
             int? backgroundRgb = ColorSamples.TryResolve(cellBackground, appearance.Theme, "background");
-            if (!MatchesMeasuredBackground(cellBackground, background, backgroundRgb, measuredBackgroundValue))
+            JsonElement blankBackground = background.ValueKind == JsonValueKind.Object ? background.GetProperty("bg") : default;
+            if (!MatchesMeasuredBackground(cellBackground, blankBackground, backgroundRgb, measuredBackgroundValue))
             {
                 continue;
             }

@@ -11,11 +11,12 @@ public sealed class PhysicalSessionEvidenceTests
     private const string AppDllSha256 = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
 
     [Theory]
-    [InlineData("never", true, true)]
-    [InlineData("always", true, false)]
-    [InlineData("never", false, false)]
+    [InlineData("never", true, true, true)]
+    [InlineData("always", true, false, true)]
+    [InlineData("never", false, false, true)]
+    [InlineData("never", false, false, false)]
     public void PixelAnalysis_PreservesMeasuredRgbAndSelectionWhenUiTextChanges(string adjustment,
-        bool focusKnown, bool foregroundComparable)
+        bool focusKnown, bool foregroundComparable, bool paletteKnown)
     {
         byte[] rgba = new byte[60 * 20 * 4];
         for (int y = 0; y < 20; y++)
@@ -32,7 +33,7 @@ public sealed class PhysicalSessionEvidenceTests
         PhysicalPngImage image = new(60, 20, rgba);
         TerminalAppearance appearance = TerminalAppearance.Unknown("current", "Тестовый профиль.") with
         {
-            Theme = new(StringComparer.Ordinal) { ["background"] = "#0C0C0C", ["foreground"] = "#EEEEEE" },
+            Theme = paletteKnown ? new(StringComparer.Ordinal) { ["background"] = "#0C0C0C", ["foreground"] = "#EEEEEE" } : null,
             OpaqueBackgroundConfirmed = focusKnown,
             PaletteStateConfirmed = focusKnown,
             AdjustIndistinguishableColors = adjustment,
@@ -67,7 +68,7 @@ public sealed class PhysicalSessionEvidenceTests
         Assert.Equal(new PhysicalRgb(12, 12, 12), background.ActualRgb);
         Assert.Equal(focusKnown ? "PASS" : "NOT_TESTED", background.ComparisonStatus);
 
-        static object Cell(int x, string text)
+        object Cell(int x, string text)
         {
             return new
             {
@@ -78,7 +79,7 @@ public sealed class PhysicalSessionEvidenceTests
                 inverse = false,
                 width = 1,
                 fg = new { mode = "rgb", value = 0xEEEEEE },
-                bg = new { mode = "rgb", value = 0x0C0C0C },
+                bg = new { mode = paletteKnown ? "rgb" : "palette", value = paletteKnown ? 0x0C0C0C : 0 },
             };
         }
     }
