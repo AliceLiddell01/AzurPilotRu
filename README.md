@@ -7,13 +7,13 @@
 [![Проверки репозитория](https://github.com/AliceLiddell01/AzurPilotRu/actions/workflows/ci.yml/badge.svg)](https://github.com/AliceLiddell01/AzurPilotRu/actions/workflows/ci.yml)
 ![Платформа Windows x64](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows11&logoColor=white)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
-![C%23](https://img.shields.io/badge/C%23-managed-239120?logo=sharp&logoColor=white)
+![C#](https://img.shields.io/badge/C%23-managed-239120?logo=sharp&logoColor=white)
 ![C++ и OpenCV](https://img.shields.io/badge/C%2B%2B%20%2B%20OpenCV-native-5C3EE8?logo=opencv&logoColor=white)
 [![Лицензия AGPL-3.0](https://img.shields.io/badge/AGPL--3.0-лицензия-2f81f7)](LICENSE)
 
 **Windows x64 · .NET / C# · C++ / OpenCV · MuMuPlayer · Android / ADB**
 
-AzurPilotRu объединяет управление конкретным экземпляром MuMu, проверку готовности Android и запуск Azur Lane Global/EN. Доступны операторский интерфейс в терминале, машинный JSON-интерфейс и диагностика изображений через нативный модуль. Все пользовательские объяснения и документация проекта — на русском языке.
+AzurPilotRu — персональная реализация проекта AzurPilot для Windows. Она объединяет управление конкретным экземпляром MuMu, проверку готовности Android и запуск Azur Lane Global/EN. Доступны операторский интерфейс в терминале, машинный JSON-интерфейс и диагностика изображений через нативный модуль. Все пользовательские объяснения и документация проекта — на русском языке.
 
 **Это развивающийся проект, а не готовый бот для прохождения Azur Lane.** Автоматизация игрового UI, ввод, OCR и распознавание через ONNX пока не реализованы.
 
