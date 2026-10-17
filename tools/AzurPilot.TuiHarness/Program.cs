@@ -6,8 +6,8 @@ namespace AzurPilot.TuiHarness;
 
 internal static class Program
 {
-    // 20 с live preflight + 12 с console bootstrap + 20 с Chromium + 15 с первого UI-состояния и запас.
-    internal const int StartStatusConnectionTimeoutMs = 90_000;
+    // Бюджет последовательного создания сессии принадлежит HarnessTimeouts.
+    internal const int StartStatusConnectionTimeoutMs = HarnessTimeouts.StartConnectionMs;
 
     private static async Task<int> Main(string[] args)
     {
@@ -78,37 +78,47 @@ internal static class Program
 
     internal static async Task<HarnessResponse> StartAsync(HarnessRequest request)
     {
-        string id = Guid.NewGuid().ToString("N");
+        string id = request.Session ?? Guid.NewGuid().ToString("N");
         string root = Path.GetFullPath(request.Output ?? Path.Combine("artifacts", "tui-harness", "sessions"));
         string directory = Path.Combine(root, id);
         _ = Directory.CreateDirectory(directory);
-        HarnessRequest start = request with { Command = "start", Session = id, Output = directory };
+        HarnessRequest start = request with
+        {
+            Command = "start",
+            Session = id,
+            Output = directory,
+            StartupClientPid = Environment.ProcessId
+        };
         string file = Path.Combine(directory, "start.json");
-        await File.WriteAllTextAsync(file, JsonSerializer.Serialize(start, HarnessJson.Options));
+        await using (FileStream exclusive = new(file, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+        {
+            await JsonSerializer.SerializeAsync(exclusive, start, HarnessJson.Options);
+        }
+
         string? assembly = Path.GetFileNameWithoutExtension(Environment.ProcessPath!).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
             ? typeof(Program).Assembly.Location : null;
         using Process owner = ConPty.StartOwner(Environment.ProcessPath!, assembly, file);
         try
         {
             HarnessResponse response = await SendAsync(
-                new HarnessRequest { Command = "status", Session = id, TimeoutMs = 30000 },
+                new HarnessRequest { Command = "status", Session = id, TimeoutMs = HarnessTimeouts.StartupResponseMs },
                 connectionTimeoutMs: StartStatusConnectionTimeoutMs);
             if (response.Status != "PASS")
             {
                 _ = await SendAsync(new HarnessRequest { Command = "close", Session = id, TimeoutMs = 1000 });
-                await owner.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                await owner.WaitForExitAsync().WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.CleanupMs));
             }
 
             return response.Status != "PASS"
                 ? throw new HarnessBlockedException(response.Message)
-                : new("PASS", id, "Safe ConPTY-сессия открыта.", new { directory, ownerPid = owner.Id, identity = response.Data });
+                : new("PASS", id, "Изолированная ConPTY-сессия открыта.", new { directory, ownerPid = owner.Id, identity = response.Data });
         }
         catch
         {
             if (!owner.HasExited)
             {
                 owner.Kill(entireProcessTree: true);
-                await owner.WaitForExitAsync();
+                await owner.WaitForExitAsync().WaitAsync(TimeSpan.FromMilliseconds(HarnessTimeouts.CleanupMs));
             }
 
             string error = Path.Combine(directory, "owner-error.json");
@@ -153,16 +163,21 @@ internal static class Program
 
         await using NamedPipeClientStream pipe = new(".", SessionOwner.PipeName(request.Session), PipeDirection.InOut,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-        using CancellationTokenSource timeout = new(TimeSpan.FromMilliseconds(connectTimeoutMs + 10000));
+        using CancellationTokenSource timeout = new(TimeSpan.FromMilliseconds(connectTimeoutMs));
+        bool connected = false;
         try
         {
             await pipe.ConnectAsync(connectTimeoutMs, timeout.Token);
-            await SessionOwner.WriteAsync(pipe, request, timeout.Token);
-            return await SessionOwner.ReadAsync<HarnessResponse>(pipe, timeout.Token);
+            connected = true;
+            using CancellationTokenSource responseTimeout = new(TimeSpan.FromMilliseconds(request.TimeoutMs + HarnessTimeouts.ResponseGraceMs));
+            await SessionOwner.WriteAsync(pipe, request, responseTimeout.Token);
+            return await SessionOwner.ReadAsync<HarnessResponse>(pipe, responseTimeout.Token);
         }
-        catch (TimeoutException)
+        catch (Exception exception) when (exception is TimeoutException or OperationCanceledException)
         {
-            throw new HarnessBlockedException("Владелец session ID недоступен: неизвестная, закрытая либо истёкшая сессия.");
+            throw new HarnessBlockedException(connected
+                ? "Владелец сессии не ответил в пределах срока IPC."
+                : "Владелец сессии недоступен: неизвестная, закрытая либо истёкшая сессия.");
         }
     }
 
@@ -180,7 +195,13 @@ internal static class Program
         {
             commands = Commands,
             exitCodes = new { PASS = 0, FAIL = 1, BLOCKED = 2, NOT_TESTED = 3 },
-            safety = "Safe UI по умолчанию. Live mutation не разрешается произвольным вводом.",
+            commandTimeouts = new { start = HarnessTimeouts.StartProcessMs, other = HarnessTimeouts.CommandProcessMs },
+            configurationPaths = new
+            {
+                yaml = Core.Configuration.AzurPilotConfigurationPath.GetDefaultRuntimePath(),
+                legacyJson = Core.Configuration.AzurPilotConfigurationPath.GetLegacyJsonRuntimePath(),
+            },
+            safety = "По умолчанию UI изолирован. Произвольный ввод не разрешает изменение состояния в live.",
         });
     }
 }

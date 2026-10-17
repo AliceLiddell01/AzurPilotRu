@@ -5,8 +5,8 @@ using Microsoft.Win32.SafeHandles;
 
 namespace AzurPilot.TuiHarness;
 
-// Выполняется коротким bootstrap-процессом внутри той же ConPTY до запуска production EXE.
-// Изменяет только её виртуальный console buffer, без рендеринга UI и внешних процессов.
+// Выполняется коротким процессом начальной настройки внутри той же ConPTY до запуска продуктового EXE.
+// Изменяет только её виртуальный консольный буфер, без рендеринга UI и внешних процессов.
 internal static partial class ConsoleProfile
 {
     private static readonly string[] WindowsColors = ["black", "blue", "green", "cyan", "red", "magenta", "yellow", "white",
@@ -43,7 +43,7 @@ internal static partial class ConsoleProfile
 
         if (foreground < 0 || background < 0)
         {
-            throw new HarnessBlockedException("Console default fg/bg должны присутствовать в ANSI 16 палитре профиля.");
+            throw new HarnessBlockedException("Цвета консоли по умолчанию (fg/bg) должны присутствовать в палитре ANSI 16 профиля.");
         }
 
         info.Attributes = (ushort)((background << 4) | foreground);

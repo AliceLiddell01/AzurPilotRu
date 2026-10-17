@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace AzurPilot.TuiHarness;
 
-// Ограниченный opt-in: только environment prepare + восстановление исходно Stopped exact MuMu.
+// Ограниченный opt-in: только подготовка окружения и восстановление точного MuMu с исходным Stopped.
 internal static class LiveEnvironment
 {
     internal static async Task<JsonElement> ObserveAsync(string exe, string config, string instance)
@@ -30,7 +30,7 @@ internal static class LiveEnvironment
             _ = await error;
             if (json.Length > 262144)
             {
-                throw new HarnessBlockedException("Read-only preflight превысил бюджет.");
+                throw new HarnessBlockedException("Предварительное наблюдение превысило бюджет.");
             }
 
             using JsonDocument document = JsonDocument.Parse(json);
@@ -46,19 +46,22 @@ internal static class LiveEnvironment
         }
     }
 
-    internal static void RequireStopped(JsonElement observation)
+    internal static void RequireStopped(JsonElement observation, string expectedTarget)
     {
-        if (observation.GetProperty("status").GetString() != "success"
-            || observation.GetProperty("data").GetProperty("state").GetString() != "Stopped")
+        if (!observation.TryGetProperty("status", out JsonElement status) || status.GetString() != "success"
+            || !observation.TryGetProperty("target", out JsonElement target) || target.GetString() != expectedTarget
+            || !observation.TryGetProperty("data", out JsonElement data) || data.ValueKind != JsonValueKind.Object
+            || !data.TryGetProperty("state", out JsonElement state) || state.GetString() != "Stopped")
         {
-            throw new HarnessBlockedException("Live environment требует доказанный исходный Stopped exact target. Unknown/Running/ambiguous не присваивает ownership.");
+            throw new HarnessBlockedException("Live environment требует доказанный исходный Stopped точного экземпляра. Unknown/Running, неоднозначность и ошибки не дают права управления.");
         }
     }
 
     internal static async Task<Exception?> StopAndObserveAsync(
         Func<Task> stop,
         Func<Task<JsonElement>> observe,
-        Func<JsonElement, Task> persist)
+        Func<JsonElement, Task> persist,
+        string expectedTarget)
     {
         Exception? stopFailure = null;
         try
@@ -72,7 +75,7 @@ internal static class LiveEnvironment
 
         JsonElement postflight = await observe();
         await persist(postflight);
-        RequireStopped(postflight);
+        RequireStopped(postflight, expectedTarget);
         return stopFailure;
     }
 
@@ -125,7 +128,7 @@ internal static class LiveEnvironment
         try
         {
             _ = await Step("capture", contains: request.LiveInstance, name: "preflight-ui");
-            // Ownership известно только после успешного preflight из CreateAsync.
+            // Право управления известно только после успешной предварительной проверки из CreateAsync.
             attempted = true;
             await Confirm("/environment-start");
             _ = await Step("capture", contains: "Окружение готово.", name: "environment-ready");
@@ -151,7 +154,8 @@ internal static class LiveEnvironment
                         }
                     },
                     () => ObserveAsync(exe, config, request.LiveInstance!),
-                    postflight => File.WriteAllTextAsync(Path.Combine(directory, "postflight.json"), postflight.GetRawText()));
+                    postflight => File.WriteAllTextAsync(Path.Combine(directory, "postflight.json"), postflight.GetRawText()),
+                    request.LiveInstance!);
                 restored = true;
                 if (stopFailure is not null)
                 {
@@ -181,7 +185,7 @@ internal static class LiveEnvironment
             if (closed.Status != "PASS")
             {
                 status = "BLOCKED";
-                message += " Cleanup owner не подтверждён: " + closed.Message;
+                message += " Освобождение ресурсов владельца не подтверждено: " + closed.Message;
             }
         }
 

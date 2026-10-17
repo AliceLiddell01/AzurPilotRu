@@ -23,7 +23,7 @@ foreach ($package in $manifest.packages) {
         try {
             Invoke-WebRequest -Uri $package.url -OutFile $partial
             if ((Get-RendererIntegrity $partial) -cne $package.integrity) {
-                throw "Неверный hash renderer package: $($package.name)"
+                throw "Неверный хеш пакета рендерера: $($package.name)"
             }
             Move-Item -LiteralPath $partial -Destination $archive -Force
         }
@@ -39,9 +39,9 @@ if ($AssetsOnly) { return }
 Push-Location $repo
 try {
     & dotnet restore tools/AzurPilot.TuiHarness --locked-mode
-    if ($LASTEXITCODE -ne 0) { throw 'Locked restore harness завершился отказом.' }
+    if ($LASTEXITCODE -ne 0) { throw 'Locked restore Harness завершился отказом.' }
     & dotnet build tools/AzurPilot.TuiHarness -c Release --no-restore -warnaserror
-    if ($LASTEXITCODE -ne 0) { throw 'Сборка harness завершилась отказом.' }
+    if ($LASTEXITCODE -ne 0) { throw 'Сборка Harness завершилась отказом.' }
     if (-not $SkipBrowser) {
         $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $repo 'artifacts/tui-harness/browsers'
         & pwsh -NoProfile -File tools/AzurPilot.TuiHarness/bin/Release/net10.0-windows/win-x64/playwright.ps1 install chromium

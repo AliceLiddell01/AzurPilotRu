@@ -41,15 +41,15 @@ internal sealed class SessionOwner : IAsyncDisposable
     {
         string directory = Path.GetFullPath(start.Output!);
         string exe = Path.GetFullPath(start.Calibration ? Environment.ProcessPath!
-            : start.Exe ?? throw new ArgumentException("Требуется --exe production AzurPilot.App.exe."));
+            : start.Exe ?? throw new ArgumentException("Требуется --exe с продуктовым AzurPilot.App.exe."));
         if ((!start.Calibration && Path.GetFileName(exe) != "AzurPilot.App.exe") || !File.Exists(exe))
         {
-            throw new ArgumentException("Не найден production AzurPilot.App.exe.");
+            throw new ArgumentException("Не найден продуктовый AzurPilot.App.exe.");
         }
 
         string configRoot = Path.Combine(directory, "runtime");
         _ = Directory.CreateDirectory(configRoot);
-        // Реальный strict YAML, не макет backend. Настройки сохраняются рядом с этим snapshot.
+        // Настоящий строгий YAML. Настройки сохраняются рядом с этим снимком.
         string configPath = Path.Combine(configRoot, "config.yaml");
         AzurPilotConfiguration defaults = AzurPilotConfigurationDefaults.Create();
         if (start.LiveInstance is string liveTarget)
@@ -77,13 +77,13 @@ internal sealed class SessionOwner : IAsyncDisposable
         {
             if (start.Authorization != "prepare-and-restore")
             {
-                throw new ArgumentException("Live mutation не авторизована.");
+                throw new ArgumentException("Изменение состояния в live не разрешено.");
             }
 
             arguments += " --live-environment-target " + start.LiveInstance;
             JsonElement preflight = await LiveEnvironment.ObserveAsync(exe, configPath, start.LiveInstance);
             await File.WriteAllTextAsync(Path.Combine(directory, "preflight.json"), preflight.GetRawText());
-            LiveEnvironment.RequireStopped(preflight);
+            LiveEnvironment.RequireStopped(preflight, start.LiveInstance);
         }
 
         if (start.Calibration)
@@ -141,7 +141,7 @@ internal sealed class SessionOwner : IAsyncDisposable
                     isolatedConfiguration = Path.Combine(configRoot, "config.yaml"),
                     externalViewerDisabled = true
                 },
-                source = await SourceIdentityAsync(),
+                source = await SourceIdentityAsync(AppContext.BaseDirectory),
             };
             await File.WriteAllTextAsync(Path.Combine(directory, "identity.json"), JsonSerializer.Serialize(identity, HarnessJson.Options));
             _ = await renderer.WaitAsync(start.Calibration ? "HARNESS COLOR CALIBRATION" : "AzurPilot", 15000);
@@ -164,7 +164,7 @@ internal sealed class SessionOwner : IAsyncDisposable
 
         if (request.Command != "close" && (Hash(_exe) != _exeHash || Hash(_assemblyPath) != _assemblyHash))
         {
-            throw new HarnessBlockedException("Production binary изменился после старта. Нужна новая сессия.");
+            throw new HarnessBlockedException("Бинарник приложения изменился после старта. Нужна новая сессия.");
         }
 
         object? data;
@@ -173,7 +173,7 @@ internal sealed class SessionOwner : IAsyncDisposable
             case "status":
                 if (!_pty.Alive)
                 {
-                    throw new HarnessBlockedException($"Production процесс уже завершился: 0x{_pty.ExitCode:X8}.");
+                    throw new HarnessBlockedException($"Процесс приложения уже завершился: 0x{_pty.ExitCode:X8}.");
                 }
 
                 data = _identity;
@@ -185,7 +185,7 @@ internal sealed class SessionOwner : IAsyncDisposable
             case "capture":
                 if (_capture >= 64)
                 {
-                    throw new HarnessBlockedException("Бюджет evidence: не более 64 captures на сессию.");
+                    throw new HarnessBlockedException("Бюджет свидетельств: не более 64 снимков на сессию.");
                 }
 
                 string name = $"{++_capture:D3}-{request.Name ?? "capture"}";
@@ -196,10 +196,12 @@ internal sealed class SessionOwner : IAsyncDisposable
                 JsonElement settled = await _renderer.WaitAsync(null, request.TimeoutMs);
                 if (request.Command == "mouse" && request.Value == "click" && !_renderer.MouseEffectObserved(settled))
                 {
-                    throw new HarnessBlockedException("Mouse click передан в ConPTY, но наблюдаемого изменения UI нет. Mouse-навигация палитры production App не доказана.");
+                    return new("NOT_TESTED", _start.Session,
+                        "Клик доставлен, но наблюдаемого изменения интерфейса нет; поддержка навигации кликом не доказана.",
+                        new { delivered = true, effectObserved = false, reason = "click_effect_not_observed" });
                 }
 
-                // PASS означает доставку через xterm input/ConPTY. Эффект проверяет отдельный assertion.
+                // PASS означает доставку через ввод xterm/ConPTY. Эффект подтверждает отдельная проверка утверждения.
                 data = new { delivered = true, effect = "NOT_TESTED: используйте wait/capture/assertions" };
                 break;
             case "close":
@@ -215,17 +217,27 @@ internal sealed class SessionOwner : IAsyncDisposable
     internal static async Task RunAsync(string requestPath)
     {
         HarnessRequest start = JsonSerializer.Deserialize<HarnessRequest>(await File.ReadAllTextAsync(requestPath), HarnessJson.Options)!;
-        // Agent shell может иметь TERM=dumb/NO_COLOR. Это окружение CLI, а не профиль нового терминала.
-        // Меняем только отдельного owner и его потомков; чужую WT_SESSION не выдаём за собственную.
+        // Оболочка агента может иметь TERM=dumb/NO_COLOR. Это окружение CLI, а не профиль нового терминала.
+        // Меняем только отдельного владельца сессии и его потомков; чужую WT_SESSION не выдаём за собственную.
         Environment.SetEnvironmentVariable("TERM", "xterm-256color");
         Environment.SetEnvironmentVariable("COLORTERM", "truecolor");
         Environment.SetEnvironmentVariable("TERM_PROGRAM", "AzurPilot.TuiHarness");
         Environment.SetEnvironmentVariable("NO_COLOR", null);
         Environment.SetEnvironmentVariable("FORCE_COLOR", null);
         Environment.SetEnvironmentVariable("WT_SESSION", null);
-        // Handle не наследуется. При crash/kill владельца Windows завершит также driver и Chromium.
+        // Дескриптор не наследуется. При аварии или принудительном завершении владельца Windows завершит также драйвер и Chromium.
         using SafeFileHandle job = ConPty.CreateJob(denyChildren: false, allowBreakaway: start.LiveInstance is not null);
         ConPty.AssignOwnerJob(job);
+        TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using Process startupClient = Process.GetProcessById(start.StartupClientPid);
+        // До первого status владелец сессии принадлежит запускающему CLI. Его обрыв завершает только наш Job.
+        _ = Task.Run(async () =>
+        {
+            if (!await HarnessTimeouts.StartupCompletedAsync(ready.Task, startupClient.WaitForExitAsync(), TimeProvider.System))
+            {
+                Process.GetCurrentProcess().Kill();
+            }
+        });
         try
         {
             await using SessionOwner owner = await CreateAsync(start);
@@ -253,22 +265,28 @@ internal sealed class SessionOwner : IAsyncDisposable
                 await pipe.WaitForConnectionAsync(idle.Token);
                 idle.CancelAfter(TimeSpan.FromSeconds(10));
                 HarnessResponse response;
+                bool startupStatus = false;
                 try
                 {
                     HarnessRequest request = await ReadAsync<HarnessRequest>(pipe, idle.Token);
-                    idle.CancelAfter(TimeSpan.FromMilliseconds(request.TimeoutMs + 10000));
-                    response = await owner.ExecuteAsync(request).WaitAsync(TimeSpan.FromMilliseconds(request.TimeoutMs + 10000), lifetime.Token);
+                    startupStatus = request.Command == "status";
+                    idle.CancelAfter(TimeSpan.FromMilliseconds(request.TimeoutMs + HarnessTimeouts.ResponseGraceMs));
+                    response = await owner.ExecuteAsync(request).WaitAsync(TimeSpan.FromMilliseconds(request.TimeoutMs + HarnessTimeouts.ResponseGraceMs), lifetime.Token);
                     close = request.Command == "close";
                 }
                 catch (Exception exception)
                 {
                     await File.WriteAllTextAsync(Path.Combine(start.Output!, "operation-error.txt"), exception.ToString());
                     response = Failure(exception, start.Session);
-                    // Не продолжать владеть операцией, таймаут которой мог оставить pending работу.
+                    // Не продолжать владеть операцией, таймаут которой мог оставить незавершённую работу.
                     close = exception is TimeoutException or OperationCanceledException;
                 }
 
                 await WriteAsync(pipe, response, idle.Token);
+                if (startupStatus)
+                {
+                    _ = ready.TrySetResult();
+                }
             }
 
             await lifetime.CancelAsync();
@@ -280,7 +298,7 @@ internal sealed class SessionOwner : IAsyncDisposable
             await File.WriteAllTextAsync(Path.Combine(start.Output!, "owner-error.json"),
                 JsonSerializer.Serialize(Failure(exception, start.Session), HarnessJson.Options));
         }
-        // Закрытие последнего handle job завершает владельца и все оставшиеся descendants.
+        // Закрытие последнего дескриптора Job завершает владельца и все оставшиеся дочерние процессы.
     }
 
     internal static string PipeName(string session)
@@ -329,17 +347,48 @@ internal sealed class SessionOwner : IAsyncDisposable
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 
-    private static async Task<object> SourceIdentityAsync()
+    internal static async Task<object> SourceIdentityAsync(string binaryDirectory)
     {
-        static async Task<string> GitAsync(params string[] arguments)
+        // Корень привязан к расположению Harness, а не текущего каталога вызывающей оболочки или чужому GIT_DIR.
+        DirectoryInfo? root = new(Path.GetFullPath(binaryDirectory));
+        while (root is not null && !(File.Exists(Path.Combine(root.FullName, "AzurPilot.slnx"))
+            && File.Exists(Path.Combine(root.FullName, "src", "AzurPilot.App", "AzurPilot.App.csproj"))
+            && File.Exists(Path.Combine(root.FullName, "tools", "AzurPilot.TuiHarness", "AzurPilot.TuiHarness.csproj"))))
+        {
+            root = root.Parent;
+        }
+
+        object Unavailable()
+        {
+            return new
+            {
+                status = "NOT_TESTED",
+                commit = (string?)null,
+                workingTree = (string?)null,
+                buildBinding = "Корень исходного checkout не подтверждён; доступны только SHA-256 бинарников."
+            };
+        }
+
+        if (root is null)
+        {
+            return Unavailable();
+        }
+
+        async Task<string?> GitAsync(params string[] arguments)
         {
             ProcessStartInfo info = new("git")
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
-                CreateNoWindow = true
+                CreateNoWindow = true,
+                WorkingDirectory = root.FullName,
             };
+            foreach (string key in info.Environment.Keys.Where(key => key.StartsWith("GIT_", StringComparison.OrdinalIgnoreCase)).ToArray())
+            {
+                _ = info.Environment.Remove(key);
+            }
+
             foreach (string argument in arguments)
             {
                 info.ArgumentList.Add(argument);
@@ -348,18 +397,48 @@ internal sealed class SessionOwner : IAsyncDisposable
             using Process process = Process.Start(info)!;
             Task<string> output = process.StandardOutput.ReadToEndAsync();
             Task<string> error = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            _ = await error;
-            string result = (await output).Trim();
-            return process.ExitCode == 0 ? result[..Math.Min(result.Length, 8192)] : "NOT_TESTED: git metadata unavailable";
+            try
+            {
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                _ = await error;
+                string result = (await output).Trim();
+                return process.ExitCode == 0 && result.Length <= 8192 ? result : null;
+            }
+            finally
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                }
+            }
         }
 
-        return new
+        try
         {
-            commit = await GitAsync("rev-parse", "HEAD"),
-            workingTree = await GitAsync("status", "--porcelain"),
-            buildBinding = "SHA-256 EXE + DLL являются binary identity; dirty source не утверждает committed build"
-        };
+            string? top = await GitAsync("rev-parse", "--show-toplevel");
+            if (top is null || !Path.GetFullPath(top).Equals(root.FullName, StringComparison.OrdinalIgnoreCase)
+                || await GitAsync("ls-files", "--error-unmatch", "AzurPilot.slnx", "src/AzurPilot.App/AzurPilot.App.csproj",
+                    "tools/AzurPilot.TuiHarness/AzurPilot.TuiHarness.csproj") is null)
+            {
+                return Unavailable();
+            }
+
+            string? commit = await GitAsync("rev-parse", "HEAD");
+            string? workingTree = await GitAsync("status", "--porcelain");
+            return commit is null || workingTree is null ? Unavailable() : new
+            {
+                status = "PASS",
+                root = root.FullName,
+                commit,
+                workingTree,
+                buildBinding = "Git описывает исходный checkout; соответствие сборки этому HEAD не доказано. SHA-256 EXE + DLL — отдельная идентичность бинарников."
+            };
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or IOException or TimeoutException)
+        {
+            return Unavailable();
+        }
     }
 
     public ValueTask DisposeAsync()

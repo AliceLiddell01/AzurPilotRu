@@ -18,8 +18,8 @@ namespace AzurPilot.App.OperatorUi;
 /// <summary>Интерактивная операторская поверхность поверх существующих сценариев приложения.</summary>
 /// <remarks>
 /// <para>
-/// UI владеет только presentation-состоянием. Task исполняется вне UI thread, а все изменения views
-/// применяются одним timer callback. Выход отменяет и дожидается текущей операции до disposal терминала.
+/// UI владеет только presentation-состоянием. Task исполняется вне потока UI, а все изменения представлений
+/// применяются одним обратным вызовом таймера. Выход отменяет и дожидается текущей операции до освобождения терминала.
 /// </para>
 /// <para>
 /// Встроенной области журнала нет ни в одном режиме: технический поток принадлежит отдельной консоли
@@ -92,7 +92,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     /// Фон везде наследуется от терминала (Color.None), поэтому сплошных плашек и инверсных полос нет,
     /// а явные цвета выбираются по полярности фона и удерживают контраст не ниже 4.5:1. Роли несут
     /// семантику: нейтральный основной текст, приглушённое второстепенное, зелёный успех, жёлтый
-    /// внимание, красный отказ, акцент для выбора и активного ввода, приглушённый disabled.
+    /// внимание, красный отказ, акцент для выбора и активного ввода, приглушённый цвет недоступного действия.
     /// </remarks>
     /// <param name="darkBackground">Фон терминала тёмный.</param>
     private void BuildPalette(bool darkBackground)
@@ -133,9 +133,9 @@ public sealed class AzurPilotOperatorUi : IDisposable
         Disabled = normal,
     };
 
-    /// <summary>Использует уже собранный startup snapshot и общий источник логов хоста приложения.</summary>
+    /// <summary>Использует уже собранный снимок при запуске и общий источник логов хоста приложения.</summary>
     /// <param name="service">Владелец сценариев приложения.</param>
-    /// <param name="initialDiagnostics">Диагностика текущего startup без повторной инициализации.</param>
+    /// <param name="initialDiagnostics">Диагностика текущего запуска без повторной инициализации.</param>
     /// <param name="logSource">Потокобезопасный bounded источник логов для явно запрошенных деталей.</param>
     /// <param name="mode">Режим интерфейса: объём доступных действий.</param>
     /// <param name="logViewerFailure">
@@ -161,8 +161,8 @@ public sealed class AzurPilotOperatorUi : IDisposable
     /// <summary>Текущий режим интерфейса.</summary>
     internal OperatorUiMode Mode => _mode;
 
-    /// <summary>Запускает одну интерактивную сессию на вызывающем thread.</summary>
-    /// <param name="cancellationToken">Запрос graceful выхода от хоста приложения.</param>
+    /// <summary>Запускает одну интерактивную сессию на вызывающем потоке.</summary>
+    /// <param name="cancellationToken">Запрос управляемого выхода от хоста приложения.</param>
     /// <exception cref="InvalidOperationException">Повторный запуск либо redirected stdin/stdout.</exception>
     public void Run(CancellationToken cancellationToken = default)
     {
@@ -251,7 +251,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     internal PaletteMode CurrentPalette => _paletteMode;
     internal OperatorUiSession Session => _session;
 
-    /// <summary>Освобождает coordinator после graceful завершения операции.</summary>
+    /// <summary>Освобождает coordinator после управляемого завершения операции.</summary>
     public void Dispose()
     {
         _controller.Dispose();
@@ -294,7 +294,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         return true;
     }
 
-    // OSC 10/11 завершается асинхронно уже после Init. Палитра обновляется только в UI event loop.
+    // OSC 10/11 завершается асинхронно уже после Init. Палитра обновляется только в цикле событий UI.
     internal void ApplyTerminalBackground(Terminal.Gui.Drawing.Color background)
     {
         if (background.A == 0 || _window is null)
@@ -326,7 +326,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         return $"Экземпляр: {target}  |  Режим: {OperatorUiModePresentation.Label(_mode)}  |  / — действия";
     }
 
-    /// <summary>Отдельная контрастная область ввода: prompt и линия-разделитель отражают фокус.</summary>
+    /// <summary>Отдельная контрастная область ввода: приглашение ввода и линия-разделитель отражают фокус.</summary>
     private void RefreshComposerFocus()
     {
         bool focused = _composer!.HasFocus && _composer.Enabled;
@@ -367,7 +367,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
 
         _header!.X = 0; _header.Y = 0; _header.Width = size.Width;
         _operation!.X = 0; _operation.Y = 1; _operation.Width = size.Width;
-        // Sticky-заголовок панели: он не участвует в прокрутке и остаётся видимым при длинной истории.
+        // Закреплённый заголовок панели: он не участвует в прокрутке и остаётся видимым при длинной истории.
         _historyHeading!.X = 0; _historyHeading.Y = 2; _historyHeading.Width = size.Width;
         _historyHeading.Text = BuildHistoryHeading(size.Width);
         // Встроенной области журнала нет: история занимает всю высоту до области ввода.
@@ -757,7 +757,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         if (!completeOnly && _paletteMode == PaletteMode.Commands && IsDirectCommand(_composer!.Text))
         {
             // Точное имя в поле ввода имеет приоритет над строкой категории. Иначе Enter после
-            // /screenshot или /android открывал первую категорию вместо permission/dispatch gate.
+            // /screenshot или /android открывал первую категорию вместо проверки доступа и маршрутизации.
             HidePalette();
             SubmitComposer();
             return;
@@ -957,10 +957,10 @@ public sealed class AzurPilotOperatorUi : IDisposable
             : new CommandResolution(CommandResolutionKind.NotAvailableInMode, command);
     }
 
-    /// <summary>Точное имя команды, которое Enter должен передать в общий permission/dispatch gate.</summary>
+    /// <summary>Точное имя команды, которое Enter должен передать на общую проверку доступа и маршрутизации.</summary>
     internal static bool IsDirectCommand(string input) => OperatorUiCommand.Match(input.Trim()) is not null;
 
-    /// <summary>Запоминает черновик composer и сообщает, что палитру нужно открыть.</summary>
+    /// <summary>Запоминает черновик поля ввода и сообщает, что палитру нужно открыть.</summary>
     /// <remarks>
     /// Отделено от обработчика клавиш, чтобы привязку источника открытия к состоянию поля ввода можно было
     /// проверить детерминированным тестом: Terminal.Gui 2.5.0 не поставляет тестовый драйвер, а Run()
@@ -1181,7 +1181,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     }
 
     /// <summary>
-    /// Предъявляет единое подтверждение mutation над уже доказанной точной identity.
+    /// Предъявляет единое подтверждение изменения состояния над уже доказанной точной identity.
     /// </summary>
     /// <param name="command">Подтверждаемое действие.</param>
     private void ShowConfirmation(OperatorUiCommand command)
@@ -1199,7 +1199,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _openCategory = null;
         _composer!.Enabled = false;
         _choices.Clear();
-        // По умолчанию выделена отмена: подтверждение mutation нельзя получить случайным Enter.
+        // По умолчанию выделена отмена: подтверждение изменения состояния нельзя получить случайным Enter.
         _choices.Add(new PaletteChoice("Отмена"));
         MuMuInstanceId target = _session.PendingConfirmation!.Target;
         foreach ((string title, bool saveTarget) in MutationConfirmationChoices(
@@ -1217,7 +1217,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
         && _session.SelectedInstance is MuMuInstanceId target
         && _controller.SavedConfiguration.MuMu.Instance != target.ToString();
 
-    /// <summary>Строит подтверждение mutation с отдельным выбором сохранения конфигурации.</summary>
+    /// <summary>Строит подтверждение изменения состояния с отдельным выбором сохранения конфигурации.</summary>
     /// <param name="action">Подтверждаемое действие.</param>
     /// <param name="actionTitle">Название действия для оператора.</param>
     /// <param name="target">Точная identity, предъявленная для подтверждения.</param>
@@ -1389,7 +1389,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
             _awaitingTargetResolution = false;
             if (_session.SelectedInstance is MuMuInstanceId)
             {
-                // Identity доказана production-резолвером: предъявляем её в едином подтверждении.
+                // Identity доказана продуктовым резолвером: предъявляем её в едином подтверждении.
                 OperatorUiAction action = _pendingConfirmation ?? OperatorUiAction.EnvironmentPrepare;
                 _pendingConfirmation = null;
                 ShowConfirmation(OperatorUiCommand.For(action));
@@ -1609,11 +1609,34 @@ public sealed class AzurPilotOperatorUi : IDisposable
         _ => "Инфо",
     };
 
-    private static IEnumerable<string> Wrap(string text, int columns)
+    internal static IEnumerable<string> Wrap(string text, int columns)
     {
         columns = Math.Max(1, columns);
         foreach (string sourceLine in text.Split('\n'))
         {
+            if (sourceLine.StartsWith(OperatorUiController.ConfigurationPathLabel, StringComparison.Ordinal))
+            {
+                // У пути значимы все пробелы, в том числе на границе переноса.
+                StringBuilder pathRow = new();
+                int pathWidth = 0;
+                foreach (Rune rune in sourceLine.EnumerateRunes())
+                {
+                    int runeWidth = Math.Max(0, rune.GetColumns());
+                    if (pathWidth + runeWidth > columns && pathRow.Length > 0)
+                    {
+                        yield return pathRow.ToString();
+                        _ = pathRow.Clear();
+                        pathWidth = 0;
+                    }
+
+                    _ = pathRow.Append(rune.ToString());
+                    pathWidth += runeWidth;
+                }
+
+                yield return pathRow.ToString();
+                continue;
+            }
+
             StringBuilder row = new();
             int width = 0;
             string[] words = sourceLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -1766,7 +1789,7 @@ public sealed class AzurPilotOperatorUi : IDisposable
     /// <summary>Действие, которое представление применяет к палитре и техническим деталям.</summary>
     internal enum ComposerKeyEffect
     {
-        /// <summary>Клавиша не относится к composer и палитре.</summary>
+        /// <summary>Клавиша не относится к полю ввода и палитре.</summary>
         NotHandled,
         /// <summary>Открыть палитру действий.</summary>
         OpenPalette,

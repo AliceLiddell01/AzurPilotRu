@@ -38,7 +38,7 @@ if (arguments.Help)
     Console.WriteLine("Без аргументов: ui.mode из config.yaml; по умолчанию normal.");
     Console.WriteLine("При перенаправлении stdin или stdout: одноразовая read-only диагностика.");
     Console.WriteLine("Машинный JSON-интерфейс: AzurPilot.App agent discover.");
-    Console.WriteLine("Developer UI: --isolated-ui <directory>; по умолчанию внешние mutation и viewer отключены.");
+    Console.WriteLine("UI для разработки: --isolated-ui <directory>; по умолчанию внешние изменения состояния и окно просмотра журнала отключены.");
     return AzurPilotExitCode.Success;
 }
 
@@ -50,10 +50,17 @@ if (arguments.LogViewer)
 }
 
 string? isolatedConfiguration = arguments.IsolatedUiRoot is string root ? Path.Combine(root, "config.yaml") : null;
-if (isolatedConfiguration is not null && !File.Exists(isolatedConfiguration))
+if (isolatedConfiguration is not null)
 {
-    Console.Error.WriteLine("Изолированная UI-сессия требует существующий отдельный YAML.");
-    return AzurPilotExitCode.InvalidArgument;
+    try
+    {
+        AzurPilot.Windows.WindowsConfigurationIsolation.Validate(isolatedConfiguration);
+    }
+    catch (Exception exception) when (exception is ArgumentException or IOException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine(exception.Message);
+        return AzurPilotExitCode.InvalidArgument;
+    }
 }
 
 if (!Console.IsInputRedirected && !Console.IsOutputRedirected)

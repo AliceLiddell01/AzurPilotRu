@@ -5,8 +5,8 @@ namespace AzurPilot.Windows;
 
 /// <summary>Временно включает VT output до выбора терминального драйвера; затем восстанавливает режим.</summary>
 /// <remarks>
-/// Новый ConPTY-клиент может получить console handle без ENABLE_VIRTUAL_TERMINAL_PROCESSING.
-/// Terminal.Gui в этом случае выбирает legacy output и квантует RGB до ANSI 16 ещё до записи в ConPTY.
+/// Новый ConPTY-клиент может получить дескриптор консоли без ENABLE_VIRTUAL_TERMINAL_PROCESSING.
+/// Terminal.Gui в этом случае выбирает устаревший режим вывода и квантует RGB до ANSI 16 ещё до записи в ConPTY.
 /// Заимствованный stdout не закрывается. Неподдерживающая VT консоль сохраняет исходный режим.
 /// </remarks>
 public sealed partial class WindowsConsoleOutputMode : IDisposable
@@ -24,11 +24,11 @@ public sealed partial class WindowsConsoleOutputMode : IDisposable
         BackgroundRgb = backgroundRgb;
     }
 
-    /// <summary>Фактический RGB исходного console background либо отсутствие console handle.</summary>
+    /// <summary>Фактический RGB исходного фона консоли либо отсутствие её дескриптора.</summary>
     public int? BackgroundRgb { get; }
 
-    /// <summary>Пытается включить VT для текущего stdout без подмены handles, кодировки и профиля.</summary>
-    /// <returns>Scope, который освобождается после остановки терминального драйвера.</returns>
+    /// <summary>Пытается включить VT для текущего stdout без подмены дескрипторов, кодировки и профиля.</summary>
+    /// <returns>Объект, который освобождается после остановки терминального драйвера.</returns>
     public static unsafe WindowsConsoleOutputMode EnableVirtualTerminalProcessing()
     {
         SafeFileHandle output = new(GetStdHandle(-11), ownsHandle: false);
@@ -51,7 +51,7 @@ public sealed partial class WindowsConsoleOutputMode : IDisposable
         return new(output, original, changed, background);
     }
 
-    /// <summary>Восстанавливает режим; отключившаяся консоль не превращает shutdown в новый отказ.</summary>
+    /// <summary>Восстанавливает режим; отключившаяся консоль не превращает завершение работы в новый отказ.</summary>
     public void Dispose()
     {
         if (_disposed)

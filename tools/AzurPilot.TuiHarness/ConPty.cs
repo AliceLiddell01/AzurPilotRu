@@ -157,7 +157,7 @@ internal sealed partial class ConPty : IAsyncDisposable
                 _ = Interlocked.Exchange(ref _lastOutput, Stopwatch.GetTimestamp());
                 if (!Output.Writer.TryWrite((sequence, buffer.AsSpan(0, count).ToArray())))
                 {
-                    // Продолжаем дренировать pipe, но потерявший VT capture больше не допустим.
+                    // Продолжаем читать канал, но при потере VT-потока дальнейший захват недопустим.
                     Volatile.Write(ref _fault, "Превышен бюджет VT: renderer не успевает за ConPTY.");
                 }
             }
@@ -211,7 +211,7 @@ internal sealed partial class ConPty : IAsyncDisposable
         _job.Dispose(); // Kill-on-close: только принадлежащий этой сессии процесс и его потомки.
         if (Native.WaitForSingleObject(_process, 5000) != 0)
         {
-            throw new TimeoutException("Production процесс не завершился после закрытия job.");
+            throw new TimeoutException("Процесс приложения не завершился после закрытия Job Object.");
         }
 
         await Task.Run(_console.Dispose).WaitAsync(TimeSpan.FromSeconds(5));
@@ -280,7 +280,7 @@ internal sealed partial class ConPty : IAsyncDisposable
                 console.DangerousGetHandle(), (nuint)nint.Size, 0, 0));
             StartupEx startup = new();
             startup.Startup.Size = (uint)Marshal.SizeOf<StartupEx>();
-            // Не копировать redirected std handles владельца. ConPTY создаёт console handles клиента.
+            // Не копировать перенаправленные стандартные дескрипторы владельца. ConPTY создаёт дескрипторы консоли клиента.
             startup.Startup.Flags = 0x100;
             startup.Attributes = attributes;
             char[] command = $"\"{exe}\" {arguments}\0".ToCharArray();
@@ -290,7 +290,7 @@ internal sealed partial class ConPty : IAsyncDisposable
             using SafeFileHandle thread = new(info.Thread, ownsHandle: true);
             try
             {
-                // Назначение до ResumeThread исключает гонку запуска внешней mutation.
+                // Назначение до ResumeThread исключает гонку запуска внешнего изменения состояния.
                 if (!Native.AssignProcessToJobObject(job, process))
                 {
                     int error = Marshal.GetLastPInvokeError();

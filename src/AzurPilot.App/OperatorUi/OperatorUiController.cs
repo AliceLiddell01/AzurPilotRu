@@ -11,9 +11,10 @@ using AzurPilot.Windows;
 namespace AzurPilot.App.OperatorUi;
 
 /// <summary>Координатор действий оператора и результатов сервисов, проверяемый без отрисовки.</summary>
-/// <remarks>Session обновляется только вызывающей стороной; завершённый task применяется через CompleteOperation.</remarks>
+/// <remarks>Session обновляется только вызывающей стороной; завершённая задача применяется через CompleteOperation.</remarks>
 public sealed class OperatorUiController : IDisposable
 {
+    internal const string ConfigurationPathLabel = "Расположение конфигурации: ";
     private readonly AzurPilotOperatorService _service;
     private CancellationTokenSource? _cancellation;
     private Task<OperationPresentation>? _activeTask;
@@ -71,7 +72,7 @@ public sealed class OperatorUiController : IDisposable
         ? "Введите / для меню действий. Основное действие — «Запустить окружение»."
         : "Введите / для меню действий текущего режима. Технические команды доступны по категориям.";
 
-    /// <summary>Чистое presentation-состояние с operation и confirmation gates.</summary>
+    /// <summary>Состояние представления с проверками текущей операции и подтверждения.</summary>
     public OperatorUiSession Session { get; } = new();
 
     /// <summary>Последний фактически полученный inventory либо отсутствие observation.</summary>
@@ -115,7 +116,7 @@ public sealed class OperatorUiController : IDisposable
         return true;
     }
 
-    /// <summary>Передаёт cancellation, сохраняя execution slot до завершения task.</summary>
+    /// <summary>Передаёт отмену, сохраняя место исполнения до завершения задачи.</summary>
     public void CancelOperation()
     {
         if (_cancellation is null)
@@ -130,7 +131,7 @@ public sealed class OperatorUiController : IDisposable
         }
     }
 
-    /// <summary>Дожидается operation task без terminal dependency; результат применяет CompleteOperation.</summary>
+    /// <summary>Дожидается задачи операции без зависимости от терминала; результат применяет CompleteOperation.</summary>
     /// <returns>Task завершения; отказ/отмена представлены затем в Session.</returns>
     public async Task WaitForOperationAsync()
     {
@@ -149,7 +150,7 @@ public sealed class OperatorUiController : IDisposable
         }
         catch (Exception)
         {
-            // CompleteOperation сохраняет непредвиденный отказ, не оставляя task ненаблюдённым.
+            // CompleteOperation сохраняет непредвиденный отказ, не оставляя задачу ненаблюдённой.
         }
     }
 
@@ -478,7 +479,7 @@ public sealed class OperatorUiController : IDisposable
             Volatile.Write(ref _progressText, text + " · F4 отмена");
         });
 
-    /// <summary>Настройки, записанные для следующего запуска; текущий DI snapshot остаётся прежним.</summary>
+    /// <summary>Настройки, записанные для следующего запуска; текущий DI снимок остаётся прежним.</summary>
     internal AzurPilotConfiguration SavedConfiguration => _savedConfiguration.Configuration;
 
     /// <summary>Явно сохраняет настройку и сообщает фактический результат записи.</summary>
@@ -555,7 +556,7 @@ public sealed class OperatorUiController : IDisposable
     }
 
     /// <summary>
-    /// Разрешает точную identity целевого экземпляра без mutation: шаг перед единым подтверждением.
+    /// Разрешает точный идентификатор целевого экземпляра без изменения состояния: шаг перед единым подтверждением.
     /// </summary>
     /// <returns>Представление доказанной identity либо объяснение, почему старт не разрешён.</returns>
     private OperationPresentation ResolveConfiguredTarget()
@@ -736,7 +737,7 @@ public sealed class OperatorUiController : IDisposable
             + $"Режим интерфейса: {OperatorUiModePresentation.Label(mode)} "
             + $"(запуск: --mode {OperatorUiModePresentation.Argument(mode)})\n"
             + $"Экземпляр MuMu: {instance}\n"
-            + $"Расположение конфигурации: {_savedConfiguration.FilePath ?? AzurPilotConfigurationPath.GetDefaultRuntimePath()}\n"
+            + $"{ConfigurationPathLabel}{_savedConfiguration.FilePath ?? AzurPilotConfigurationPath.GetDefaultRuntimePath()}\n"
             + $"Следующий запуск: {OperatorUiModePresentation.Argument(SavedConfiguration.Ui.Mode)}, "
             + $"экземпляр {SavedConfiguration.MuMu.Instance}, "
             + $"отдельная лог-консоль: {(SavedConfiguration.Logging.Viewer.Enabled ? "включена" : "выключена")}.";

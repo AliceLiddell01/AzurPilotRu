@@ -78,12 +78,13 @@ public sealed class HarnessProtocolTests
     public async Task StartupStatusConnectionCanExceedTheRequestTimeout()
     {
         string session = Guid.NewGuid().ToString("N");
-        await using NamedPipeServerStream server = new(SessionOwner.PipeName(session), PipeDirection.InOut, 1,
-            PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(5));
         Task<HarnessRequest> serverTask = Task.Run(async () =>
         {
             await Task.Delay(200, cancellation.Token);
+            // Создание канала тоже отложено: ConnectAsync действительно ждёт готовности owner.
+            await using NamedPipeServerStream server = new(SessionOwner.PipeName(session), PipeDirection.InOut, 1,
+                PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             await server.WaitForConnectionAsync(cancellation.Token);
             HarnessRequest request = await SessionOwner.ReadAsync<HarnessRequest>(server, cancellation.Token);
             await SessionOwner.WriteAsync(server,
@@ -100,9 +101,27 @@ public sealed class HarnessProtocolTests
     }
 
     [Fact]
+    public async Task ConnectedOwnerCannotLeaveIpcResponseUnbounded()
+    {
+        string session = Guid.NewGuid().ToString("N");
+        await using NamedPipeServerStream server = new(SessionOwner.PipeName(session), PipeDirection.InOut, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        CancellationToken token = TestContext.Current.CancellationToken;
+        Task<HarnessResponse> response = AzurPilot.TuiHarness.Program.SendAsync(
+            new HarnessRequest { Command = "status", Session = session, TimeoutMs = 100 }, connectionTimeoutMs: 1000);
+        await server.WaitForConnectionAsync(token);
+        HarnessRequest received = await SessionOwner.ReadAsync<HarnessRequest>(server, token);
+        Assert.Equal("status", received.Command);
+        // Канал подключён, запрос прочитан, ответа намеренно нет. Проверяем реальный IPC-дедлайн.
+        HarnessBlockedException failure = await Assert.ThrowsAsync<HarnessBlockedException>(
+            () => response.WaitAsync(TimeSpan.FromSeconds(15), token));
+        Assert.Contains("не ответил", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void StartupStatusConnectionBudgetCoversSequentialCreationStages()
     {
-        const int worstCaseCreateMs = 20_000 + 12_000 + 20_000 + 15_000;
+        const int worstCaseCreateMs = 20_000 + 12_000 + 20_000 + 15_000 + 20_000; // Включая четыре ограниченных Git-запроса.
 
         Assert.True(AzurPilot.TuiHarness.Program.StartStatusConnectionTimeoutMs >= worstCaseCreateMs);
     }

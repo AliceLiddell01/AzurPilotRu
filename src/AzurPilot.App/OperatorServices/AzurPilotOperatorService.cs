@@ -6,6 +6,7 @@ using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
+using AzurPilot.Windows;
 using AzurPilot.Windows.Android;
 using AzurPilot.Windows.MuMu;
 
@@ -27,7 +28,7 @@ public sealed record AzurPilotOperatorMuMuInventory(
     string InstallationVersion,
     IReadOnlyList<AzurPilotOperatorMuMuInstance> Instances);
 
-/// <summary>Результаты двух поддерживаемых ROI одного фактического screenshot capture.</summary>
+/// <summary>Результаты двух поддерживаемых ROI одного фактического захвата снимка экрана.</summary>
 /// <param name="Capture">Проверенные метаданные захвата без native frame.</param>
 /// <param name="Regions">Статистика FullFrame и Center, полученная сканером приложения.</param>
 public sealed record AzurPilotOperatorScreenshotAnalysis(
@@ -37,13 +38,13 @@ public sealed record AzurPilotOperatorScreenshotAnalysis(
 /// <summary>Последний этап явной подготовки Android для выбранного экземпляра MuMu.</summary>
 public enum AzurPilotOperatorAndroidPreparationStage
 {
-    /// <summary>Разрешение exact identity в найденной установке.</summary>
+    /// <summary>Разрешение точного идентификатора в найденной установке.</summary>
     ResolveMuMu,
     /// <summary>Наблюдение состояния на стороне хоста без изменений.</summary>
     ObserveMuMu,
     /// <summary>Строгий запуск через существующий жизненный цикл.</summary>
     StartMuMu,
-    /// <summary>Разрешение exact endpoint и подготовка Android.</summary>
+    /// <summary>Разрешение точного endpoint и подготовка Android.</summary>
     PrepareAndroid,
     /// <summary>Подтверждение доступного shell и завершённой загрузки Android.</summary>
     CheckAndroidBoot,
@@ -55,7 +56,7 @@ public enum AzurPilotOperatorAndroidPreparationStage
 /// <param name="InstanceId">Явно выбранная identity.</param>
 /// <param name="Stage">Этап завершения либо отказа.</param>
 /// <param name="InitialMuMuState">Исходное наблюдение; null означает отсутствие доказательства.</param>
-/// <param name="MuMuStartRequested">Запрашивался ли строгий lifecycle; факт mutation сам по себе не утверждается.</param>
+/// <param name="MuMuStartRequested">Запрашивался ли строгий lifecycle; факт изменения состояния сам по себе не утверждается.</param>
 /// <param name="MuMuStartOutcome">Доказанный итог lifecycle либо null, если успеха запуска нет.</param>
 /// <param name="AndroidPreparation">Доказанная готовность Android либо null при отказе.</param>
 /// <param name="Failure">Отказ приложения либо предварительной проверки; null при полном успехе.</param>
@@ -83,14 +84,14 @@ public sealed record AzurPilotOperatorAndroidPreparationOutcome(
 /// </summary>
 /// <remarks>
 /// <para>
-/// Сервис не хранит выбранный экземпляр и не принимает Android endpoint от presentation layer. Каждая
-/// операция получает exact MuMu identity, заново проверяет её через lifecycle resolver и, если действие
+/// Сервис получает выбранный экземпляр явно и не принимает Android endpoint от слоя представления. Каждая
+/// операция получает точный идентификатор MuMu, заново проверяет его через lifecycle resolver и, если действие
 /// адресовано Android, разрешает endpoint только для этой пары установки и identity. Так instance и
 /// endpoint нельзя смешать из пользовательского ввода.
 /// </para>
 /// <para>
 /// Диагностика и inventory выполняют только наблюдения. Подготовка transport является отдельным явным
-/// use case; screenshot capture связывает production capture и native ROI scanner в одном ограниченном
+/// use case; захват снимка экрана связывает продуктовый захват и сканер ROI native-границы в одном ограниченном
 /// времени жизни кадра.
 /// </para>
 /// </remarks>
@@ -99,7 +100,23 @@ public sealed class AzurPilotOperatorService
     // Устанавливается только composition root изолированного интерактивного запуска.
     // Отказ до аренды также исключает записи в пользовательский runtime-каталог.
     internal bool ExternalMutationsDisabled { get; set; }
-    internal MuMuInstanceId? LiveEnvironmentTarget { get; set; }
+    private MuMuInstanceId? _liveEnvironmentTarget;
+    private bool _livePreparationAttempted;
+
+    // CLI задаёт намерение, но полномочие появляется только после наблюдения через продуктовый provider.
+    internal ApplicationResult<bool> InitializeLiveEnvironment(MuMuInstanceId instanceId)
+    {
+        _liveEnvironmentTarget = null;
+        _livePreparationAttempted = false;
+        ApplicationResult<MuMuInstanceState> observed = ObserveMuMu(instanceId);
+        if (!ExternalMutationsDisabled || observed.IsFailure || observed.Value!.State != MuMuLifecycleState.Stopped)
+        {
+            return ApplicationResult<bool>.Failure(IsolatedMutationFailure());
+        }
+
+        _liveEnvironmentTarget = instanceId;
+        return ApplicationResult<bool>.Success(true);
+    }
 
     private const string DiagnosticsActivity = "azurpilot.operator.diagnostics";
     private const string InventoryActivity = "azurpilot.operator.mumu.inventory";
@@ -162,7 +179,7 @@ public sealed class AzurPilotOperatorService
     /// <summary>Неизменяемая конфигурация текущего хоста приложения.</summary>
     public AzurPilotConfigurationSnapshot Configuration => _configuration;
 
-    /// <summary>Наблюдает exact MuMu без mutation.</summary>
+    /// <summary>Наблюдает точный MuMu без изменения состояния.</summary>
     public ApplicationResult<MuMuInstanceState> ObserveMuMu(MuMuInstanceId instanceId)
     {
         ApplicationResult<ResolvedMuMuTarget> target = ResolveMuMuTarget(instanceId);
@@ -175,8 +192,24 @@ public sealed class AzurPilotOperatorService
         MuMuInstanceId instanceId, MuMuLifecycleOperation operationKind, CancellationToken cancellationToken)
     {
         return WithMutationLeaseAsync(instanceId,
-                () => RunMuMuLifecycleCoreAsync(instanceId, operationKind, cancellationToken),
-                operationKind == MuMuLifecycleOperation.Stop && LiveEnvironmentTarget == instanceId, cancellationToken);
+                async () =>
+                {
+                    if (ExternalMutationsDisabled && (_liveEnvironmentTarget != instanceId || !_livePreparationAttempted))
+                    {
+                        return ApplicationResult<MuMuLifecycleOutcome>.Failure(IsolatedMutationFailure());
+                    }
+
+                    ApplicationResult<MuMuLifecycleOutcome> result = await RunMuMuLifecycleCoreAsync(
+                        instanceId, operationKind, cancellationToken).ConfigureAwait(false);
+                    if (ExternalMutationsDisabled && result.IsSuccess)
+                    {
+                        _liveEnvironmentTarget = null;
+                    }
+
+                    return result;
+                },
+                operationKind == MuMuLifecycleOperation.Stop && _liveEnvironmentTarget == instanceId
+                    && _livePreparationAttempted, cancellationToken);
     }
 
     /// <summary>Подготовка transport под арендой окружения.</summary>
@@ -194,7 +227,7 @@ public sealed class AzurPilotOperatorService
         Action<AzurPilotOperatorAndroidPreparationOutcome>? onOutcome = null,
         AndroidMutationProgress? preparationMutationProgress = null)
     {
-        if (ExternalMutationsDisabled && LiveEnvironmentTarget != instanceId)
+        if (ExternalMutationsDisabled && (_liveEnvironmentTarget != instanceId || _livePreparationAttempted))
         {
             return new(instanceId, AzurPilotOperatorAndroidPreparationStage.ResolveMuMu,
                 null, false, null, null, IsolatedMutationFailure());
@@ -260,7 +293,7 @@ public sealed class AzurPilotOperatorService
         return new()
         {
             Code = ApplicationFailure.InvalidArgument,
-            Message = "В изолированной UI-сессии внешние mutation запрещены.",
+            Message = "Изменение состояния запрещено. Изолированная UI-сессия требует исходный Stopped точного экземпляра; Stop разрешён только после начала подготовки в этой сессии.",
             Details = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [ApplicationFailure.MutationAttemptedDetailKey] = "false",
@@ -268,7 +301,7 @@ public sealed class AzurPilotOperatorService
         };
     }
 
-    /// <summary>Повторно открывает read-only viewer; отключённая настройка применяется только при запуске.</summary>
+    /// <summary>Повторно открывает окно просмотра журнала без изменения состояния; отключённая настройка применяется только при запуске.</summary>
     public Task<ApplicationResult<bool>> ReopenLogViewerAsync(CancellationToken cancellationToken)
         => _logViewer?.OpenAsync(cancellationToken) ?? Task.FromResult(ApplicationResult<bool>.Failure(new ApplicationFailure
         {
@@ -276,7 +309,7 @@ public sealed class AzurPilotOperatorService
             Message = "Включите отдельную лог-консоль в настройках и перезапустите приложение.",
         }));
 
-    /// <summary>Сохраняет настройки следующего запуска; DI snapshot текущей сессии не меняется.</summary>
+    /// <summary>Сохраняет настройки следующего запуска; DI снимок текущей сессии не меняется.</summary>
     public ApplicationResult<AzurPilotConfigurationSnapshot> SaveConfiguration(
         AzurPilotConfigurationSnapshot expected, AzurPilotConfiguration configuration, out string? backupPath)
     {
@@ -287,6 +320,25 @@ public sealed class AzurPilotOperatorService
             : Path.GetDirectoryName(defaultYamlPath)!;
         string yamlPath = Path.Combine(configurationDirectory, Path.GetFileName(defaultYamlPath));
         string jsonPath = Path.Combine(configurationDirectory, Path.GetFileName(defaultJsonPath));
+        if (ExternalMutationsDisabled)
+        {
+            try
+            {
+                // Нет перехода к пользовательскому пути при потере отдельного снимка или файла.
+                WindowsConfigurationIsolation.Validate(_configuration.FilePath
+                    ?? throw new ArgumentException("Изолированная конфигурация не имеет отдельного пути."));
+            }
+            catch (Exception exception) when (exception is ArgumentException or IOException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
+            {
+                backupPath = null;
+                return ApplicationResult<AzurPilotConfigurationSnapshot>.Failure(new ApplicationFailure
+                {
+                    Code = ApplicationFailure.InvalidArgument,
+                    Message = exception.Message,
+                });
+            }
+        }
+
         return AzurPilotConfigurationStore.Save(yamlPath, jsonPath, expected, configuration, out backupPath);
     }
 
@@ -346,7 +398,7 @@ public sealed class AzurPilotOperatorService
     }
 
     /// <summary>
-    /// Разрешает единственный целевой экземпляр по правилам выбора, не выполняя mutation.
+    /// Разрешает единственный целевой экземпляр по правилам выбора, не изменяя состояние.
     /// </summary>
     /// <param name="selection">Семантика выбора: автоматический либо явный по stable identity.</param>
     /// <returns>Подтверждённый идентификатор экземпляра либо отказ его определения.</returns>
@@ -359,7 +411,7 @@ public sealed class AzurPilotOperatorService
     /// Автоматический выбор не является выбором «наиболее вероятного»: при нуле экземпляров он даёт
     /// <see cref="ApplicationFailure.MuMuInstanceNotFound"/>, при двух и более —
     /// <see cref="ApplicationFailure.MuMuInstanceAmbiguous"/>. Первый, последний и vmindex <c>0</c> не
-    /// выбираются никогда, поэтому неоднозначный target не доходит до mutation.
+    /// выбираются никогда, поэтому неоднозначный target не доходит до изменения состояния.
     /// </para>
     /// </remarks>
     public ApplicationResult<MuMuInstanceId> ResolveTarget(MuMuInstanceSelection selection)
@@ -459,7 +511,7 @@ public sealed class AzurPilotOperatorService
         }
     }
 
-    /// <summary>Явно подготавливает Android: наблюдает exact MuMu, при доказанном Stopped запускает и доказывает готовность.</summary>
+    /// <summary>Явно подготавливает Android: наблюдает точный MuMu, при доказанном Stopped запускает и доказывает готовность.</summary>
     /// <remarks>
     /// Lifecycle и readiness владеют своими deadline; новый retry или deadline не вводится. Отказ
     /// сохраняет частичный результат и не останавливает MuMu. Игра этим действием не запускается.
@@ -526,6 +578,15 @@ public sealed class AzurPilotOperatorService
 
             MuMuLifecycleState initial = observed.Value!.State;
             outcome = outcome with { InitialMuMuState = initial };
+            // Повторная проверка под арендой закрывает смену состояния после начального наблюдения.
+            // Посторонние средства управления MuMu аренду не соблюдают; абсолютной атомарности нет.
+            if (ExternalMutationsDisabled && (_liveEnvironmentTarget != instanceId
+                || _livePreparationAttempted || initial != MuMuLifecycleState.Stopped))
+            {
+                _liveEnvironmentTarget = null;
+                return outcome with { Failure = IsolatedMutationFailure() };
+            }
+
             if (initial is not (MuMuLifecycleState.Running or MuMuLifecycleState.Stopped))
             {
                 return outcome with
@@ -537,6 +598,7 @@ public sealed class AzurPilotOperatorService
             if (initial == MuMuLifecycleState.Stopped)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                _livePreparationAttempted = ExternalMutationsDisabled;
                 outcome = outcome with
                 {
                     Stage = AzurPilotOperatorAndroidPreparationStage.StartMuMu,
@@ -606,7 +668,7 @@ public sealed class AzurPilotOperatorService
         }
     }
 
-    /// <summary>Наблюдает Azur Lane Global/EN на endpoint-е, разрешённом для exact MuMu identity.</summary>
+    /// <summary>Наблюдает Azur Lane Global/EN на endpoint-е, разрешённом для точного идентификатора MuMu.</summary>
     public ApplicationResult<AzurLaneGameObservation> ObserveAzurLane(MuMuInstanceId instanceId)
     {
         using AzurPilotOperation operation = AzurPilotOperation.Start(GameObserveActivity);

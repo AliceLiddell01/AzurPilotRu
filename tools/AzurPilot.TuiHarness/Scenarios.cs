@@ -16,6 +16,9 @@ internal sealed record ScenarioStep
     public int X { get; init; }
     public int Y { get; init; }
     public string? HistoryChangedFrom { get; init; }
+    public string? HistoryMarkerPrefix { get; init; }
+    public string? MouseHistoryFrom { get; init; }
+    public string? HistoryEquals { get; init; }
     public bool CheckSize { get; init; }
 }
 
@@ -55,6 +58,8 @@ internal static class Scenarios
         {
             foreach (ScenarioStep step in definition.Steps)
             {
+                (int x, int y) = step.MouseHistoryFrom is string historyCheckpoint
+                    ? TerminalUiObservation.HistoryPoint(checkpoints[historyCheckpoint]) : (step.X, step.Y);
                 HarnessRequest operation = request with
                 {
                     Command = step.Command,
@@ -64,8 +69,8 @@ internal static class Scenarios
                     Name = step.Name,
                     Columns = step.Columns,
                     Rows = step.Rows,
-                    X = step.X,
-                    Y = step.Y,
+                    X = x,
+                    Y = y,
                 };
                 HarnessResponse response = await Program.SendAsync(operation);
                 results.Add(new { step = step.Name ?? step.Command, response });
@@ -98,18 +103,12 @@ internal static class Scenarios
 
                     if (step.HistoryChangedFrom is string prior)
                     {
-                        JsonElement baseline = checkpoints[prior];
-                        static string History(JsonElement state)
-                        {
-                            return string.Join('\n', state.GetProperty("lines").EnumerateArray()
-                            .Skip(3).Take(state.GetProperty("rows").GetInt32() - 9).Select(line => line.GetString()));
-                        }
+                        TerminalUiObservation.RequireHistoryScrolledUp(checkpoints[prior], snapshot, step.HistoryMarkerPrefix);
+                    }
 
-                        if (History(baseline) == History(snapshot)
-                            || baseline.GetProperty("viewportY").GetInt32() != snapshot.GetProperty("viewportY").GetInt32())
-                        {
-                            throw new InvalidOperationException("Wheel не изменил history viewport приложения либо прокрутил xterm scrollback.");
-                        }
+                    if (step.HistoryEquals is string original)
+                    {
+                        TerminalUiObservation.RequireHistoryEqual(checkpoints[original], snapshot);
                     }
 
                     checkpoints.Add(step.Name ?? results.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), snapshot);
@@ -137,7 +136,7 @@ internal static class Scenarios
             if (closed.Status != "PASS")
             {
                 status = "BLOCKED";
-                message = "Не подтверждён cleanup: " + closed.Message;
+                message = "Не подтверждено освобождение ресурсов: " + closed.Message;
             }
         }
 

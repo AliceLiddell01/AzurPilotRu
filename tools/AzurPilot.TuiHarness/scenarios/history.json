@@ -8,7 +8,7 @@
     },
     {
       "command": "text",
-      "value": "/help"
+      "value": "История 001"
     },
     {
       "command": "key",
@@ -24,7 +24,7 @@
     },
     {
       "command": "text",
-      "value": "/help"
+      "value": "История 002"
     },
     {
       "command": "key",
@@ -40,7 +40,7 @@
     },
     {
       "command": "text",
-      "value": "/help"
+      "value": "История 003"
     },
     {
       "command": "key",
@@ -56,7 +56,7 @@
     },
     {
       "command": "text",
-      "value": "/help"
+      "value": "История 004"
     },
     {
       "command": "key",
@@ -72,7 +72,7 @@
     },
     {
       "command": "text",
-      "value": "/help"
+      "value": "История 005"
     },
     {
       "command": "key",
@@ -88,7 +88,7 @@
     },
     {
       "command": "text",
-      "value": "/help"
+      "value": "История 006"
     },
     {
       "command": "key",
@@ -104,7 +104,7 @@
     },
     {
       "command": "text",
-      "value": "/help"
+      "value": "История 007"
     },
     {
       "command": "key",
@@ -120,7 +120,7 @@
     },
     {
       "command": "text",
-      "value": "/help"
+      "value": "История 008"
     },
     {
       "command": "key",
@@ -136,7 +136,151 @@
     },
     {
       "command": "text",
+      "value": "История 009"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
       "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 010"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 011"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 012"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 013"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 014"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 015"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 016"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 017"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "/help"
+    },
+    {
+      "command": "key",
+      "value": "Enter"
+    },
+    {
+      "command": "text",
+      "value": "История 018"
     },
     {
       "command": "key",
@@ -157,14 +301,14 @@
     },
     {
       "value": "wheel-up",
-      "x": 25,
-      "y": 10,
-      "command": "mouse"
+      "command": "mouse",
+      "mouseHistoryFrom": "history-bottom"
     },
     {
       "historyChangedFrom": "history-bottom",
       "name": "history-wheel",
-      "command": "capture"
+      "command": "capture",
+      "historyMarkerPrefix": "> История "
     },
     {
       "command": "key",
@@ -173,7 +317,8 @@
     {
       "historyChangedFrom": "history-wheel",
       "name": "history-page-up",
-      "command": "capture"
+      "command": "capture",
+      "historyMarkerPrefix": "> История "
     },
     {
       "command": "key",
@@ -181,6 +326,7 @@
     },
     {
       "name": "history-end",
+      "historyEquals": "history-bottom",
       "command": "capture"
     }
   ]

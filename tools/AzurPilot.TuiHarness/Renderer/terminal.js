@@ -1,4 +1,4 @@
-/* Настоящий xterm.js: ни интерпретатора VT, ни копии production UI здесь нет. */
+/* Настоящий xterm.js: ни интерпретатора VT, ни копии продуктовый UI здесь нет. */
 window.harnessInitialize = async (profile, columns, rows) => {
     const font = new FontFace('HarnessVerifiedFont', `local("${profile.fontFamily}")`);
     await font.load(); // document.fonts.check сам по себе допускает незаметный fallback.
@@ -72,7 +72,7 @@ window.harnessInitialize = async (profile, columns, rows) => {
             renderer: { type: document.querySelector('.xterm-rows') ? 'DOM' : 'unknown',
                 canvasCount: document.querySelectorAll('canvas').length }, unicode: terminal.unicode.activeVersion,
             fontAvailable: font.status === 'loaded',
-            glyphFallback: 'NOT_TESTED: отдельные glyphs могут использовать системный fallback' };
+            glyphFallback: 'NOT_TESTED: отдельные глифы могут использовать резервный системный шрифт' };
     };
     window.harness = {
         write: async data => { await new Promise(resolve => terminal.write(data, resolve)); writes++; },

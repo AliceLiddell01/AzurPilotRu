@@ -1,14 +1,14 @@
 # Постоянный визуальный TUI Harness
 
-`tools/AzurPilot.TuiHarness` — developer tool на C#/.NET для настоящего production EXE.
-Он не входит в product boundaries и не поставляется пользователю. Runtime не требует отдельной установки
-Node.js, HTTP-сервера или CDN. Собственный JavaScript утилиты — только xterm.js renderer в Chromium;
-Playwright .NET использует свой поставляемый driver. Владельцем production ConPTY остаётся C#.
+`tools/AzurPilot.TuiHarness` запускает настоящий `AzurPilot.App.exe` в ConPTY и показывает его
+VT-поток через xterm.js в Chromium. Это инструмент разработки на C#/.NET, отдельный от продуктовых
+границ приложения. JavaScript отвечает за терминальный рендерер; управление ConPTY и временем жизни
+процессов остаётся в C#. Node.js, HTTP-сервер, CDN и пользовательский профиль браузера не нужны.
 
-## Подготовка и запуск
+## Подготовка
 
-Нужны Windows x64, SDK из `global.json`, PowerShell 7 и `tar.exe`. Production App собирается по
-[getting-started](../getting-started.md); native runtime должен соответствовать конфигурации сборки.
+Нужны Windows x64, SDK из `global.json`, PowerShell 7 и `tar.exe`. Подготовка native runtime и сборка
+приложения описаны в [getting-started](../getting-started.md).
 
 ```powershell
 pwsh -NoProfile -File tools/AzurPilot.TuiHarness/prepare.ps1
@@ -19,185 +19,203 @@ $app = './src/AzurPilot.App/bin/Release/net10.0-windows/win-x64/AzurPilot.App.ex
 & $harness run --exe $app --scenario tools/AzurPilot.TuiHarness/scenarios/startup.json
 ```
 
-Версия Playwright принадлежит `Directory.Packages.props`, NuGet graph — lock-файлам. Версии,
-URL и SHA-512 xterm.js/Unicode addon принадлежат `renderer.lock.json`. Подготовка проверяет hash
-каждого архива, включая кэшированный, и распаковывает его в `artifacts/tui-harness/vendor`.
-`-AssetsOnly` используется в CI до managed build. Chromium устанавливается Playwright-скриптом в
-`artifacts/tui-harness/browsers`; его revision закреплён выбранным Playwright. После подготовки
-все runtime-ассеты локальны. `-SkipBrowser` пропускает установку уже подготовленного браузера.
-Явный `PLAYWRIGHT_BROWSERS_PATH` поддерживается; браузеры и профили не входят в Git.
-ConPTY предоставляется закреплённым стабильным пакетом Microsoft.Windows.Console.ConPTY:
-собственный interop управляет его `conpty.dll` и OpenConsole. Версия backend включается в identity;
-поведение не зависит от случайной версии системного conhost.
+Версии Playwright и ConPTY принадлежат `Directory.Packages.props`, граф NuGet — lock-файлам.
+Версии, URL и SHA-512 xterm.js и Unicode addon находятся в `renderer.lock.json`. `prepare.ps1`
+проверяет хеш каждого архива, включая кэш, и распаковывает пакеты в `artifacts/tui-harness/vendor`.
+Загрузка сначала записывается во временный файл; повреждённый архив не используется повторно.
+`-AssetsOnly` подготавливает только эти файлы для CI; `-SkipBrowser` пропускает установку Chromium.
+Его revision закреплён Playwright; каталог по умолчанию — `artifacts/tui-harness/browsers`, явный
+`PLAYWRIGHT_BROWSERS_PATH` поддерживается. Полученные бинарники и профили сессий не коммитятся.
+ConPTY предоставляется пакетом Microsoft.Windows.Console.ConPTY с собственными `conpty.dll` и
+OpenConsole; версия записывается в свидетельства сессии.
 
-## Одна сессия, несколько CLI-вызовов
+## Управление сессией
 
 ```powershell
 $session = (& $harness start --exe $app --mode diagnostic | ConvertFrom-Json).session
 & $harness text --session $session --value 'Черновик Кириллица е́ 界'
 & $harness key --session $session --value F2
-& $harness capture --session $session --name palette --contains Настройки
+& $harness capture --session $session --contains 'Настройки' --name palette
 & $harness key --session $session --value Escape
 & $harness resize --session $session --columns 80 --rows 25
-& $harness capture --session $session --name narrow --contains Черновик
+& $harness capture --session $session --name resized
 & $harness close --session $session
 ```
 
-`start` возвращает случайный session ID, PID владельца и каталог. Отдельный скрытый процесс
-владеет ConPTY, production child и Playwright до `close`, истечения lifetime или аварии child.
-IPC — локальный Named Pipe с `CurrentUserOnly`; TCP listener отсутствует. Один владелец последовательно
-обрабатывает операции одной сессии. Независимые сессии имеют разные процессы, каналы и каталоги.
-Неизвестный/закрытый ID возвращает `BLOCKED`. При повторном использовании ID сверяется адресат.
+Каждая сессия имеет отдельного владельца, канал Named Pipe и каталог. `--session` для `start`
+позволяет заранее выбрать новый ID и сохранить адрес владельца до получения stdout; повторное
+использование каталога с `start.json` отклоняется. ID проверяется по грамматике `HarnessRequest`.
+Неизвестная, закрытая или истёкшая сессия возвращает `BLOCKED`.
 
-Обычные команды печатают один JSON в pipes stdout, без VT. Exit codes: `PASS=0`, `FAIL=1`,
-`BLOCKED=2`, `NOT_TESTED=3`. `key` использует имена Playwright (`Enter`, `Escape`, `ArrowUp`,
-`Tab`, `Shift+Tab`, `F2`, `Control+c`, `Control+End`). `text` передаётся через xterm paste с
-актуальным bracketed-paste mode, затем в ConPTY; прямого вызова методов production UI нет.
-`mouse --value click|move|wheel-up|wheel-down --x COLUMN --y ROW` использует координаты ячеек.
-Если приложение не включило mouse reporting, операция возвращает `BLOCKED`.
-Для click без наблюдаемого изменения cells/cursor/selection также возвращается `BLOCKED`: текущая
-production палитра обрабатывает wheel, но не реализует click navigation. Это ограничение App,
-а не разрешение вызывать UI-методы напрямую. Движение без кнопки требует режима reporting `any`.
-`PASS` ввода подтверждает доставку и завершение очереди, а эффект доказывают assertions.
+CLI печатает один JSON в stdout через обычные pipes. Коды выхода: `PASS=0`, `FAIL=1`, `BLOCKED=2`,
+`NOT_TESTED=3`. `key` принимает имена Playwright: `Enter`, `Escape`, `ArrowUp`, `Tab`, `Shift+Tab`,
+`F2`, `Control+c`, `Control+End`. `text` передаётся через вставку xterm с текущим bracketed-paste
+mode и далее в ConPTY. Методы интерфейса приложения напрямую не вызываются.
 
-Операции и IPC ограничены дедлайнами и бюджетами в `HarnessRequest`. Lifetime ограничен 15 минутами,
-idle timeout — двумя минутами, capture budget — 64 кадрами на сессию. VT tail ограничен 64 KiB
-символов UTF-16; число принятых байтов, отброшенных символов и усечение указаны отдельно. При переполнении очереди чтение pipe
-продолжается, но дальнейшее доказательство кадра блокируется. Session outputs находятся в `artifacts/`.
+Мышь адресуется в ячейках: `mouse --value click|move|wheel-up|wheel-down --x COLUMN --y ROW`.
+Отсутствие передачи событий мыши или ошибка доставки дают `BLOCKED`, неверные координаты — `FAIL`.
+Доставленный клик без наблюдаемого эффекта имеет `NOT_TESTED` и отдельную машинную причину
+`click_effect_not_observed`. Это отсутствие доказательства поддержки навигации, а не доказанная
+неисправность доставки. Изменение ячеек, курсора или выделения само по себе ещё не доказывает нужный
+эффект: проверяющий сценарий отдельно подтверждает открытие настроек. Он принимает и будущую
+работающую навигацию. Движение без кнопки требует режима `any`. Прокрутка колёсиком проверяется
+самостоятельно и остаётся обязательной.
 
-## Safe UI и live
+## Дедлайны и владение процессами
 
-Safe UI используется по умолчанию. `--isolated-ui` production App выбирает отдельный YAML и
-отключает viewer и все внешние mutation в общем operator service **до** межпроцессной аренды.
-Default startup приложения и `agent` namespace сохраняют прежнюю семантику. Изолированный запуск
-требует существующий YAML; отсутствие файла не подставляет пользовательский каталог сохранения.
-Harness создаёт его через production configuration store до запуска EXE. Изолированный запуск
-без TTY отклоняется, поэтому diagnostic fallback не может стать успешным UI evidence.
+Точные бюджеты принадлежат `HarnessTimeouts` и `HarnessRequest`; CLI `help` отдаёт внешние лимиты
+для `verify.ps1`. Подключение начального `status` получает бюджет создания сессии, остальные
+подключения — `TimeoutMs`. После подключения отсчитывается отдельный срок ответа: `TimeoutMs`
+с ограниченным запасом IPC. Увеличенный бюджет `start` не расширяет ожидание остальных команд.
 
-Дополнительно default safe child назначается приостановленным в Job Object с `ActiveProcessLimit=1`:
-MuMu/ADB даже не могут быть запущены дочерними процессами. При таком режиме inventory недоступен,
-и экран честно показывает неизвестное состояние. Для настоящего read-only inventory используется
-`--providers read-only`: Job разрешает процессы provider, но тот же production mutation guard
-остаётся закрытым. Этот режим позволяет открыть настоящее подтверждение и проверить отказ даже
-при намеренном выборе «Подтвердить». Он не мокает MuMu и не разрешает Android connect/start.
+До первого ответа `status` владелец наблюдает запускающий CLI и дедлайн готовности. Обрыв клиента
+или истечение срока завершают только принадлежащий Job Object. Ошибка `StartAsync` также завершает
+сохранённый дескриптор владельца с ограниченным ожиданием. `verify.ps1` заранее записывает ID
+начатых сессий, в том числе при потере stdout. Проверка `abandoned-startup-cleanup` запускает настоящий
+EXE, обрывает клиента до подтверждения готовности и проверяет выход владельца и приложения при
+сохранении постороннего контрольного процесса. Она требует Chromium и выполняется в runtime-прогоне;
+unit suite не требует установки браузера. Поздняя готовность до/после дедлайна отдельно проверяется
+управляемыми часами без длительного ожидания в CI.
+
+Сессия ограничена общим сроком и периодом бездействия; точные пределы размеров, ввода и захватов
+проверяет протокол. Хвост VT ограничен, общий объём и усечение записываются отдельно. Переполнение
+очереди не останавливает чтение канала, но блокирует дальнейшее доказательство кадра.
+
+## Изоляция и live
+
+По умолчанию safe-сессия запрещает внешние изменения состояния и отдельное окно журнала через общий
+operator service до межпроцессной аренды. Production App получает `--isolated-ui <absolute-root>`
+с существующим отдельным YAML. Нет файла — нет перехода к пользовательскому пути или встроенным
+настройкам. Вход процесса, host и сохранение используют `WindowsConfigurationIsolation`:
+Windows разрешает окончательные пути, включая junction/symlink и эквивалентные представления;
+совпадение с пользовательским runtime-каталогом и ссылки на пользовательский файл отклоняются.
+Файловая идентичность дополнительно проверяет hard links. Пользовательские пути вычисляет только
+`AzurPilotConfigurationPath`. Без TTY изолированный запуск отклоняется.
+
+Проверка пути выполняется перед загрузкой и снова перед сохранением. Это защита от ошибочного
+выбора или переадресации пути, а не файловая песочница против конкурентной подмены ссылок другим
+процессом между проверкой и записью. Отдельные безопасные абсолютные каталоги вне `artifacts`
+разрешены. Приложение не создаёт резервный путь в пользовательском каталоге при отказе изоляции.
+
+В default safe дочерний процесс назначается приостановленным в Job Object с `ActiveProcessLimit=1`:
+запуск внешних MuMu/ADB блокируется. Недоступное наблюдение на экране остаётся неизвестным.
+`--providers read-only` разрешает процессы настоящего inventory, сохраняя запрет изменений состояния.
+Это позволяет проверить реальное подтверждение и отказ даже после выбора «Подтвердить».
 
 ```powershell
 & $harness run --exe $app --providers read-only --scenario tools/AzurPilot.TuiHarness/scenarios/safe-confirmation.json
 pwsh -NoProfile -File tools/AzurPilot.TuiHarness/verify.ps1 -App $app -ReadOnlyProviders
 ```
 
-`safe-confirmation` требует установленного MuMu и однозначного production inventory. При отсутствии
-этих фактов сценарий блокируется, а не рисует подтверждение. `verify.ps1` сравнивает hashes
-пользовательских YAML/JSON/backups до и после настроек; сохранение и backup должны появиться только
-в runtime-каталоге сессии. Настройки следующего запуска не включают viewer текущего safe host.
+`safe-confirmation` требует установленного MuMu и однозначного inventory; отсутствие этих фактов
+блокирует сценарий. Проверка настроек сравнивает хеши пользовательских YAML/JSON и резервных копий
+до/после, требует сохранение и резервную копию только в отдельном каталоге. Отображённый путь
+сравнивается точно: переносы терминала допустимы, значимые пробелы сохраняются. UI переносит строку
+пути посимвольно, не удаляя и не объединяя пробелы.
 
-Единственный live-сценарий самого Harness — подготовка окружения и возвращение **исходно Stopped** exact target:
+Единственный live-сценарий Harness — подготовка окружения и восстановление **исходно Stopped**
+точного экземпляра:
 
 ```powershell
-# Выполнять только для явно разрешённого пользователем instance.
+# Только для экземпляра, явно разрешённого пользователем в текущей задаче.
 & $harness live-environment --exe $app --instance mumu:<index> --authorize prepare-and-restore
 ```
 
-Без обоих явных аргументов запуск отклоняется. Read-only Agent CLI собирает preflight; `Unknown`,
-`Running`, ambiguous и ошибки не присваивают ownership. Само действие и подтверждение проходят
-через production TUI. Product policy разрешает только environment preparation и MuMu stop для
-указанного exact target; game mutations, другой target и прямой Android prepare остаются закрытыми.
-Сохранение выбора относится к отдельному YAML. Сценарий сохраняет preflight, PNG подтверждений,
-готовность, postflight и признак `restored`. Он не объявляет восстановление при ошибке.
+Harness сохраняет предварительное наблюдение через read-only Agent CLI. App независимо получает
+наблюдение через свой production provider; сам `--live-environment-target` полномочий не даёт.
+Прямой запуск App подчиняется той же узкой политике. `Running`, `Unknown`, ошибки и отсутствующий
+экземпляр не дают разрешения. Перед подготовкой состояние проверяется снова **под арендой**:
+переход в `Running`/`Unknown` после начального наблюдения запрещает изменения. Подготовка допускается
+один раз; только после её начала разрешён восстановительный `Stop` того же экземпляра. После
+успешной остановки разрешение погашается. `Start`, `Restart`, игровые операции, прямой Android
+prepare и другой экземпляр запрещены. Обычный запуск и namespace `agent` сохраняют свои контракты.
 
-В live-mode external MuMu не включается в kill-on-close Job приложения: он не должен принудительно
-уничтожаться при аварии browser/owner. Owner и App находятся в отдельных Jobs с управляемым
-breakaway; Chromium/driver/conhost остаются под владельцем. При аварийной потере владельца target
-может остаться запущенным, а восстановление не подтверждено. Повторение начинается с exact-target
-preflight. Координация production mutation не покрывает посторонние MuMu/ADB-клиенты; live smoke
-проводится при исключённом внешнем управлении выбранным target. Произвольные live-сценарии отсутствуют.
+Флаг задаёт намерение оператора; это не секрет и не граница защиты от кода, уже исполняемого с
+правами пользователя. Подтверждение действия проходит через TUI. Сценарий сохраняет предварительное
+наблюдение, PNG подтверждений, готовность, повторное наблюдение и `restored`. Postflight выполняется
+также при ошибке UI-остановки. Восстановление не объявляется при недоказанном состоянии.
 
-Эти ограничения описывают live-flow самого Harness. По прямому поручению пользователя агент может
-выполнить ограниченную live-приёмку через production Agent CLI: exact target, read-only preflight и
-postflight, проверяемые postconditions и восстановление подтверждённого исходного состояния. Это
-отдельная acceptance boundary; она не открывает дополнительные действия внутри Harness и не заменяет
-его default safe isolation. См. [контракт Agent CLI](../reference/agent-cli.md) и
-[Android acceptance](android-acceptance.md).
+Аренда сериализует операции AzurPilot, но не внешние средства управления MuMu. Между наблюдением
+и действием нет абсолютной атомарности; live-проверка требует исключённого внешнего управления.
+В live внешний MuMu не включается в kill-on-close Job приложения: авария браузера/владельца не
+должна принудительно останавливать его. Owner и App используют отдельные Jobs с управляемым
+breakaway; Chromium, драйвер и conhost остаются под владельцем. После аварии target может остаться
+запущенным, восстановление считается неподтверждённым. Новый запуск с `Running` не получает право
+его остановить; восстановление требует отдельно разрешённой операции с новым наблюдением.
 
-## Capture и assertions
+Эта политика ограничивает Harness. Прямая приёмка через production Agent CLI по явному поручению
+остаётся отдельной границей с точным target, наблюдениями и восстановлением; см.
+[Agent CLI](../reference/agent-cli.md) и [Android acceptance](android-acceptance.md).
 
-Кадр — `*.png`, `*.cells.json`, `*.vt.txt`, `*.evidence.json` с общим префиксом. PNG снимается
-Playwright с реального xterm renderer. Cells включают координаты, Unicode width, fg/bg mode/value,
-flags, cursor, alternate/normal buffer, viewport, selection и mouse mode. Evidence содержит
-EXE **и DLL** SHA-256 (apphost сам по себе недостаточен), PID, version, аргументы, исходный commit/dirty
-state, профиль, renderer versions, parsed/output sequence и hash PNG. Замена бинарника требует
-новой сессии. Dirty build не объявляется committed build только по Git SHA.
+## Захват и проверки
 
-Для согласования дренируются очереди ввода и вывода, ожидаются callbacks `terminal.write`, quiet
-interval и два animation frames. Cells до/после PNG должны совпасть; ConPTY sequence не должен
-измениться. Один `onWriteParsed` не считается дренированием всех writes. Истёкший deadline даёт
-`BLOCKED`. Это bounded quiescence-протокол, а не блокировка внутреннего event loop приложения:
-непредсказуемо меняющийся экран может не дать кадр.
-Если стабильный кадр получен, но `contains` не выполнен до deadline, результат — `FAIL` assertion.
+Один кадр содержит `*.png`, `*.cells.json`, `*.vt.txt`, `*.evidence.json` с общим префиксом.
+PNG снимается Playwright с настоящего xterm. Ячейки включают координаты, ширину Unicode, fg/bg,
+атрибуты, курсор, буфер, прокрутку, выделение и режим мыши. Свидетельства содержат SHA-256 EXE **и
+DLL**, PID, версию, аргументы, профиль, версии рендерера, последовательности вывода и хеш PNG.
+Изменение бинарника требует новой сессии.
 
-JSON-сценарии используют настоящие cells для `contains`, `absent`, размера и изменения history.
-Wheel assertion сравнивает history-строки приложения и требует неизменного xterm `viewportY`.
-`startup.json` проверяет полный Unicode draft, палитру/Esc и размеры с обратным восстановлением;
-`history.json` — wheel/PgUp; `settings.json` — отдельное сохранение; `safe-confirmation.json` —
-default cancel и отказ подтверждённой mutation. Имена captures уникальны; ошибки не затирают baseline.
+Git-корень ищется от расположения Harness и проверяется по корню checkout и отслеживаемым файлам
+solution/App/Harness. Рабочий каталог вызывающей оболочки и её переменные `GIT_*` не выбирают
+репозиторий. Вне подтверждённого checkout Git provenance имеет `NOT_TESTED`, commit отсутствует.
+Даже подтверждённый текущий Git HEAD описывает исходники и **не доказывает**, из какого HEAD собран
+EXE. Идентичность бинарников остаётся отдельным свидетельством.
 
-## Цвет, геометрия и граница Windows Terminal
+Для захвата дожидаются пустых очередей, обратных вызовов `terminal.write`, тихого интервала и двух
+кадров анимации. Ячейки до/после PNG и номер последовательности ConPTY должны совпасть. Один
+`onWriteParsed` этого не доказывает. Истечение срока даёт `BLOCKED`; стабильный кадр без требуемого
+текста даёт `FAIL`. Это ограниченное ожидание согласованного кадра, не блокировка цикла UI.
 
-Профиль Campbell использует опубликованные Microsoft ANSI colors, непрозрачный фон и Consolas 12pt
-(16 CSS px при DPR 1). Контрастный light-профиль меняет default fg/bg и cursor при той же ANSI palette.
-Можно передать собственный JSON-профиль через `--profile`; пользовательский `settings.json` не читается.
-До production child короткий bootstrap в той же ConPTY задаёт через Windows API реальную ANSI
-палитру и default fg/bg console buffer. Его PID отделён от production PID; он не рисует UI.
-Default fg/bg должны совпадать с одной из ANSI 16 записей, иначе запуск `BLOCKED`: ограничения
-Win32 console attributes не маскируются другой темой. App включает VT output на время TUI и
-восстанавливает режим после shutdown. При отсутствующем OSC-ответе цвет фона берётся из фактической
-Win32 color table; поздний OSC-ответ обновляет палитру в UI loop без потери черновика.
-Owner задаёт `TERM`/`COLORTERM` и удаляет у себя `NO_COLOR`, `FORCE_COLOR`, чужую `WT_SESSION`:
-окружение неинтерактивного агента не является профилем терминала. Пользовательская среда не меняется.
-FontFace с `local(...)` обязан загрузиться; незаметный fallback всего font face блокирует запуск.
-Fallback отдельных glyphs, shaping и совпадение ширин с Windows Terminal этим не доказываются.
+JSON-сценарии проверяют `contains`, `absent`, размеры и историю. Строка операции ищется по
+`Операция:`, история — между заголовком «Сообщения и результаты» и разделителем ввода; номера строк
+не закреплены. Координата колеса выводится из границ истории предыдущего снимка. Изменение
+часов/статуса не считается прокруткой. Wheel требует направленного
+перекрытия строк; полный PageUp проверяется также по порядку уникальных введённых маркеров. Xterm
+`viewportY` должен оставаться прежним. `Control+End` обязан вернуть прежний конец истории.
+Сценарии: `startup.json` — палитра/Esc, Unicode и размеры с восстановлением; `history.json` —
+wheel/PageUp/конец; `settings.json` — точное сообщение сохранения; `safe-confirmation.json` —
+отмена по умолчанию и отказ изменения состояния. Снимки не перезаписывают предыдущие состояния.
 
-Cell metrics измеряются по `.xterm-screen`, viewport рассчитывается из них. Resize применяется и
-к ConPTY, и к xterm. `minimumContrastRatio=1`, без скрытой коррекции контраста; bold не меняет ANSI
-index автоматически. Профиль, эффективная тема, метрики, DPR, cursor, Unicode provider и фактически
-обнаруженный renderer записаны в cells. Цветовой профиль Chromium принудительно sRGB.
+## Цвет и граница Windows Terminal
+
+Профиль Campbell использует ANSI-палитру Microsoft, непрозрачный фон и Consolas 12pt (16 CSS px при
+DPR 1). Светлый профиль меняет fg/bg и курсор при той же палитре. `--profile` принимает отдельный
+JSON; настройки Windows Terminal пользователя не читаются. До App короткий процесс в той же
+ConPTY задаёт настоящую палитру и цвета консоли через Win32. Его PID записывается отдельно.
+Цвета по умолчанию должны присутствовать в ANSI 16, иначе `BLOCKED`. App включает VT перед выбором
+драйвера и восстанавливает режим при выходе. При отсутствии OSC-ответа фон читается из Win32;
+поздний ответ обновляет палитру в цикле UI, сохраняя черновик.
+
+Владелец задаёт `TERM`/`COLORTERM` и удаляет у себя `NO_COLOR`, `FORCE_COLOR`, чужую `WT_SESSION`.
+Пользовательское окружение не меняется. `FontFace local(...)` обязан загрузить выбранный шрифт;
+резервный шрифт для отдельных глифов, shaping и совпадение ширин с Windows Terminal не доказаны.
+Метрики измеряются по `.xterm-screen`, размер Chromium вычисляется из ячеек. Resize применяется к
+ConPTY и xterm. `minimumContrastRatio=1`, bold не меняет ANSI index, профиль Chromium — sRGB.
 
 ```powershell
 & $harness fidelity
 & $harness fidelity --profile tools/AzurPilot.TuiHarness/profiles/campbell-light.json
 ```
 
-Калибровка использует отдельный, явно помеченный VT-pattern через ConPTY; это **не production UI**.
-Она проверяет default/ANSI 16/256/RGB, bold/dim/inverse, скрытый cursor и Unicode widths. Production
-captures отдельно измеряют реальные акценты. `sgr` evidence показывает наблюдавшиеся SGR; cells
-показывают распознанные modes; PNG samples численно сопоставляют однотонный фон и ближайший
-foreground core pixel. Если glyph полностью сглажен, сравнение foreground отмечается `NOT_TESTED`,
-а не потерей truecolor. Расхождение фона — `FAIL` в цветовых comparisons.
+Калибровка — отдельный помеченный VT-образец, не продуктовый UI. Проверяются default/ANSI 16/256/RGB,
+bold/dim/inverse, скрытый курсор и Unicode widths. Кадры App отдельно измеряют акценты. SGR показывает
+наблюдённые коды, ячейки — распознанные режимы, PNG — RGB однотонного фона и центрального пикселя
+текста. Полностью сглаженный глиф даёт `NOT_TESTED` для сравнения текста; расхождение фона — `FAIL`.
 
 Это не пиксельная идентичность Windows Terminal: Chromium DOM и DirectWrite могут различать
-антиалиасинг, font weight, glyph fallback, cell rounding, cursor и Unicode widths. Acrylic/Mica,
-прозрачность, ligatures и произвольный DPI не эмулируются. Текстовое browser selection не равно
-выделению в приложении; в evidence фиксируется фактическое состояние, а не обещание полного parity.
+сглаживание, толщину шрифта, выбор глифов, округление ячеек и курсор. Acrylic/Mica, прозрачность,
+лигатуры и произвольный DPI не эмулируются. Выделение браузера не равно выделению в приложении.
 
-### Необязательный physical Windows Terminal smoke
+### Необязательная физическая проверка Windows Terminal
 
-Для физического снимка можно использовать отдельный developer tool [Microsoft WinApp CLI](https://learn.microsoft.com/en-us/windows/apps/dev-tools/winapp-cli/)
-(public preview; не production dependency). Сверьте установленную версию и её `--help`. Запустите
-тот же production EXE/DLL в отдельном окне Windows Terminal с `--mode diagnostic` и
-`--isolated-ui <absolute-root>`; в root должен находиться отдельный `config.yaml`. Пользовательский
-config и профиль Windows Terminal не меняйте. Сохраняйте exact EXE/DLL hashes, версию Terminal/WinApp,
-HWND/title, DPI, font, color scheme, rows/columns и размер PNG в локальных artifacts. В PowerShell
-сам запуск выглядит так:
+Существующий внешний маршрут использует [Microsoft WinApp CLI](https://learn.microsoft.com/en-us/windows/apps/dev-tools/winapp-cli/)
+(public preview, не зависимость продукта). Сверьте установленную версию и `--help`. Запустите тот
+же EXE/DLL в отдельном окне Windows Terminal с `--mode diagnostic --isolated-ui <absolute-root>`
+и отдельным существующим YAML. Сохраните хеши, версии Terminal/WinApp, HWND, заголовок, DPI, шрифт,
+цветовую схему, строки/столбцы и размер PNG в локальных артефактах. Например, в новом окне Terminal:
 
 ```powershell
-# $app и $isolatedRoot — абсолютные пути к production EXE и отдельному root с config.yaml.
 & $app --mode diagnostic --isolated-ui $isolatedRoot
-```
-
-где `$app` — абсолютный путь к проверяемому EXE, а `$isolatedRoot` — отдельный каталог с существующим
-`config.yaml`. Запускайте эту команду в новой вкладке/окне Windows Terminal.
-
-```powershell
 $winapp = (Get-Command winapp.exe).Source
 New-Item -ItemType Directory -Force -Path 'artifacts/tui-harness/physical' | Out-Null
 $windows = & $winapp ui list-windows -a Terminal --json | ConvertFrom-Json
@@ -208,37 +226,29 @@ $hwnd = [int]$target[0].hwnd
 & $winapp ui screenshot -w $hwnd --output 'artifacts/tui-harness/physical/startup.png' --json
 ```
 
-Выбирайте окно по уникальному заголовку и используйте полученный HWND. `inspect` показывает UIA-дерево
-Windows Terminal, но не содержимое ячеек TUI; оценивайте физический PNG отдельно. По умолчанию
-`screenshot` использует Windows Graphics Capture, тогда как `--capture-screen` снимает видимую область
-экрана и выводит окно на передний план. WGC может снять перекрытое окно, но это не доказывает работу на locked
-desktop или для свернутого окна. Синтетический ввод требует разблокированный интерактивный desktop;
-зафиксируйте фактическую возможность, а не выводите её из наличия `wt.exe` или `winapp.exe`. Сверьте
-одинаковые состояния, темы, строки/столбцы и образцы Unicode с xterm PNG, но не требуйте pixel parity
-разных рендереров. Отдельно укажите, проверялись ли физические Unicode, wheel и resize.
+Выберите окно по уникальному заголовку. UIA показывает элементы Terminal, но не ячейки TUI; PNG
+оценивается отдельно. WGC может снять перекрытое окно; это не доказывает захват свёрнутого окна или
+работу на заблокированном рабочем столе. `--capture-screen` снимает видимую область и выводит окно
+вперёд. Синтетический ввод требует доступного интерактивного рабочего стола и не считается
+физическим вводом. Наличие `wt.exe`/`winapp.exe` не доказывает успех. Отдельно укажите проверку
+Unicode, wheel и resize; сравнивайте одинаковые состояния с xterm без требования пиксельного
+равенства. Без GUI/HWND/WGC физический этап — `BLOCKED`, браузерный снимок его не заменяет.
+Подробности: [WinApp CLI UI automation](https://github.com/microsoft/winappCli/blob/main/docs/ui-automation.md).
 
-В среде без GUI/HWND/WGC снимка физический этап имеет статус `BLOCKED`; browser captures не заменяют
-его. Установленный `wt.exe` или `winapp.exe` сам по себе не подтверждает physical render. Сведения о
-UIA, захвате окна и вводе см. в [WinApp CLI UI automation](https://github.com/microsoft/winappCli/blob/main/docs/ui-automation.md).
+## Визуальный осмотр агентом
 
-## Цикл агента и vision
-
-Процедура визуальной разработки принадлежит
-[`azurpilot-tui-harness`](../../.agents/skills/azurpilot-tui-harness/SKILL.md). После каждого визуального
-изменения нужен новый checkpoint, затем общий regression. Существование PNG не означает осмотр.
-В Codex PNG открывается инструментом просмотра локальных изображений; оценка должна называть
-видимый признак (например, взаимное положение символов и строк), статус и путь к осмотренному PNG.
-
-Проверка image route другого агента или provider, включая DSH, не входит в acceptance Harness:
-если она отдельно не выполнялась, укажите `NOT_TESTED`, а не blocker Harness. Не запускайте отдельный
-DSH-процесс лишь для завершения проверки, уже выполняемой в Codex.
+Процедура принадлежит [azurpilot-tui-harness](../../.agents/skills/azurpilot-tui-harness/SKILL.md).
+После визуальной правки нужен новый снимок и сравнение с исходным состоянием. PNG необходимо
+открыть инструментом просмотра; отчёт называет видимый признак, статус и путь. Наличие файла или
+текст ячеек не означает осмотр. Отдельный маршрут DSH не входит в приёмку Harness: без его запуска
+он имеет `NOT_TESTED` и не блокирует уже выполненный осмотр в Codex.
 
 ## Первичные технические контракты
 
-- [Microsoft: lifecycle и resize ConPTY](https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session).
-- [Microsoft: Windows Terminal appearance](https://learn.microsoft.com/en-us/windows/terminal/customize-settings/profile-appearance)
+- [Microsoft: создание и resize ConPTY](https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session).
+- [Windows Terminal appearance](https://learn.microsoft.com/en-us/windows/terminal/customize-settings/profile-appearance)
   и [color schemes](https://learn.microsoft.com/en-us/windows/terminal/customize-settings/color-schemes).
 - [xterm.js API](https://xtermjs.org/docs/api/terminal/classes/terminal/),
-  [ITheme](https://xtermjs.org/docs/api/terminal/interfaces/itheme/) и
+  [ITheme](https://xtermjs.org/docs/api/terminal/interfaces/itheme/),
   [IBufferCell](https://xtermjs.org/docs/api/terminal/interfaces/ibuffercell/).
 - [Playwright .NET screenshots](https://playwright.dev/dotnet/docs/screenshots).

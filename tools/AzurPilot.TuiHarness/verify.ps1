@@ -5,6 +5,7 @@ param(
     [switch]$ReadOnlyProviders
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'VerificationSupport.ps1')
 $App = (Resolve-Path -LiteralPath $App).Path
 $Harness = (Resolve-Path -LiteralPath $Harness).Path
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -21,13 +22,14 @@ function Start-HarnessCommand([string[]]$Arguments) {
     $info.RedirectStandardError = $true
     foreach ($argument in $Arguments) { $info.ArgumentList.Add($argument) }
     $process = [Diagnostics.Process]::Start($info)
-    return @{ Process = $process; Output = $process.StandardOutput.ReadToEndAsync(); Error = $process.StandardError.ReadToEndAsync() }
+    return @{ Process = $process; Output = $process.StandardOutput.ReadToEndAsync(); Error = $process.StandardError.ReadToEndAsync(); Command = $Arguments[0] }
 }
 function Complete-HarnessCommand($Invocation, [string]$Case, [string]$Expected = 'PASS') {
     try {
-        if (-not $Invocation.Process.WaitForExit(45000)) {
+        $budget = if ($Invocation.Command -eq 'start') { $commandTimeouts.start } else { $commandTimeouts.other }
+        if (-not $Invocation.Process.WaitForExit($budget)) {
             $Invocation.Process.Kill($true)
-            throw "CLI timeout: $Case"
+            throw "Истёк срок ожидания CLI: $Case"
         }
         $stdout = $Invocation.Output.GetAwaiter().GetResult()
         $stderr = $Invocation.Error.GetAwaiter().GetResult()
@@ -38,7 +40,7 @@ function Complete-HarnessCommand($Invocation, [string]$Case, [string]$Expected =
         $stdout | Set-Content -LiteralPath (Join-Path $reportRoot ($Case + '.json'))
         $stderr | Set-Content -LiteralPath (Join-Path $reportRoot ($Case + '.stderr.txt'))
         $results.Add(@{ case = $Case; status = $response.status; expected = $Expected; result = $response })
-        if ($response.status -ne $Expected) { throw "$Case : $($response.status): $($response.message)" }
+        if ($Expected -ne 'DIAGNOSTIC' -and $response.status -ne $Expected) { throw "$Case : $($response.status): $($response.message)" }
         return $response
     }
     finally { $Invocation.Process.Dispose() }
@@ -47,8 +49,12 @@ function Invoke-HarnessCommand([string[]]$Arguments, [string]$Case, [string]$Exp
     return Complete-HarnessCommand (Start-HarnessCommand $Arguments) $Case $Expected
 }
 function Open-OwnedSession([string]$Case, [int]$Lifetime = 600) {
-    $response = Invoke-HarnessCommand @('start', '--exe', $App, '--output', $reportRoot, '--lifetime-seconds', "$Lifetime") $Case
-    $sessions.Add($response)
+    $id = [Guid]::NewGuid().ToString('N')
+    # ID известен до старта: даже потерянный stdout не теряет адрес принадлежащего owner.
+    $pending = @{ session = $id }
+    $sessions.Add($pending)
+    $response = Invoke-HarnessCommand @('start', '--session', $id, '--exe', $App, '--output', $reportRoot, '--lifetime-seconds', "$Lifetime") $Case
+    $pending.data = $response.data
     return $response
 }
 function Wait-OwnedExit([int]$OwnedPid) {
@@ -60,13 +66,17 @@ function Wait-OwnedExit([int]$OwnedPid) {
     throw "Не завершился принадлежащий harness PID $OwnedPid"
 }
 function Get-SettingsDigest {
-    $directory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'AzurPilot'
+    $directory = Split-Path $help.data.configurationPaths.yaml
     $files = if (Test-Path -LiteralPath $directory) { @(Get-ChildItem -LiteralPath $directory -File -Filter 'config*' | Sort-Object Name) } else { @() }
     return ConvertTo-Json -Compress -InputObject @($files | ForEach-Object { [ordered]@{ name = $_.Name; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } })
 }
+$commandTimeouts = @{ start = 0; other = 45000 }
+$help = Invoke-HarnessCommand @('help') 'protocol-budgets'
+$commandTimeouts = $help.data.commandTimeouts
 $settingsBefore = Get-SettingsDigest
 $overall = 'PASS'
 try {
+    $results.Add((Test-AbandonedHarnessStartup $Harness $App $reportRoot))
     $expiry = Open-OwnedSession 'expiry-start' 30
     foreach ($appearanceName in @('campbell', 'campbell-light')) {
         $appearanceProfile = Join-Path $PSScriptRoot "profiles/$appearanceName.json"
@@ -76,12 +86,12 @@ try {
         $expectedAccent = if ($appearanceName -eq 'campbell') { 0x4e9acf } else { 0x2e6da4 }
         $appearanceCells = Get-Content (Join-Path $startup.data.directory '001-startup.cells.json') -Raw | ConvertFrom-Json
         if (-not ($appearanceCells.cells | Where-Object { $_.fg.mode -eq 'rgb' -and $_.fg.value -eq $expectedAccent })) {
-            throw "Production accent не соответствует полярности профиля: $appearanceName"
+            throw "Акцент приложения не соответствует полярности профиля: $appearanceName"
         }
         $appearanceEvidence = Get-Content (Join-Path $startup.data.directory '001-startup.evidence.json') -Raw | ConvertFrom-Json
         $accentSample = $appearanceEvidence.colorComparison.comparisons | Where-Object { $_.sample.kind -eq 'foreground' -and $_.sample.fg.value -eq $expectedAccent }
         if (-not $accentSample -or $accentSample.status -ne 'PASS' -or $accentSample.maxChannelDelta -ne 0) {
-            throw "Production RGB не подтверждён пикселями PNG: $appearanceName"
+            throw "RGB приложения не подтверждён пикселями PNG: $appearanceName"
         }
         $results.Add(@{ case = "production-rgb-$appearanceName"; status = 'PASS'; expected = $expectedAccent; maxChannelDelta = 0 })
     }
@@ -90,12 +100,9 @@ try {
     $settings = Invoke-HarnessCommand @('run', '--exe', $App, '--output', $reportRoot,
         '--scenario', (Join-Path $PSScriptRoot 'scenarios/settings.json')) 'settings'
     $configPath = [IO.Path]::GetFullPath((Join-Path $settings.data.directory 'runtime/config.yaml'))
-    if (-not (Get-ChildItem (Split-Path $configPath) -Filter '*.bak-*')) { throw 'Не создан backup изолированного YAML.' }
+    if (-not (Get-ChildItem (Split-Path $configPath) -Filter '*.bak-*')) { throw 'Не создана резервная копия изолированного YAML.' }
     $settingsCells = Get-Content (Join-Path $settings.data.directory '001-settings.cells.json') -Raw | ConvertFrom-Json
-    $unwrapped = ($settingsCells.lines | ForEach-Object { $_.TrimEnd() }) -join ''
-    $normalizedUnwrapped = $unwrapped -replace '\s', ''
-    $normalizedConfigPath = $configPath -replace '\s', ''
-    if (-not $normalizedUnwrapped.Contains($normalizedConfigPath)) { throw 'UI не показывает изолированный YAML.' }
+    if (-not (Test-DisplayedConfigurationPath $settingsCells.lines $configPath)) { throw 'UI не показывает точный изолированный YAML.' }
     if ($ReadOnlyProviders) {
         $null = Invoke-HarnessCommand @('run', '--exe', $App, '--output', $reportRoot, '--providers', 'read-only',
             '--scenario', (Join-Path $PSScriptRoot 'scenarios/safe-confirmation.json')) 'safe-confirmation'
@@ -136,15 +143,14 @@ try {
     for ($lineIndex = 0; $lineIndex -lt $menuCells.lines.Count; $lineIndex++) {
         if ($menuCells.lines[$lineIndex].Trim() -eq 'Настройки') { $settingsRow = $lineIndex; break }
     }
-    if ($settingsRow -lt 0) { throw 'Не найдена строка настройки для реального mouse click.' }
-    $unsupportedClick = Invoke-HarnessCommand @('mouse', '--session', $first.session, '--value', 'click', '--x', '8', '--y', "$settingsRow") 'mouse-click-settings' 'BLOCKED'
-    $results.RemoveAt($results.Count - 1)
-    $results.Add(@{
-        case = 'production-palette-click'
-        status = 'NOT_APPLICABLE'
-        observedStatus = $unsupportedClick.status
-        reason = 'Навигация по палитре кликом не входит в требования продукта; неподдерживаемое событие не блокирует Harness. Wheel проверяется отдельно.'
-    })
+    if ($settingsRow -lt 0) { throw 'Не найдена строка настроек для проверки клика мышью.' }
+    $click = Invoke-HarnessCommand @('mouse', '--session', $first.session, '--value', 'click', '--x', '8', '--y', "$settingsRow") 'mouse-click-settings' 'DIAGNOSTIC'
+    $afterClick = Invoke-HarnessCommand @('capture', '--session', $first.session, '--name', 'after-click') 'after-click-capture'
+    $clickCells = Get-Content $afterClick.data.cells -Raw | ConvertFrom-Json
+    $assessment = Get-PaletteClickAssessment $click (($clickCells.lines -join "`n").Contains('Расположение конфигурации'))
+    $assessment.case = 'production-palette-click'
+    $results.Add($assessment)
+    if ($assessment.status -in @('FAIL', 'BLOCKED')) { throw "Ошибка доставки клика: $($assessment.reason)" }
     foreach ($opened in @($first, $second)) {
         $null = Invoke-HarnessCommand @('close', '--session', $opened.session) ('close-' + $opened.session)
         Wait-OwnedExit $opened.data.ownerPid
@@ -207,7 +213,12 @@ catch {
 }
 finally {
     foreach ($opened in $sessions) {
-        if (Get-Process -Id $opened.data.ownerPid -ErrorAction SilentlyContinue) {
+        if (-not $opened.data) {
+            # При обрыве start owner сам завершится по наблюдению запускающего CLI.
+            try { $null = Invoke-HarnessCommand @('close', '--session', $opened.session, '--timeout-ms', '1000') ('pending-close-' + $opened.session) }
+            catch { $results.Add(@{ case = 'pending-start-cleanup'; status = 'BLOCKED'; reason = $_.Exception.Message }) }
+        }
+        elseif (Get-Process -Id $opened.data.ownerPid -ErrorAction SilentlyContinue) {
             try { $null = Invoke-HarnessCommand @('close', '--session', $opened.session, '--timeout-ms', '1000') ('final-close-' + $opened.session) }
             catch { Stop-Process -Id $opened.data.ownerPid -ErrorAction SilentlyContinue }
         }

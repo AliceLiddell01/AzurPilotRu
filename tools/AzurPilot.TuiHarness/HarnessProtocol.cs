@@ -35,6 +35,7 @@ internal sealed partial record HarnessRequest
     public string? LiveInstance { get; init; }
     public string? Authorization { get; init; }
     public string Providers { get; init; } = "disabled";
+    public int StartupClientPid { get; init; }
 
     internal static HarnessRequest Parse(string[] args)
     {
@@ -116,7 +117,7 @@ internal sealed partial record HarnessRequest
         CheckSize(Columns, Rows);
         if (Providers is not ("disabled" or "read-only"))
         {
-            throw new ArgumentException("Providers: disabled или read-only. Mutation policy safe-сессии остаётся закрытой.");
+            throw new ArgumentException("Providers: disabled или read-only. Политика safe-сессии запрещает изменения состояния.");
         }
 
         if (TimeoutMs is < 100 or > 30000 || LifetimeSeconds is < 30 or > 900 || Value?.Length > 4096 || Contains?.Length > 256)
@@ -140,7 +141,7 @@ internal sealed partial record HarnessRequest
         }
         else if (LiveInstance is not null || Authorization is not null)
         {
-            throw new ArgumentException("Live grant допустим только в ограниченном live-environment сценарии.");
+            throw new ArgumentException("Разрешение live допустимо только в ограниченном сценарии live-environment.");
         }
     }
 

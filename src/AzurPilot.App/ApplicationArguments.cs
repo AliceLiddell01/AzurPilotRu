@@ -27,9 +27,9 @@ public sealed record ApplicationArgumentFailure(string Message)
 /// <param name="LogViewerLevel">Минимальный уровень отдельной лог-консоли.</param>
 /// <param name="Failure">Ожидаемый отказ разбора аргументов; <see langword="null"/> при успехе.</param>
 /// <param name="Help">Показать справку без запуска host.</param>
-/// <param name="LogViewerDetails">Показывать correlation и structured properties в отдельном viewer.</param>
-/// <param name="IsolatedUiRoot">Явный каталог developer UI-сессии; внешние mutation и viewer отключены.</param>
-/// <param name="LiveEnvironmentTarget">Разрешение только подготовки и остановки exact target.</param>
+/// <param name="LogViewerDetails">Показывать correlation и structured properties в отдельном окне просмотра журнала.</param>
+/// <param name="IsolatedUiRoot">Явный каталог сессии интерфейса для разработки; внешние изменения состояния и окно просмотра журнала отключены.</param>
+/// <param name="LiveEnvironmentTarget">Запрос подготовки и восстановления точного экземпляра после проверки исходного состояния.</param>
 public sealed record ApplicationArguments(
     OperatorUiMode? Mode,
     bool LogViewer,
@@ -50,7 +50,7 @@ public sealed record ApplicationArguments(
     /// <remarks>
     /// <para>
     /// Продуктовый CLI минимален и необязателен: без аргументов приложение работает как раньше.
-    /// Изолированный developer-запуск использует отдельный каталог и запрещает внешние mutation.
+    /// Изолированный запуск для разработки использует отдельный каталог и запрещает внешние изменения состояния.
     /// Без этого явного параметра владельцем runtime-пути остаётся <see cref="AzurPilotConfigurationPath"/>.
     /// </para>
     /// <para>
@@ -93,7 +93,7 @@ public sealed record ApplicationArguments(
 
                     if (!MuMuInstanceValue.IsValid(target) || target == MuMuInstanceValue.AutoValue)
                     {
-                        return Failed(new ApplicationArgumentFailure("Live UI требует каноническую exact MuMu identity."));
+                        return Failed(new ApplicationArgumentFailure("Live UI требует канонический идентификатор точного экземпляра MuMu."));
                     }
 
                     liveEnvironmentTarget = MuMuInstanceId.FromIndex(target[MuMuInstanceValue.ProviderPrefix.Length..]);

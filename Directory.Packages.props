@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Только developer harness: управление Chromium и PNG настоящего терминального renderer. -->
+    <!-- Только Harness для разработки: управление Chromium и PNG настоящего терминального рендерера. -->
     <PackageVersion Include="Microsoft.Playwright" Version="1.63.0" />
     <PackageVersion Include="Microsoft.Windows.Console.ConPTY" Version="1.25.260930003" />
     <!-- Строгая конфигурация приложения типизирует минимальный уровень логирования стандартным

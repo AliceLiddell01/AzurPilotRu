@@ -12,6 +12,6 @@
     { "command": "capture", "name": "confirm-again", "contains": "> Отмена" },
     { "command": "key", "value": "ArrowDown" },
     { "command": "key", "value": "Enter" },
-    { "command": "capture", "name": "mutation-denied", "contains": "внешние mutation запрещены" }
+    { "command": "capture", "name": "mutation-denied", "contains": "Изменение состояния запрещено." }
   ]
 }

@@ -148,12 +148,12 @@ internal sealed class TerminalRenderer : IAsyncDisposable
                     string protocol = snapshot.GetProperty("modes").GetProperty("mouseTrackingMode").GetString()!;
                     if (protocol == "none")
                     {
-                        throw new HarnessBlockedException("Приложение не включило mouse reporting.");
+                        throw new HarnessBlockedException("Приложение не включило передачу событий мыши.");
                     }
 
                     if (request.Value == "move" && protocol != "any")
                     {
-                        throw new HarnessBlockedException("Приложение не включило reporting движения без нажатой кнопки.");
+                        throw new HarnessBlockedException("Приложение не включило передачу движения без нажатой кнопки.");
                     }
 
                     if (request.X < 0 || request.Y < 0 || request.X >= snapshot.GetProperty("columns").GetInt32()
@@ -202,8 +202,7 @@ internal sealed class TerminalRenderer : IAsyncDisposable
                     _ = await _page.EvaluateAsync("async () => await harness.frame()");
                     JsonElement state = await SnapshotAsync();
                     stableSeen = true;
-                    string operation = state.GetProperty("lines")[1].GetString()!.Trim();
-                    bool idle = IsOperationIdle(operation);
+                    bool idle = IsOperationIdle(TerminalUiObservation.Operation(state) ?? string.Empty);
                     if ((!requireOperationIdle || idle) && _pty.Sequence == Interlocked.Read(ref _rendered)
                         && (string.IsNullOrEmpty(contains) || VisibleText(state).Contains(contains, StringComparison.Ordinal)))
                     {
@@ -221,10 +220,10 @@ internal sealed class TerminalRenderer : IAsyncDisposable
 
         if (stableSeen && contains is not null && !requireOperationIdle)
         {
-            throw new HarnessAssertionException($"Assertion по видимым cells не выполнен за {timeoutMs} ms: {contains}.");
+            throw new HarnessAssertionException($"Проверка видимых ячеек не выполнена за {timeoutMs} ms: {contains}.");
         }
 
-        throw new HarnessBlockedException($"Не достигнуто согласованное состояние за {timeoutMs} ms; ожидание: {contains ?? "quiescence"}.");
+        throw new HarnessBlockedException($"Не достигнуто согласованное состояние за {timeoutMs} ms; ожидание: {contains ?? "стабильный кадр"}.");
     }
 
     internal static bool IsOperationIdle(string operation) => operation is
@@ -284,7 +283,7 @@ internal sealed class TerminalRenderer : IAsyncDisposable
                     identity,
                     sequence,
                     parsedSequence = Interlocked.Read(ref _rendered),
-                    synchronization = "Очередь VT дренирована; write callbacks завершены; два animation frames; cells до/после PNG совпали; ConPTY sequence неизменен",
+                    synchronization = "Очередь VT прочитана; обратные вызовы записи завершены; два кадра анимации; ячейки до/после PNG совпали; номер последовательности ConPTY неизменен",
                     png = prefix + ".png",
                     cells = prefix + ".cells.json",
                     vt = prefix + ".vt.txt",
@@ -308,7 +307,7 @@ internal sealed class TerminalRenderer : IAsyncDisposable
             }
         }
 
-        throw new HarnessBlockedException("VT менялся во время PNG: согласованный capture не получен.");
+        throw new HarnessBlockedException("VT менялся во время PNG: согласованный захват не получен.");
     }
 
     private async Task<JsonElement> SnapshotAsync()
@@ -345,7 +344,7 @@ internal sealed class TerminalRenderer : IAsyncDisposable
 
         if (!_pty.Alive)
         {
-            throw new HarnessBlockedException($"Production EXE завершился (0x{_pty.ExitCode:X8}); интерактивный capture недоступен.");
+            throw new HarnessBlockedException($"Продуктовый EXE завершился (0x{_pty.ExitCode:X8}); интерактивный захват недоступен.");
         }
     }
 
@@ -452,8 +451,8 @@ internal static class ColorSamples
                 Math.Max(Math.Abs(rgb[1] - ((expected >> 8) & 255)), Math.Abs(rgb[2] - (expected & 255))));
             bool glyph = sample.GetProperty("kind").GetString() == "foreground";
             return (object)new { status = delta == 0 ? "PASS" : glyph ? "NOT_TESTED" : "FAIL", sample, maxChannelDelta = delta,
-                reason = glyph && delta > 0 ? "В выбранном glyph нет непрозрачного core pixel; antialiasing не равен потере RGB." : null };
+                reason = glyph && delta > 0 ? "В выбранном глифе нет непрозрачного центрального пикселя; сглаживание не означает потерю RGB." : null };
         })];
-        return new { scope = "Точный RGB однотонных background; ближайший core pixel foreground с явной границей antialiasing", comparisons };
+        return new { scope = "Точный RGB однотонного фона; ближайший центральный пиксель текста с явной границей сглаживания", comparisons };
     }
 }

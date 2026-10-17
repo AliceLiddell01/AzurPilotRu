@@ -9,9 +9,9 @@ public sealed class LiveEnvironmentAndTerminalRendererTests
     [Fact]
     public async Task StopAndObserve_PersistsPostflightWhenUiStopFails()
     {
-        using JsonDocument document = JsonDocument.Parse("""{"status":"success","data":{"state":"Stopped"}}""");
+        using JsonDocument document = JsonDocument.Parse("""{"status":"success","target":"mumu:7","data":{"state":"Stopped"}}""");
         JsonElement observation = document.RootElement.Clone();
-        InvalidOperationException stopFailure = new("UI stop step failed.");
+        InvalidOperationException stopFailure = new("Ошибка шага остановки через UI.");
         bool stopAttempted = false;
         bool postflightObserved = false;
         bool postflightPersisted = false;
@@ -31,7 +31,7 @@ public sealed class LiveEnvironmentAndTerminalRendererTests
             {
                 postflightPersisted = postflight.GetProperty("data").GetProperty("state").GetString() == "Stopped";
                 return Task.CompletedTask;
-            });
+            }, "mumu:7");
 
         Assert.True(stopAttempted);
         Assert.True(postflightObserved);
@@ -42,7 +42,7 @@ public sealed class LiveEnvironmentAndTerminalRendererTests
     [Fact]
     public async Task StopAndObserve_PersistsPostflightBeforeRejectingRunningTarget()
     {
-        using JsonDocument document = JsonDocument.Parse("""{"status":"success","data":{"state":"Running"}}""");
+        using JsonDocument document = JsonDocument.Parse("""{"status":"success","target":"mumu:7","data":{"state":"Running"}}""");
         JsonElement observation = document.RootElement.Clone();
         bool postflightPersisted = false;
 
@@ -53,9 +53,20 @@ public sealed class LiveEnvironmentAndTerminalRendererTests
             {
                 postflightPersisted = true;
                 return Task.CompletedTask;
-            }));
+            }, "mumu:7"));
 
         Assert.True(postflightPersisted);
+    }
+
+    [Theory]
+    [InlineData("mumu:8", "success", "Stopped")]
+    [InlineData("mumu:7", "failure", "Stopped")]
+    [InlineData("mumu:7", "success", "Unknown")]
+    [InlineData("mumu:7", "success", "Running")]
+    public void LivePreflightRequiresStoppedAndExactEnvelopeTarget(string target, string status, string state)
+    {
+        JsonElement observation = JsonSerializer.SerializeToElement(new { target, status, data = new { state } });
+        _ = Assert.Throws<HarnessBlockedException>(() => LiveEnvironment.RequireStopped(observation, "mumu:7"));
     }
 
     [Theory]

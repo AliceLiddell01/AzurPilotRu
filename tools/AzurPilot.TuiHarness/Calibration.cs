@@ -105,7 +105,7 @@ internal static class Calibration
                 status = success ? "PASS" : "FAIL",
                 assertions,
                 capture.Data,
-                scope = "Калибровка ConPTY → SGR → xterm cells → PNG. Отдельно от production UI и physical Windows Terminal."
+                scope = "Калибровка ConPTY → SGR → ячейки xterm → PNG. Отдельно от продуктового UI и физического Windows Terminal."
             }, HarnessJson.Options));
             return new(success ? "PASS" : "FAIL", id, "Проверка цветового тракта завершена.", new { report, capture = capture.Data });
         }
