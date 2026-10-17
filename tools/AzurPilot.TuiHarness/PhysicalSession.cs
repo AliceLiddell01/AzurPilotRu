@@ -519,24 +519,15 @@ internal static partial class PhysicalSession
                 throw new HarnessBlockedException("EXE/DLL изменились до запуска physical child.");
             }
 
-            ProcessStartInfo start = new(exe)
-            {
-                UseShellExecute = false,
-                WorkingDirectory = request.WorkingDirectory,
-            };
-            start.ArgumentList.Add("--mode");
-            start.ArgumentList.Add("diagnostic");
-            start.ArgumentList.Add("--isolated-ui");
-            start.ArgumentList.Add(isolationRoot);
-            start.Environment["TERM"] = "xterm-256color";
-            start.Environment["COLORTERM"] = "truecolor";
-            start.Environment["TERM_PROGRAM"] = "Windows Terminal";
-            _ = start.Environment.Remove("NO_COLOR");
-            _ = start.Environment.Remove("FORCE_COLOR");
+            string[] appArguments = ["--mode", "diagnostic", "--isolated-ui", isolationRoot];
+            Environment.SetEnvironmentVariable("TERM", "xterm-256color");
+            Environment.SetEnvironmentVariable("COLORTERM", "truecolor");
+            Environment.SetEnvironmentVariable("TERM_PROGRAM", "Windows Terminal");
+            Environment.SetEnvironmentVariable("NO_COLOR", null);
+            Environment.SetEnvironmentVariable("FORCE_COLOR", null);
 
             job = ConPty.CreateJob(denyChildren: true);
-            app = Process.Start(start) ?? throw new HarnessBlockedException("Не удалось запустить AzurPilot.App.exe в Windows Terminal.");
-            ConPty.AssignProcessToJob(job, app.SafeHandle);
+            app = ConPty.StartInJob(exe, appArguments, request.WorkingDirectory, job);
             string appPath = app.MainModule?.FileName is string modulePath ? Path.GetFullPath(modulePath) : string.Empty;
             if (!string.Equals(appPath, exe, StringComparison.OrdinalIgnoreCase))
             {
@@ -551,7 +542,7 @@ internal static partial class PhysicalSession
                 appPath,
                 request.ExpectedExeSha256,
                 request.ExpectedAppDllSha256,
-                ["--mode", "diagnostic", "--isolated-ui", isolationRoot],
+                appArguments,
                 Environment.GetEnvironmentVariable("WT_SESSION"),
                 Environment.GetEnvironmentVariable("WT_PROFILE_ID"),
                 DateTimeOffset.UtcNow,
@@ -1691,12 +1682,30 @@ internal static partial class PhysicalSession
                 profileId: profileId);
         }
 
+        string? terminalDefaultsPath = TerminalAppearanceResolver.ResolveDefaultsPath(terminalPath);
+        string? terminalDefaultsJson = null;
+        string? terminalDefaultsHash = null;
+        string? terminalDefaultsReadError = null;
+        if (terminalDefaultsPath is not null && File.Exists(terminalDefaultsPath))
+        {
+            try
+            {
+                terminalDefaultsJson = File.ReadAllText(terminalDefaultsPath);
+                terminalDefaultsHash = HashFile(terminalDefaultsPath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                terminalDefaultsReadError = exception.Message;
+            }
+        }
+
         try
         {
             string json = File.ReadAllText(settingsPath);
             string? systemTheme = ReadSystemApplicationTheme();
             return TerminalAppearanceResolver.Resolve(json, requestedScheme, profileId, systemTheme,
-                settingsPath, HashFile(settingsPath));
+                settingsPath, HashFile(settingsPath), terminalDefaultsJson, terminalDefaultsPath,
+                terminalDefaultsHash, terminalDefaultsReadError);
         }
         catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
         {

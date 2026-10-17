@@ -10,6 +10,10 @@ namespace AzurPilot.TuiHarness;
 // Только Windows x64. Дескрипторы принадлежат SafeHandle; чтение и запись имеют разные потоки.
 internal sealed partial class ConPty : IAsyncDisposable
 {
+    private const uint CreateSuspended = 0x00000004;
+    private const uint ExtendedStartupInfoPresent = 0x00080000;
+    private const uint CreateBreakawayFromJob = 0x01000000;
+
     private readonly FileStream _output;
     private readonly FileStream _input;
     private readonly SafePseudoConsole _console;
@@ -258,6 +262,33 @@ internal sealed partial class ConPty : IAsyncDisposable
         Check(Native.AssignProcessToJobObject(job, process));
     }
 
+    internal static bool IsProcessInJob(SafeHandle process, SafeFileHandle job)
+    {
+        ArgumentNullException.ThrowIfNull(process);
+        ArgumentNullException.ThrowIfNull(job);
+        Check(Native.IsProcessInJob(process, job, out bool result));
+        return result;
+    }
+
+    internal static Process StartInJob(string executable, IReadOnlyList<string> arguments, string directory,
+        SafeFileHandle job)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(executable);
+        ArgumentNullException.ThrowIfNull(arguments);
+        ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+        ArgumentNullException.ThrowIfNull(job);
+
+        string fullExecutable = Path.GetFullPath(executable);
+        StartupEx startup = new();
+        startup.Startup.Size = (uint)Marshal.SizeOf<Startup>();
+        (SafeFileHandle process, int processId) = StartProcessInJob(fullExecutable,
+            BuildCommandLine(fullExecutable, arguments), directory, job, startup, CreateSuspended);
+        using (process)
+        {
+            return Process.GetProcessById(processId);
+        }
+    }
+
     internal static Process StartOwner(string executable, string? assembly, string requestPath)
     {
         StartupEx startup = new();
@@ -291,33 +322,8 @@ internal sealed partial class ConPty : IAsyncDisposable
             startup.Startup.Flags = 0x100;
             startup.Attributes = attributes;
             char[] command = $"\"{exe}\" {arguments}\0".ToCharArray();
-            Check(Native.CreateProcessW(exe, command, 0, 0, false, 0x80004u | (breakAway ? 0x01000000u : 0u), 0, directory,
-                ref startup, out ProcessInformation info));
-            SafeFileHandle process = new(info.Process, ownsHandle: true);
-            using SafeFileHandle thread = new(info.Thread, ownsHandle: true);
-            try
-            {
-                // Назначение до ResumeThread исключает гонку запуска внешнего изменения состояния.
-                if (!Native.AssignProcessToJobObject(job, process))
-                {
-                    int error = Marshal.GetLastPInvokeError();
-                    Check(Native.IsProcessInJob(process, job, out bool alreadyAssigned));
-                    if (!alreadyAssigned)
-                    {
-                        throw new Win32Exception(error, $"Процесс не назначен в принадлежащий сессии Job: {exe}.");
-                    }
-                }
-
-                return Native.ResumeThread(thread) == uint.MaxValue
-                    ? throw new Win32Exception(Marshal.GetLastPInvokeError())
-                    : ((SafeFileHandle Process, int Pid))(process, (int)info.ProcessId);
-            }
-            catch
-            {
-                _ = Native.TerminateProcess(process, 1);
-                process.Dispose();
-                throw;
-            }
+            return StartProcessInJob(exe, command, directory, job, startup,
+                CreateSuspended | ExtendedStartupInfoPresent | (breakAway ? CreateBreakawayFromJob : 0u));
         }
         finally
         {
@@ -328,6 +334,94 @@ internal sealed partial class ConPty : IAsyncDisposable
 
             Marshal.FreeHGlobal(attributes);
         }
+    }
+
+    private static (SafeFileHandle Process, int Pid) StartProcessInJob(string executable, char[] command,
+        string directory, SafeFileHandle job, StartupEx startup, uint creationFlags)
+    {
+        Check(Native.CreateProcessW(executable, command, 0, 0, false, creationFlags, 0, directory,
+            ref startup, out ProcessInformation info));
+        SafeFileHandle process = new(info.Process, ownsHandle: true);
+        using SafeFileHandle thread = new(info.Thread, ownsHandle: true);
+        try
+        {
+            // Процесс остаётся приостановленным до подтверждения принадлежности Job.
+            if (!Native.AssignProcessToJobObject(job, process))
+            {
+                int error = Marshal.GetLastPInvokeError();
+                if (!IsProcessInJob(process, job))
+                {
+                    throw new Win32Exception(error, $"Процесс не назначен в принадлежащий сессии Job: {executable}.");
+                }
+            }
+
+            return Native.ResumeThread(thread) == uint.MaxValue
+                ? throw new Win32Exception(Marshal.GetLastPInvokeError())
+                : ((SafeFileHandle Process, int Pid))(process, (int)info.ProcessId);
+        }
+        catch
+        {
+            _ = Native.TerminateProcess(process, 1);
+            process.Dispose();
+            throw;
+        }
+    }
+
+    private static char[] BuildCommandLine(string executable, IReadOnlyList<string> arguments)
+    {
+        StringBuilder command = new();
+        AppendCommandLineArgument(command, executable);
+        foreach (string argument in arguments)
+        {
+            if (argument is null)
+            {
+                throw new ArgumentException("Аргументы процесса не могут содержать null.", nameof(arguments));
+            }
+
+            _ = command.Append(' ');
+            AppendCommandLineArgument(command, argument);
+        }
+
+        _ = command.Append('\0');
+        return command.ToString().ToCharArray();
+    }
+
+    private static void AppendCommandLineArgument(StringBuilder command, string argument)
+    {
+        bool quote = argument.Length == 0;
+        foreach (char character in argument)
+        {
+            quote |= char.IsWhiteSpace(character) || character == '"';
+        }
+
+        if (!quote)
+        {
+            _ = command.Append(argument);
+            return;
+        }
+
+        _ = command.Append('"');
+        int backslashes = 0;
+        foreach (char character in argument)
+        {
+            if (character == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (character == '"')
+            {
+                _ = command.Append('\\', backslashes * 2 + 1).Append('"');
+                backslashes = 0;
+                continue;
+            }
+
+            _ = command.Append('\\', backslashes).Append(character);
+            backslashes = 0;
+        }
+
+        _ = command.Append('\\', backslashes * 2).Append('"');
     }
 
     private static void Check(bool success)

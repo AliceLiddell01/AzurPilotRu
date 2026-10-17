@@ -115,6 +115,61 @@ public sealed class TerminalAppearanceResolverTests
     }
 
     [Fact]
+    public void Resolve_UsesExactTerminalDefaultsForBuiltInSchemeWhenUserSettingsLacksIt()
+    {
+        JsonObject campbell = ColorScheme("Campbell", "#0C0C0C", "#CCCCCC");
+        campbell["red"] = "#C50F1F";
+        JsonObject terminalDefaults = new()
+        {
+            ["schemes"] = new JsonArray(campbell),
+        };
+
+        TerminalAppearance result = TerminalAppearanceResolver.Resolve(Settings().ToJsonString(), "Campbell",
+            PowerShellProfileId, "dark", "settings.json", "settings-hash", terminalDefaults.ToJsonString(),
+            "terminal-defaults.json", "defaults-hash");
+
+        Assert.True(result.ComparisonReady);
+        Assert.Equal("Campbell", result.SchemeName);
+        Assert.Equal("#C50F1F", result.Theme!["red"]);
+        Assert.Contains("terminal-defaults.json", result.PaletteSource!, StringComparison.Ordinal);
+        Assert.Contains("defaults-hash", result.PaletteSource!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Resolve_UserDefinedSchemeTakesPrecedenceOverTerminalDefaults()
+    {
+        JsonObject settings = Settings();
+        settings["schemes"]!.AsArray().Add(ColorScheme("Campbell", "#0C0C0C", "#CCCCCC"));
+        JsonObject terminalDefaults = new()
+        {
+            ["schemes"] = new JsonArray(ColorScheme("Campbell", "#111111", "#EEEEEE")),
+        };
+
+        TerminalAppearance result = TerminalAppearanceResolver.Resolve(settings.ToJsonString(), "Campbell",
+            PowerShellProfileId, "dark", terminalDefaultsJson: terminalDefaults.ToJsonString(),
+            terminalDefaultsPath: "terminal-defaults.json", terminalDefaultsHash: "defaults-hash");
+
+        Assert.Equal("#000002", result.Theme!["red"]);
+        Assert.StartsWith("Точный settings.json", result.PaletteSource!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Resolve_UnknownSchemeDoesNotBorrowAnotherBuiltInPalette()
+    {
+        JsonObject terminalDefaults = new()
+        {
+            ["schemes"] = new JsonArray(ColorScheme("Campbell", "#0C0C0C", "#CCCCCC")),
+        };
+
+        TerminalAppearance result = TerminalAppearanceResolver.Resolve(Settings().ToJsonString(), "Unknown",
+            PowerShellProfileId, "dark", terminalDefaultsJson: terminalDefaults.ToJsonString());
+
+        Assert.Null(result.Theme);
+        Assert.False(result.ComparisonReady);
+        Assert.Contains("defaults.json", result.Limitation!, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Resolve_UnmatchedWtProfileDoesNotBorrowPaletteOrAppearanceFromDefaults()
     {
         TerminalAppearance result = TerminalAppearanceResolver.Resolve(Settings().ToJsonString(), "current",
@@ -176,6 +231,61 @@ public sealed class TerminalAppearanceResolverTests
         {
             Directory.Delete(local, recursive: true);
         }
+    }
+
+    [Fact]
+    public void ResolveSettingsPath_UsesPortableSettingsBeforeUnpackagedFallback()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "TerminalAppearanceResolverTests", Guid.NewGuid().ToString("N"));
+        string executable = Path.Combine(root, "WindowsTerminal.exe");
+        string portableSettings = Path.Combine(root, "settings", "settings.json");
+        string unpackagedSettings = Path.Combine(root, "LocalAppData", "Microsoft", "Windows Terminal", "settings.json");
+        _ = Directory.CreateDirectory(Path.GetDirectoryName(portableSettings)!);
+        _ = Directory.CreateDirectory(Path.GetDirectoryName(unpackagedSettings)!);
+        File.WriteAllText(Path.Combine(root, ".portable"), string.Empty);
+        File.WriteAllText(portableSettings, "{}");
+        File.WriteAllText(unpackagedSettings, "{}");
+
+        try
+        {
+            Assert.Equal(portableSettings, TerminalAppearanceResolver.ResolveSettingsPath(executable,
+                Path.Combine(root, "LocalAppData")));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolveSettingsPath_DoesNotFallBackWhenPortableSettingsAreMissing()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "TerminalAppearanceResolverTests", Guid.NewGuid().ToString("N"));
+        string executable = Path.Combine(root, "WindowsTerminal.exe");
+        string local = Path.Combine(root, "LocalAppData");
+        string unpackagedSettings = Path.Combine(local, "Microsoft", "Windows Terminal", "settings.json");
+        _ = Directory.CreateDirectory(Path.GetDirectoryName(unpackagedSettings)!);
+        File.WriteAllText(Path.Combine(root, ".portable"), string.Empty);
+        File.WriteAllText(unpackagedSettings, "{}");
+
+        try
+        {
+            Assert.Null(TerminalAppearanceResolver.ResolveSettingsPath(executable, local));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolveDefaultsPath_UsesDirectoryOfTheExactWindowsTerminalExecutable()
+    {
+        string executable = Path.Combine(Path.GetTempPath(), "TerminalAppearanceResolverTests", Guid.NewGuid().ToString("N"),
+            "WindowsTerminal.exe");
+
+        Assert.Equal(Path.Combine(Path.GetDirectoryName(executable)!, "defaults.json"),
+            TerminalAppearanceResolver.ResolveDefaultsPath(executable));
     }
 
     private static JsonObject Settings()

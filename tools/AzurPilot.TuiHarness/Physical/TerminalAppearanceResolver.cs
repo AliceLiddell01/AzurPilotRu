@@ -52,7 +52,9 @@ internal static class TerminalAppearanceResolver
     private static readonly string[] SchemeBranches = ["light", "dark"];
 
     internal static TerminalAppearance Resolve(string settingsJson, string requestedScheme, string? selectedProfileId,
-        string? systemApplicationTheme, string? settingsPath = null, string? settingsHash = null)
+        string? systemApplicationTheme, string? settingsPath = null, string? settingsHash = null,
+        string? terminalDefaultsJson = null, string? terminalDefaultsPath = null, string? terminalDefaultsHash = null,
+        string? terminalDefaultsReadError = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsJson);
         ArgumentException.ThrowIfNullOrWhiteSpace(requestedScheme);
@@ -78,6 +80,13 @@ internal static class TerminalAppearanceResolver
                 : SelectSchemeName(profileSchemeValue, appTheme) ?? SelectSchemeName(Property(defaults, "colorScheme"), appTheme);
         JsonElement scheme = FindScheme(Property(root, "schemes"), schemeName);
         Dictionary<string, string>? palette = ReadPalette(scheme);
+        bool paletteReadFromTerminalDefaults = false;
+        if (palette is null && scheme.ValueKind != JsonValueKind.Object)
+        {
+            palette = ReadBuiltInPalette(terminalDefaultsJson, schemeName);
+            paletteReadFromTerminalDefaults = palette is not null;
+        }
+
         string? limitation = null;
         if (selected.ValueKind != JsonValueKind.Object)
         {
@@ -91,7 +100,11 @@ internal static class TerminalAppearanceResolver
         }
         else if (palette is null)
         {
-            limitation = $"Схема '{schemeName}' отсутствует в точном settings.json или не задаёт полную палитру.";
+            limitation = $"Схема '{schemeName}' отсутствует в точном settings.json или не подтверждена defaults.json выбранного Windows Terminal.";
+            if (terminalDefaultsReadError is not null)
+            {
+                limitation += " defaults.json невозможно прочитать: " + terminalDefaultsReadError;
+            }
         }
 
         if (palette is not null)
@@ -127,7 +140,9 @@ internal static class TerminalAppearanceResolver
         }
 
         string? paletteSource = comparisonReady
-            ? $"Точный settings.json: профиль {profileName} ({selectedProfileId}), схема {schemeName} с profile/default overrides"
+            ? paletteReadFromTerminalDefaults
+                ? $"Точный defaults.json Windows Terminal ({terminalDefaultsPath}, SHA-256 {terminalDefaultsHash}): схема {schemeName}; profile/default overrides из settings.json"
+                : $"Точный settings.json: профиль {profileName} ({selectedProfileId}), схема {schemeName} с profile/default overrides"
             : null;
         return new TerminalAppearance(requestedScheme, comparisonReady ? schemeName : null,
             selectedProfileId, profileName, appTheme,
@@ -139,6 +154,9 @@ internal static class TerminalAppearanceResolver
                 requestedScheme,
                 settingsPath,
                 settingsSha256 = settingsHash,
+                terminalDefaultsPath,
+                terminalDefaultsSha256 = terminalDefaultsHash,
+                terminalDefaultsReadError,
                 selectedProfileId,
                 profileName,
                 rootDefaultProfileId = Text(root, "defaultProfile"),
@@ -165,9 +183,21 @@ internal static class TerminalAppearanceResolver
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(localApplicationData);
-        string? packageDirectory = Path.GetDirectoryName(Path.GetFullPath(executablePath));
-        string packageFolder = packageDirectory is null ? string.Empty : Path.GetFileName(packageDirectory);
-        bool inWindowsApps = Path.GetFullPath(executablePath).Contains(
+        string fullExecutablePath = Path.GetFullPath(executablePath);
+        string? packageDirectory = Path.GetDirectoryName(fullExecutablePath);
+        if (packageDirectory is null)
+        {
+            return null;
+        }
+
+        if (File.Exists(Path.Combine(packageDirectory, ".portable")))
+        {
+            string portableSettings = Path.Combine(packageDirectory, "settings", "settings.json");
+            return File.Exists(portableSettings) ? portableSettings : null;
+        }
+
+        string packageFolder = Path.GetFileName(packageDirectory);
+        bool inWindowsApps = fullExecutablePath.Contains(
             $"{Path.DirectorySeparatorChar}WindowsApps{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
         if (inWindowsApps)
         {
@@ -189,6 +219,36 @@ internal static class TerminalAppearanceResolver
 
         string unpackaged = Path.Combine(localApplicationData, "Microsoft", "Windows Terminal", "settings.json");
         return File.Exists(unpackaged) ? unpackaged : null;
+    }
+
+    internal static string? ResolveDefaultsPath(string executablePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
+        string? executableDirectory = Path.GetDirectoryName(Path.GetFullPath(executablePath));
+        return executableDirectory is null ? null : Path.Combine(executableDirectory, "defaults.json");
+    }
+
+    private static Dictionary<string, string>? ReadBuiltInPalette(string? defaultsJson, string? schemeName)
+    {
+        if (string.IsNullOrWhiteSpace(defaultsJson) || schemeName is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(defaultsJson, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip,
+                MaxDepth = 32,
+            });
+            return ReadPalette(FindScheme(Property(document.RootElement, "schemes"), schemeName));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static JsonElement FindProfile(JsonElement profileList, string? profileId)
