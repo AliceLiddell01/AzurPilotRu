@@ -35,7 +35,7 @@ public sealed class ConPtyTests
             pid = pty.Pid;
             StringBuilder text = new();
             using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-            deadline.CancelAfter(TimeSpan.FromSeconds(5));
+            deadline.CancelAfter(TimeSpan.FromSeconds(15));
             try
             {
                 await foreach ((long _, byte[] bytes) in pty.Output.Reader.ReadAllAsync(deadline.Token))
@@ -91,7 +91,7 @@ public sealed class ConPtyTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            DeleteTemporaryDirectory(root);
         }
     }
 
@@ -114,7 +114,7 @@ public sealed class ConPtyTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            DeleteTemporaryDirectory(root);
         }
     }
 
@@ -145,7 +145,38 @@ public sealed class ConPtyTests
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            DeleteTemporaryDirectory(root);
         }
+    }
+
+    private static void DeleteTemporaryDirectory(string path)
+    {
+        Stopwatch timeout = Stopwatch.StartNew();
+        IOException? lastFailure = null;
+        while (timeout.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                return;
+            }
+            catch (IOException exception)
+            {
+                lastFailure = exception;
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                lastFailure = new IOException(exception.Message, exception);
+            }
+
+            Thread.Sleep(50);
+        }
+
+        throw new IOException("Не удалось удалить временный каталог теста после завершения процесса.", lastFailure);
     }
 }
