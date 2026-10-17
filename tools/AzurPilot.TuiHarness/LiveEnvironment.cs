@@ -55,6 +55,27 @@ internal static class LiveEnvironment
         }
     }
 
+    internal static async Task<Exception?> StopAndObserveAsync(
+        Func<Task> stop,
+        Func<Task<JsonElement>> observe,
+        Func<JsonElement, Task> persist)
+    {
+        Exception? stopFailure = null;
+        try
+        {
+            await stop();
+        }
+        catch (Exception exception)
+        {
+            stopFailure = exception;
+        }
+
+        JsonElement postflight = await observe();
+        await persist(postflight);
+        RequireStopped(postflight);
+        return stopFailure;
+    }
+
     internal static async Task<HarnessResponse> RunAsync(HarnessRequest request)
     {
         request.Validate();
@@ -118,18 +139,27 @@ internal static class LiveEnvironment
         {
             try
             {
-                if (attempted)
-                {
-                    _ = await Step("key", "F4");
-                    _ = await Step("wait-idle");
-                    await Confirm("/environment-stop");
-                    _ = await Step("wait-idle");
-                }
-
-                JsonElement postflight = await ObserveAsync(exe, config, request.LiveInstance!);
-                await File.WriteAllTextAsync(Path.Combine(directory, "postflight.json"), postflight.GetRawText());
-                RequireStopped(postflight);
+                Exception? stopFailure = await StopAndObserveAsync(
+                    async () =>
+                    {
+                        if (attempted)
+                        {
+                            _ = await Step("key", "F4");
+                            _ = await Step("wait-idle");
+                            await Confirm("/environment-stop");
+                            _ = await Step("wait-idle");
+                        }
+                    },
+                    () => ObserveAsync(exe, config, request.LiveInstance!),
+                    postflight => File.WriteAllTextAsync(Path.Combine(directory, "postflight.json"), postflight.GetRawText()));
                 restored = true;
+                if (stopFailure is not null)
+                {
+                    string earlierFailure = status == "BLOCKED" ? message + " " : string.Empty;
+                    status = "BLOCKED";
+                    message = earlierFailure + "Остановка через TUI не завершена: "
+                        + stopFailure.Message + "; postflight подтвердил Stopped.";
+                }
             }
             catch (Exception exception)
             {

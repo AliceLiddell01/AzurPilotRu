@@ -203,7 +203,7 @@ internal sealed class TerminalRenderer : IAsyncDisposable
                     JsonElement state = await SnapshotAsync();
                     stableSeen = true;
                     string operation = state.GetProperty("lines")[1].GetString()!.Trim();
-                    bool idle = operation is "Операция: нет" or "Операция: завершена" or "Операция: отказ";
+                    bool idle = IsOperationIdle(operation);
                     if ((!requireOperationIdle || idle) && _pty.Sequence == Interlocked.Read(ref _rendered)
                         && (string.IsNullOrEmpty(contains) || VisibleText(state).Contains(contains, StringComparison.Ordinal)))
                     {
@@ -226,6 +226,9 @@ internal sealed class TerminalRenderer : IAsyncDisposable
 
         throw new HarnessBlockedException($"Не достигнуто согласованное состояние за {timeoutMs} ms; ожидание: {contains ?? "quiescence"}.");
     }
+
+    internal static bool IsOperationIdle(string operation) => operation is
+        "Операция: нет" or "Операция: завершена" or "Операция: отказ" or "Операция: отменена" or "Операция: ошибка";
 
     internal bool MouseEffectObserved(JsonElement snapshot)
     {
