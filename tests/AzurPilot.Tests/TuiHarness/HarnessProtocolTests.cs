@@ -1,3 +1,4 @@
+using System.IO.Pipes;
 using System.Text.Json;
 using AzurPilot.TuiHarness;
 using Xunit;
@@ -71,6 +72,39 @@ public sealed class HarnessProtocolTests
 
         Assert.Equal("BLOCKED", response.Status);
         Assert.Equal(2, response.ExitCode);
+    }
+
+    [Fact]
+    public async Task StartupStatusConnectionCanExceedTheRequestTimeout()
+    {
+        string session = Guid.NewGuid().ToString("N");
+        await using NamedPipeServerStream server = new(SessionOwner.PipeName(session), PipeDirection.InOut, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(5));
+        Task<HarnessRequest> serverTask = Task.Run(async () =>
+        {
+            await Task.Delay(200, cancellation.Token);
+            await server.WaitForConnectionAsync(cancellation.Token);
+            HarnessRequest request = await SessionOwner.ReadAsync<HarnessRequest>(server, cancellation.Token);
+            await SessionOwner.WriteAsync(server,
+                new HarnessResponse("PASS", session, "Операция выполнена."), cancellation.Token);
+            return request;
+        }, cancellation.Token);
+
+        HarnessResponse response = await AzurPilot.TuiHarness.Program.SendAsync(
+            new HarnessRequest { Command = "status", Session = session, TimeoutMs = 100 }, connectionTimeoutMs: 1000);
+        HarnessRequest received = await serverTask;
+
+        Assert.Equal("status", received.Command);
+        Assert.Equal("PASS", response.Status);
+    }
+
+    [Fact]
+    public void StartupStatusConnectionBudgetCoversSequentialCreationStages()
+    {
+        const int worstCaseCreateMs = 20_000 + 12_000 + 20_000 + 15_000;
+
+        Assert.True(AzurPilot.TuiHarness.Program.StartStatusConnectionTimeoutMs >= worstCaseCreateMs);
     }
 
     [Theory]

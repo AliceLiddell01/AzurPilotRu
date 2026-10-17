@@ -6,6 +6,6 @@
     { "command": "capture", "name": "settings", "contains": "Расположение конфигурации" },
     { "command": "key", "value": "ArrowDown" },
     { "command": "key", "value": "Enter" },
-    { "command": "capture", "name": "settings-saved", "contains": "Настройки" }
+    { "command": "capture", "name": "settings-saved", "contains": "Настройки сохранены", "absent": ["Настройки не сохранены"] }
   ]
 }

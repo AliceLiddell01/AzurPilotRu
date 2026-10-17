@@ -6,6 +6,9 @@ namespace AzurPilot.TuiHarness;
 
 internal static class Program
 {
+    // 20 с live preflight + 12 с console bootstrap + 20 с Chromium + 15 с первого UI-состояния и запас.
+    internal const int StartStatusConnectionTimeoutMs = 90_000;
+
     private static async Task<int> Main(string[] args)
     {
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH")))
@@ -87,7 +90,9 @@ internal static class Program
         using Process owner = ConPty.StartOwner(Environment.ProcessPath!, assembly, file);
         try
         {
-            HarnessResponse response = await SendAsync(new HarnessRequest { Command = "status", Session = id, TimeoutMs = 30000 });
+            HarnessResponse response = await SendAsync(
+                new HarnessRequest { Command = "status", Session = id, TimeoutMs = 30000 },
+                connectionTimeoutMs: StartStatusConnectionTimeoutMs);
             if (response.Status != "PASS")
             {
                 _ = await SendAsync(new HarnessRequest { Command = "close", Session = id, TimeoutMs = 1000 });
@@ -131,7 +136,7 @@ internal static class Program
         }
     }
 
-    internal static async Task<HarnessResponse> SendAsync(HarnessRequest request)
+    internal static async Task<HarnessResponse> SendAsync(HarnessRequest request, int? connectionTimeoutMs = null)
     {
         if (request.Session is null)
         {
@@ -139,12 +144,19 @@ internal static class Program
         }
 
         request.Validate();
+        int connectTimeoutMs = connectionTimeoutMs ?? request.TimeoutMs;
+        if (connectTimeoutMs is < 100 or > StartStatusConnectionTimeoutMs
+            || (connectionTimeoutMs is not null && request.Command != "status"))
+        {
+            throw new ArgumentOutOfRangeException(nameof(connectionTimeoutMs));
+        }
+
         await using NamedPipeClientStream pipe = new(".", SessionOwner.PipeName(request.Session), PipeDirection.InOut,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-        using CancellationTokenSource timeout = new(TimeSpan.FromMilliseconds(request.TimeoutMs + 10000));
+        using CancellationTokenSource timeout = new(TimeSpan.FromMilliseconds(connectTimeoutMs + 10000));
         try
         {
-            await pipe.ConnectAsync(request.TimeoutMs, timeout.Token);
+            await pipe.ConnectAsync(connectTimeoutMs, timeout.Token);
             await SessionOwner.WriteAsync(pipe, request, timeout.Token);
             return await SessionOwner.ReadAsync<HarnessResponse>(pipe, timeout.Token);
         }
