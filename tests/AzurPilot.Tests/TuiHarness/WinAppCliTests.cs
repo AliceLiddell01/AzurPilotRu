@@ -375,14 +375,60 @@ public sealed class WinAppCliTests : IDisposable
     }
 
     [Fact]
-    public async Task InteractiveHelpRequiresSendInputSupport()
+    public async Task InteractiveHelpRequiresPhysicalFocusSupport()
     {
         WinAppCli cli = WithOutput("ui list-windows screenshot inspect --output --json");
 
         HarnessBlockedException failure = await Assert.ThrowsAsync<HarnessBlockedException>(() =>
             cli.ValidateHelpAsync(TestContext.Current.CancellationToken, interactive: true));
 
-        Assert.Contains("ui send-keys --help", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("ui focus --help", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FocusTargetsExactOwnedWindowAndSelector()
+    {
+        const string selector = "lbl-azurpilotphysic-4b49";
+        WinAppCli cli = new(runner: (_, arguments, _) =>
+        {
+            Assert.Equal(["ui", "focus", selector, "-w", "4294967296", "--json"], arguments);
+            return Task.FromResult(Success("{\"hwnd\":4294967296,\"selector\":\"lbl-azurpilotphysic-4b49\",\"focused\":true}"));
+        });
+
+        JsonElement metadata = await cli.FocusAsync(OwnedWindow(), selector, TestContext.Current.CancellationToken);
+
+        Assert.Equal(4294967296L, metadata.GetProperty("hwnd").GetInt64());
+        Assert.Equal(selector, metadata.GetProperty("selector").GetString());
+        Assert.True(metadata.GetProperty("focused").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("wrong-hwnd")]
+    [InlineData("wrong-selector")]
+    public async Task FocusRejectsMetadataForAnotherTarget(string scenario)
+    {
+        string metadata = scenario switch
+        {
+            "wrong-hwnd" => "{\"hwnd\":123,\"selector\":\"target\"}",
+            "wrong-selector" => "{\"hwnd\":4294967296,\"selector\":\"foreign\"}",
+            _ => throw new InvalidOperationException("Неизвестный сценарий теста."),
+        };
+
+        _ = await Assert.ThrowsAsync<HarnessBlockedException>(() =>
+            WithOutput(metadata).FocusAsync(OwnedWindow(), "target", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task SelectWindowPreservesForegroundStateForInputSafety()
+    {
+        WinAppCli cli = WithOutput(JsonSerializer.Serialize(new[]
+        {
+            WindowJson(Marker, 4294967296L, 27, "WindowsTerminal", isForeground: true),
+        }));
+
+        WinAppWindow window = await cli.SelectWindowAsync(Marker, TestContext.Current.CancellationToken);
+
+        Assert.True(window.IsForeground);
     }
 
     [Fact]
@@ -422,6 +468,26 @@ public sealed class WinAppCliTests : IDisposable
         Assert.Equal(1, metadata.GetProperty("actionCount").GetInt32());
     }
 
+    [Fact]
+    public async Task PhysicalF2ThenEscapeRemainDeliverableToTheSameExactWindow()
+    {
+        string[] expected = ["f2", "esc"];
+        int index = 0;
+        WinAppCli cli = new(runner: (_, arguments, _) =>
+        {
+            Assert.Equal(["ui", "send-keys", expected[index], "-w", "4294967296", "--via", "send-input", "--json"], arguments);
+            index++;
+            return Task.FromResult(Success("{\"hwnd\":4294967296,\"via\":\"send-input\",\"actionCount\":1}"));
+        });
+
+        JsonElement menuInput = await cli.SendKeysAsync(OwnedWindow(), "f2", TestContext.Current.CancellationToken);
+        JsonElement restoreInput = await cli.SendKeysAsync(OwnedWindow(), "esc", TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, index);
+        Assert.Equal(4294967296L, menuInput.GetProperty("hwnd").GetInt64());
+        Assert.Equal(4294967296L, restoreInput.GetProperty("hwnd").GetInt64());
+    }
+
     [Theory]
     [InlineData("wrong-hwnd")]
     [InlineData("wrong-method")]
@@ -450,9 +516,9 @@ public sealed class WinAppCliTests : IDisposable
     }
 
     private static object WindowJson(string title, long hwnd, int processId, string processName,
-        int width = 800, int height = 600)
+        int width = 800, int height = 600, bool? isForeground = null)
     {
-        return new { title, hwnd, processId, processName, width, height };
+        return new { title, hwnd, processId, processName, width, height, isForeground };
     }
 
     private static WinAppWindow OwnedWindow()

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.Win32;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.TuiHarness.Physical;
@@ -15,12 +16,13 @@ internal static partial class PhysicalSession
 {
     private static readonly string[] PixelAnalysisCaveats =
     [
-        "WGC/PrintWindow источник остаётся Unknown, пока screenshot JSON его не сообщает.",
+        "Метод захвата остаётся Unknown, если WinApp не сообщает его в JSON именно этого кадра.",
         "ClearType/сглаживание, glyph fallback, HDR, Acrylic/Mica и DWM могут изменить края или композицию.",
     ];
     private const int WindowStartupMs = 25_000;
     private const int WindowCleanupMs = 5_000;
     private const int PhysicalSettleMs = 1_000;
+    private const int PhysicalForegroundWaitMs = 30_000;
     private const int WmClose = 0x0010;
     private const uint DwmExtendedFrameBounds = 9;
     private const int StdOutputHandle = -11;
@@ -57,7 +59,11 @@ internal static partial class PhysicalSession
                 osArchitecture = RuntimeInformation.OSArchitecture.ToString(),
                 processArchitecture = RuntimeInformation.ProcessArchitecture.ToString(),
             },
-            ["visualAssessment"] = new { status = "NOT_TESTED", reason = "Ключевые PNG ещё не открывались для визуального осмотра." },
+            ["visualAssessment"] = new
+            {
+                status = "NOT_TESTED",
+                reason = "Harness не кодирует агентский визуальный осмотр; результат сообщается отдельно от машинного отчёта.",
+            },
         };
         string reportPath = Path.Combine(directory, "physical-report.json");
         string? exe = null;
@@ -74,6 +80,9 @@ internal static partial class PhysicalSession
         bool ownsDesktopSemaphore = false;
         string status = "BLOCKED";
         string message = "Физическая проверка не завершена.";
+        TerminalAppearance appearance = TerminalAppearance.Unknown(request.TerminalScheme,
+            "Точный профиль Windows Terminal ещё не установлен.");
+        PhysicalAcceptanceEvidence? acceptanceEvidence = null;
 
         try
         {
@@ -152,28 +161,12 @@ internal static partial class PhysicalSession
                 help = Path.Combine(directory, "winapp-help.json"),
                 requiredCommandsValidated = help.Keys.ToArray(),
                 captureMethod = "Reported per PNG when WinApp returns a capture mode; otherwise Unknown.",
-                captureMethodReason = "WinApp documentation defines WGC as the default and PrintWindow as fallback; acceptance requires mode evidence from the exact capture.",
+                captureMethodReason = "Unknown остаётся Unknown; точный HWND подтверждается отдельно от механизма захвата.",
             };
 
             string wt = FindExecutable("wt.exe")
                 ?? throw new HarnessBlockedException("Windows Terminal wt.exe не найден в PATH.");
             report["windowsTerminal"] = new { executable = wt, version = (string?)null };
-
-            TerminalAppearance appearance = ReadTerminalAppearance(request.TerminalScheme);
-            report["terminalAppearance"] = appearance.Evidence;
-            if (request.TerminalScheme != "current" && appearance.SchemeName is null)
-            {
-                throw new HarnessBlockedException(appearance.Limitation
-                    ?? "Запрошенная цветовая схема отсутствует в прочитанных settings.json Windows Terminal.");
-            }
-
-            string profilePath = await WriteComparisonProfileAsync(directory, appearance);
-            report["comparisonProfile"] = new { path = profilePath, sha256 = HashIfPresent(profilePath) };
-            object conptyCapture = await CaptureConPtyAsync(request, exe, directory, profilePath);
-            report["conpty"] = conptyCapture;
-            JsonElement conptyEvidence = JsonSerializer.SerializeToElement(conptyCapture, HarnessJson.Options);
-            conptyMenuCellsPath = conptyEvidence.GetProperty("actionMenu").GetProperty("paths")
-                .GetProperty("cells").GetString();
 
             isolationRoot = CreateIsolatedRuntime(directory);
             string isolatedConfigurationPath = Path.Combine(
@@ -203,7 +196,7 @@ internal static partial class PhysicalSession
                 HashIfPresent(Path.ChangeExtension(exe, ".dll")));
             await File.WriteAllTextAsync(launchRequestPath, JsonSerializer.Serialize(launchRequest, HarnessJson.Options));
 
-            using Process? launcher = StartWindowsTerminal(wt, marker, request, appearance, launchRequestPath);
+            using Process? launcher = StartWindowsTerminal(wt, marker, request, launchRequestPath);
             report["windowsTerminal"] = new
             {
                 executable = wt,
@@ -212,8 +205,6 @@ internal static partial class PhysicalSession
                 windowMarker = marker,
                 columns = request.Columns,
                 rows = request.Rows,
-                terminalScheme = appearance.SchemeName ?? "UNKNOWN",
-                terminalProfile = appearance.ProfileName ?? "UNKNOWN",
             };
 
             appRecord = await WaitForAppRecordAsync(appStartPath, WindowStartupMs);
@@ -225,6 +216,58 @@ internal static partial class PhysicalSession
             }
 
             VerifyWindow(ownedWindow, marker);
+            appearance = ReadTerminalAppearance(request.TerminalScheme, ownedWindow, appRecord.TerminalProfileId);
+            report["terminalAppearance"] = appearance.Evidence;
+            report["windowsTerminal"] = new
+            {
+                executable = wt,
+                version = GetWindowsTerminalVersion(wt),
+                windowName = marker,
+                windowMarker = marker,
+                columns = request.Columns,
+                rows = request.Rows,
+                terminalScheme = appearance.SchemeName ?? "UNKNOWN",
+                terminalProfile = appearance.ProfileName ?? "UNKNOWN",
+                terminalProfileId = appRecord.TerminalProfileId ?? "UNKNOWN",
+            };
+            if (request.TerminalScheme != "current" && appearance.SchemeName is null)
+            {
+                report["requestedSchemeResolution"] = new
+                {
+                    status = "NOT_TESTED",
+                    reason = appearance.Limitation ?? "Ожидаемую палитру запрошенной схемы нельзя подтвердить по профилю текущего окна.",
+                };
+            }
+
+            string profilePath = await WriteComparisonProfileAsync(directory, appearance);
+            report["comparisonProfile"] = new
+            {
+                path = profilePath,
+                sha256 = HashIfPresent(profilePath),
+                source = appearance.ComparisonReady
+                    ? "Фактическая схема выбранного профиля с overrides Windows Terminal"
+                    : "Запасной профиль только для ConPTY; он не используется как expected values физического окна",
+            };
+            int comparisonColumns = appRecord.Columns is > 0 ? appRecord.Columns.Value : request.Columns;
+            int comparisonRows = appRecord.Rows is > 0 ? appRecord.Rows.Value : request.Rows;
+            report["requestedGeometry"] = new
+            {
+                status = appRecord.Columns is null || appRecord.Rows is null ? "NOT_TESTED"
+                    : appRecord.Columns == request.Columns && appRecord.Rows == request.Rows ? "PASS" : "DIFFERENT",
+                requested = new { columns = request.Columns, rows = request.Rows },
+                physical = new { columns = appRecord.Columns, rows = appRecord.Rows },
+                conptyComparison = new { columns = comparisonColumns, rows = comparisonRows },
+                reason = appRecord.Columns == request.Columns && appRecord.Rows == request.Rows
+                    ? "Физическая сетка соответствует запрошенной."
+                    : "Windows Terminal может применить фактический размер окна; ConPTY сравнивается с измеренной сеткой production App.",
+            };
+            object conptyCapture = await CaptureConPtyAsync(exe, directory, profilePath,
+                comparisonColumns, comparisonRows);
+            report["conpty"] = conptyCapture;
+            JsonElement conptyEvidence = JsonSerializer.SerializeToElement(conptyCapture, HarnessJson.Options);
+            conptyMenuCellsPath = conptyEvidence.GetProperty("actionMenu").GetProperty("paths")
+                .GetProperty("cells").GetString();
+
             report["ownedSession"] = new
             {
                 marker,
@@ -235,6 +278,7 @@ internal static partial class PhysicalSession
                 appPid = appRecord.ProcessId,
                 appHelperPid = appRecord.HelperPid,
                 terminalSessionId = appRecord.TerminalSessionId,
+                terminalProfileId = appRecord.TerminalProfileId,
                 appPath = appRecord.Exe,
                 exeSha256 = appRecord.ExeSha256,
                 appDllSha256 = appRecord.AppDllSha256,
@@ -267,7 +311,7 @@ internal static partial class PhysicalSession
                 inspect = inspectPath,
             };
             report["windowGeometry"] = ReadWindowGeometry(
-                inspect, ownedWindow, appRecord, startup, out ContentRectangle? content);
+                inspect, ownedWindow, appRecord, startup, request.Columns, request.Rows, out ContentRectangle? content);
 
             JsonElement xtermCapture = GetCapturePaths(report);
             string cellsPath = xtermCapture.GetProperty("cells").GetString()!;
@@ -276,9 +320,19 @@ internal static partial class PhysicalSession
             report["pixelAnalysis"] = pixelAnalysis.Evidence;
 
             bool visualTransition = false;
+            JsonElement? focusEvidence = null;
             if (request.Interactive)
             {
-                JsonElement inputF2 = await winapp.SendKeysAsync(ownedWindow, "f2", CancellationToken.None);
+                string textSurfaceSelector = FindTerminalTextSurfaceSelector(inspect);
+                WinAppWindow foregroundWindow = await WaitForForegroundWindowAsync(winapp, marker, ownedWindow);
+                focusEvidence = await winapp.FocusAsync(foregroundWindow, textSurfaceSelector, CancellationToken.None);
+                WinAppWindow focusedWindow = await winapp.SelectWindowAsync(marker, CancellationToken.None);
+                if (!SameOwnedWindow(foregroundWindow, focusedWindow) || focusedWindow.IsForeground != true)
+                {
+                    throw new HarnessBlockedException("После UIA focus не подтверждены тот же HWND/PID и foreground.");
+                }
+
+                JsonElement inputF2 = await winapp.SendKeysAsync(focusedWindow, "f2", CancellationToken.None);
                 await Task.Delay(500);
                 WinAppCapture palette = await CapturePhysicalAsync(winapp, ownedWindow, Path.Combine(appDirectoryPath, "palette.png"));
                 palettePixelAnalysis = conptyMenuCellsPath is null
@@ -288,7 +342,13 @@ internal static partial class PhysicalSession
                 report["palettePixelAnalysis"] = palettePixelAnalysis.Evidence;
                 JsonElement paletteInspect = await winapp.InspectAsync(ownedWindow, CancellationToken.None);
                 await File.WriteAllTextAsync(Path.Combine(appDirectoryPath, "palette-inspect.json"), paletteInspect.GetRawText());
-                JsonElement inputEscape = await winapp.SendKeysAsync(ownedWindow, "esc", CancellationToken.None);
+                WinAppWindow beforeEscape = await winapp.SelectWindowAsync(marker, CancellationToken.None);
+                if (!SameOwnedWindow(focusedWindow, beforeEscape) || beforeEscape.IsForeground != true)
+                {
+                    throw new HarnessBlockedException("Перед Escape не подтверждены foreground и идентичность принадлежащего HWND.");
+                }
+
+                JsonElement inputEscape = await winapp.SendKeysAsync(beforeEscape, "esc", CancellationToken.None);
                 await Task.Delay(500);
                 WinAppCapture restored = await CapturePhysicalAsync(winapp, ownedWindow, Path.Combine(appDirectoryPath, "restored.png"));
                 PhysicalPngImage beforeImage = PhysicalPngAnalyzer.Decode(await File.ReadAllBytesAsync(startup.Path));
@@ -302,6 +362,9 @@ internal static partial class PhysicalSession
                     status = visualTransition ? "PASS" : "NOT_TESTED",
                     action = "F2 → Escape",
                     inputMode = "WinApp send-keys --via send-input",
+                    focus = focusEvidence,
+                    focusedHwnd = focusedWindow.Hwnd,
+                    focusedWindowForeground = focusedWindow.IsForeground,
                     inputF2,
                     palettePng = palette.Path,
                     inputEscape,
@@ -328,75 +391,29 @@ internal static partial class PhysicalSession
                 };
             }
 
-            bool captureProvenance = startup.CaptureMethod == "WGC";
-            bool geometryProven = content is not null && appRecord.Columns == request.Columns && appRecord.Rows == request.Rows;
-            bool colorEvidence = pixelAnalysis.Status == "PASS"
-                && (!request.Interactive || palettePixelAnalysis?.Status == "PASS");
-            bool comparison = appearance.ComparisonReady && geometryProven;
-            bool stateComparable = false;
-            bool visualAssessmentComplete = false;
-            bool completePhysical = captureProvenance && geometryProven && colorEvidence && comparison
-                && stateComparable && visualAssessmentComplete && (!request.Interactive || visualTransition);
-            status = completePhysical ? "PASS" : "BLOCKED";
-            List<string> blockedGates = [];
-            if (!captureProvenance)
-            {
-                blockedGates.Add("captureProvenance: WinApp screenshot metadata не сообщает mode.");
-            }
-
-            if (!geometryProven)
-            {
-                blockedGates.Add("contentGeometry: точная сетка физического окна не подтверждена.");
-            }
-
-            if (!colorEvidence)
-            {
-                blockedGates.Add("pixelSamples: недостаточно однозначных RGB sample.");
-            }
-
-            if (!comparison)
-            {
-                blockedGates.Add("profileComparison: нет подтверждённой палитры или geometry.");
-            }
-
-            if (request.Interactive && !visualTransition)
-            {
-                blockedGates.Add("physicalTransition: F2/Escape не подтвердили видимый переход.");
-            }
-
-            if (!stateComparable)
-            {
-                blockedGates.Add("stateComparability: отдельные сессии требуют визуальной оценки сопоставимости состояния.");
-            }
-
-            if (!visualAssessmentComplete)
-            {
-                blockedGates.Add("visualAssessment: требуется открыть физические и xterm PNG.");
-            }
-
-            message = completePhysical
-                ? "Физический TUI зафиксирован; обязательные источники и сравнение подтверждены."
-                : "Physical acceptance заблокирован: " + string.Join("; ", blockedGates);
-            report["status"] = status;
-            report["physicalAcceptance"] = completePhysical ? "PASS" : "BLOCKED";
-            report["blockedGates"] = completePhysical ? [] : blockedGates;
-            report["acceptanceGates"] = new
-            {
-                windowIdentity = "PASS",
-                appIdentity = "PASS",
-                separateConPtyArtifacts = "PASS",
-                captureProvenance = captureProvenance ? "PASS" : "NOT_TESTED",
-                contentGeometry = geometryProven ? "PASS" : "NOT_TESTED",
-                pixelSamples = colorEvidence ? "PASS" : "NOT_TESTED",
-                profileComparison = comparison ? "PASS" : "NOT_TESTED",
-                stateComparability = stateComparable ? "PASS" : "NOT_TESTED",
-                physicalTransition = request.Interactive ? (visualTransition ? "PASS" : "NOT_TESTED") : "NOT_TESTED",
-                visualAssessment = visualAssessmentComplete ? "PASS" : "NOT_TESTED",
-            };
+            bool geometryProven = content is not null && appRecord.Columns is > 0 && appRecord.Rows is > 0;
+            acceptanceEvidence = new(
+                WindowIdentity: "PASS",
+                AppIdentity: "PASS",
+                PngIntegrity: "PASS",
+                ContentGeometry: geometryProven ? "PASS" : "BLOCKED",
+                RgbMeasurement: pixelAnalysis.Status,
+                SeparateConPtyEvidence: "PASS",
+                PhysicalInteraction: visualTransition ? "PASS" : "BLOCKED",
+                Cleanup: "NOT_TESTED",
+                UserConfigurationUnchanged: "NOT_TESTED",
+                CaptureProvenance: startup.CaptureMethod == "Unknown" ? "NOT_TESTED" : "PASS",
+                ColorComparison: pixelAnalysis.ComparisonStatus,
+                StateComparability: "NOT_TESTED",
+                VisualAssessment: "NOT_TESTED");
+            report["physicalAcceptance"] = "NOT_TESTED";
+            report["acceptanceNote"] = "Финальный технический статус будет вычислен после проверки cleanup и пользовательской конфигурации.";
         }
         catch (Exception exception)
         {
-            HarnessResponse failure = SessionOwner.Failure(exception, session);
+            HarnessResponse failure = exception is InvalidDataException
+                ? new HarnessResponse("FAIL", session, exception.Message)
+                : SessionOwner.Failure(exception, session);
             status = failure.Status;
             message = failure.Message;
             report["status"] = status;
@@ -407,18 +424,30 @@ internal static partial class PhysicalSession
         {
             object cleanup = await CleanupAsync(ownedWindow, appRecord, marker, exe);
             report["cleanup"] = cleanup;
+            string cleanupStatus = JsonSerializer.SerializeToElement(cleanup, HarnessJson.Options)
+                .TryGetProperty("status", out JsonElement cleanupStatusValue)
+                    ? cleanupStatusValue.GetString() ?? "NOT_TESTED" : "NOT_TESTED";
             try
             {
                 string? userConfigurationHashAfter = userConfigurationPath is null
                     ? null : HashIfPresent(userConfigurationPath);
+                bool configurationUnchanged = userConfigurationHashBefore == userConfigurationHashAfter;
                 report["userConfiguration"] = new
                 {
                     path = userConfigurationPath,
                     sha256Before = userConfigurationHashBefore,
                     sha256After = userConfigurationHashAfter,
-                    unchanged = userConfigurationHashBefore == userConfigurationHashAfter,
+                    unchanged = configurationUnchanged,
                     checkedReadOnly = true,
                 };
+                if (acceptanceEvidence is not null)
+                {
+                    acceptanceEvidence = acceptanceEvidence with
+                    {
+                        Cleanup = cleanupStatus,
+                        UserConfigurationUnchanged = configurationUnchanged ? "PASS" : "FAIL",
+                    };
+                }
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
@@ -428,6 +457,27 @@ internal static partial class PhysicalSession
                     path = userConfigurationPath,
                     reason = "Не удалось перечитать user configuration после физического прогона: " + exception.Message,
                 };
+                if (acceptanceEvidence is not null)
+                {
+                    acceptanceEvidence = acceptanceEvidence with
+                    {
+                        Cleanup = cleanupStatus,
+                        UserConfigurationUnchanged = "NOT_TESTED",
+                    };
+                }
+            }
+
+            if (acceptanceEvidence is not null)
+            {
+                PhysicalAcceptanceResult evaluation = PhysicalAcceptanceEvaluator.Evaluate(acceptanceEvidence, request.Interactive);
+                status = evaluation.Status;
+                message = evaluation.Message;
+                report["status"] = status;
+                report["physicalAcceptance"] = evaluation.Status;
+                report["acceptanceGates"] = evaluation.Gates;
+                report["blockedGates"] = evaluation.BlockedGates;
+                report["failedGates"] = evaluation.FailedGates;
+                report["acceptanceMessage"] = evaluation.Message;
             }
 
             report["completedUtc"] = DateTimeOffset.UtcNow;
@@ -503,6 +553,7 @@ internal static partial class PhysicalSession
                 request.ExpectedAppDllSha256,
                 ["--mode", "diagnostic", "--isolated-ui", isolationRoot],
                 Environment.GetEnvironmentVariable("WT_SESSION"),
+                Environment.GetEnvironmentVariable("WT_PROFILE_ID"),
                 DateTimeOffset.UtcNow,
                 columns,
                 rows);
@@ -537,7 +588,7 @@ internal static partial class PhysicalSession
     }
 
     private static async Task<object> CaptureConPtyAsync(
-        HarnessRequest request, string exe, string directory, string profilePath)
+        string exe, string directory, string profilePath, int columns, int rows)
     {
         string output = Path.Combine(directory, "conpty");
         HarnessResponse started = await Program.StartAsync(new HarnessRequest
@@ -548,8 +599,8 @@ internal static partial class PhysicalSession
             Profile = profilePath,
             Mode = "diagnostic",
             Providers = "disabled",
-            Columns = request.Columns,
-            Rows = request.Rows,
+            Columns = columns,
+            Rows = rows,
             LifetimeSeconds = 60,
         });
         if (started.Status != "PASS" || started.Session is null)
@@ -647,6 +698,7 @@ internal static partial class PhysicalSession
                 "runtime",
                 Path.GetFileName(AzurPilotConfigurationPath.GetDefaultRuntimePath()))),
             providers = "disabled",
+            grid = new { columns, rows, source = "Фактическая screen-buffer geometry production App" },
             capture = capture.Data,
             paths = GetCapturePaths(capture.Data),
             actionMenu = new
@@ -686,10 +738,10 @@ internal static partial class PhysicalSession
     {
         PhysicalPngImage image = PhysicalPngAnalyzer.Decode(await File.ReadAllBytesAsync(pngPath));
         if (content is null || app.Columns is null || app.Rows is null
-            || app.Columns <= 0 || app.Rows <= 0 || !appearance.ComparisonReady)
+            || app.Columns <= 0 || app.Rows <= 0)
         {
-            return new("NOT_TESTED", "Для semantic samples не подтверждены content bounds, grid или сравнительная palette.", [],
-                new { status = "NOT_TESTED", reason = "Недостаточно наблюдаемых геометрии/профиля; произвольные координаты не подставляются." });
+            return new("NOT_TESTED", "Для semantic samples не подтверждены content bounds или фактическая grid.", [],
+                new { status = "NOT_TESTED", reason = "Недостаточно наблюдаемых геометрии; произвольные координаты не подставляются." });
         }
 
         using JsonDocument cellsDocument = JsonDocument.Parse(await File.ReadAllTextAsync(cellsPath));
@@ -702,7 +754,6 @@ internal static partial class PhysicalSession
                 new { status = "NOT_TESTED", xtermColumns = columns, xtermRows = rows, physicalColumns = app.Columns, physicalRows = app.Rows });
         }
 
-        JsonElement theme = snapshot.GetProperty("effectiveTheme");
         JsonElement xtermGeometry = snapshot.GetProperty("geometry");
         double cellWidth = (double)content.Width / columns;
         double cellHeight = (double)content.Height / rows;
@@ -724,11 +775,13 @@ internal static partial class PhysicalSession
             int x = background.GetProperty("x").GetInt32();
             int y = background.GetProperty("y").GetInt32();
             PhysicalPixelRectangle rectangle = CellRectangle(content, columns, rows, x, y, 1, 1);
-            PhysicalRgb expected = FromRgb(ColorSamples.Resolve(background.GetProperty("bg"), theme, "background"));
+            int? expectedValue = ColorSamples.TryResolve(background.GetProperty("bg"), appearance.Theme, "background");
+            PhysicalRgb? expected = appearance.OpaqueBackgroundConfirmed && expectedValue is int expectedRgb
+                ? FromRgb(expectedRgb) : null;
             backgroundSample = new("background-blank-cell", rectangle, "background", expected);
             PhysicalPixelMeasurement measurement = PhysicalPngAnalyzer.Analyze(image, [backgroundSample])[0];
             samples.Add(backgroundSample);
-            if (measurement.Status != "NOT_TESTED")
+            if (measurement.MeasurementStatus == "PASS")
             {
                 observedBackground = measurement.ActualRgb;
             }
@@ -743,20 +796,19 @@ internal static partial class PhysicalSession
                 continue;
             }
 
-            int expected = ColorSamples.Resolve(cell.GetProperty("fg"), theme, "foreground");
-            int backgroundRgb = ColorSamples.Resolve(cell.GetProperty("bg"), theme, "background");
-            if (expected == backgroundRgb)
+            int? expected = ColorSamples.TryResolve(cell.GetProperty("fg"), appearance.Theme, "foreground");
+            int? backgroundRgb = ColorSamples.TryResolve(cell.GetProperty("bg"), appearance.Theme, "background");
+            if (expected is int expectedKnown && backgroundRgb is int backgroundKnown && expectedKnown == backgroundKnown)
             {
                 continue;
             }
 
-            if (observedBackground is null)
-            {
-                continue;
-            }
-
-            string semantic = FindSemanticRole(snapshot, cell, FromRgb(expected), theme);
-            string key = $"{semantic}:{expected:X6}:{backgroundRgb:X6}";
+            string semantic = FindSemanticRole(snapshot, cell,
+                expected is int rgb ? FromRgb(rgb) : null, appearance.Theme);
+            string expectedKey = expected?.ToString("X6", CultureInfo.InvariantCulture) ?? "UNKNOWN";
+            string backgroundKey = backgroundRgb?.ToString("X6", CultureInfo.InvariantCulture) ?? "UNKNOWN";
+            int row = cell.GetProperty("y").GetInt32();
+            string key = $"{semantic}:{expectedKey}:{backgroundKey}:{row}";
             if (!foregroundSamples.ContainsKey(key))
             {
                 foregroundSamples.Add(key, cell.Clone());
@@ -767,12 +819,16 @@ internal static partial class PhysicalSession
         {
             string[] colors = key.Split(':');
             string semantic = colors[0];
-            PhysicalRgb expected = ParseRgb(colors[1]);
+            PhysicalRgb? expected = colors[1] == "UNKNOWN" ? null : ParseRgb(colors[1]);
             int x = cell.GetProperty("x").GetInt32();
             int y = cell.GetProperty("y").GetInt32();
             PhysicalPixelRectangle rectangle = CellRectangle(content, columns, rows, x, y, 1, 1);
             string glyph = cell.GetProperty("text").GetString()!;
-            samples.Add(new($"{semantic}-{EscapeSampleName(glyph)}-{colors[1]}", rectangle, "foreground", expected, observedBackground));
+            if (observedBackground is not null)
+            {
+                samples.Add(new($"{semantic}-{EscapeSampleName(glyph)}-{colors[1]}", rectangle, "foreground", expected,
+                    observedBackground));
+            }
         }
 
         if (samples.Count == 0)
@@ -783,19 +839,24 @@ internal static partial class PhysicalSession
 
         IReadOnlyList<PhysicalPixelMeasurement> measurements = PhysicalPngAnalyzer.Analyze(image, samples);
         int measuredBackground = measurements.Count(measurement => measurement.Kind == "background"
-            && measurement.Status != "NOT_TESTED" && measurement.ActualRgb is not null);
+            && measurement.MeasurementStatus == "PASS" && measurement.ActualRgb is not null);
         int measuredForeground = measurements.Count(measurement => measurement.Kind == "foreground"
-            && measurement.Status != "NOT_TESTED" && measurement.ActualRgb is not null);
-        string result = measuredBackground >= 1 && measuredForeground >= 2 ? "PASS" : "NOT_TESTED";
-        string comparison = measurements.Any(measurement => measurement.Status == "FAIL") ? "DIFFERENT"
-            : result == "PASS" ? "MATCH" : "NOT_TESTED";
-        return new(result, result == "PASS" ? "Измерены фактический фон и минимум две семантические текстовые области; различия цвета отражены отдельно."
-            : "Для RGB evidence нужны однозначный фон и минимум две измеримые семантические текстовые области.", measurements,
+            && measurement.MeasurementStatus == "PASS" && measurement.ActualRgb is not null);
+        string result = measuredBackground >= 1 ? "PASS" : "NOT_TESTED";
+        string comparison = measurements.Any(measurement => measurement.ComparisonStatus == "FAIL") ? "DIFFERENT"
+            : result == "PASS" && measurements.All(measurement => measurement.ComparisonStatus == "PASS") ? "MATCH" : "NOT_TESTED";
+        return new(result, result == "PASS" ? "Измерен фактический RGB фона; измерения текста и сравнение с ожидаемыми цветами отражены отдельно."
+            : "Для RGB evidence нужен однозначно измеренный фактический RGB фона.", measurements,
             new
             {
                 status = result,
                 comparisonStatus = comparison,
-                metric = "Фактический dominant opaque RGB для фона и однородный 3×3 interior foreground; сравнение с ожидаемым точное, maxChannelDelta показывает максимальную разницу канала без tolerance.",
+                metric = "Фактический dominant opaque RGB для фона и однородный 3×3 interior foreground измеряются независимо от ожидаемой палитры; если expected определён, сравнение точное и без tolerance.",
+                expectedPalette = appearance.ComparisonReady ? appearance.PaletteSource : "NOT_TESTED",
+                measuredBackgroundSamples = measuredBackground,
+                measuredForegroundSamples = measuredForeground,
+                notTestedForegroundSamples = measurements.Count(measurement => measurement.Kind == "foreground"
+                    && measurement.MeasurementStatus == "NOT_TESTED"),
                 contentRectangle = content,
                 grid = new
                 {
@@ -815,11 +876,13 @@ internal static partial class PhysicalSession
                     reason = "ConPTY cells и физический PNG принадлежат раздельным процессам; соответствие видимых состояний требует визуального осмотра.",
                 },
                 samples = measurements,
-                caveats = PixelAnalysisCaveats.Concat(["Измеренный цвет может отличаться от ожидаемой палитры из-за Acrylic, opacity, DWM composition или настроек профиля."]).ToArray(),
-            });
+                caveats = PixelAnalysisCaveats.Concat([appearance.Limitation
+                    ?? "Ожидаемые цвета profile/default были применены в порядке Windows Terminal."]).ToArray(),
+            }, comparison);
     }
 
-    private static string FindSemanticRole(JsonElement snapshot, JsonElement cell, PhysicalRgb expected, JsonElement theme)
+    private static string FindSemanticRole(JsonElement snapshot, JsonElement cell, PhysicalRgb? expected,
+        IReadOnlyDictionary<string, string>? theme)
     {
         string[] lines = [.. snapshot.GetProperty("lines").EnumerateArray().Select(line => line.GetString() ?? string.Empty)];
         int y = cell.GetProperty("y").GetInt32();
@@ -835,7 +898,7 @@ internal static partial class PhysicalSession
             return "accent-text";
         }
 
-        if (expected == ThemeColor(theme, "foreground"))
+        if (expected is PhysicalRgb foreground && foreground == ThemeColor(theme, "foreground"))
         {
             return "primary-text";
         }
@@ -867,7 +930,7 @@ internal static partial class PhysicalSession
             return "success-text";
         }
 
-        if (expected == ThemeColor(theme, "brightBlack"))
+        if (expected is PhysicalRgb muted && muted == ThemeColor(theme, "brightBlack"))
         {
             return "muted-text";
         }
@@ -888,7 +951,8 @@ internal static partial class PhysicalSession
     }
 
     private static object ReadWindowGeometry(JsonElement inspect, WinAppWindow window,
-        PhysicalAppStartRecord app, WinAppCapture capture, out ContentRectangle? content)
+        PhysicalAppStartRecord app, WinAppCapture capture, int requestedColumns, int requestedRows,
+        out ContentRectangle? content)
     {
         content = null;
         JsonElement windows = inspect.GetProperty("windows");
@@ -968,7 +1032,7 @@ internal static partial class PhysicalSession
             {
                 status = "NOT_TESTED",
                 reason = surfaces.Count == 0 ? "UIA не сообщил пригодную Custom-поверхность Windows Terminal."
-                    : "DPI-нормализованный HWND bounds, DWM visible frame и единственный WGC source geometry расходятся.",
+                    : "DPI-нормализованный HWND bounds, DWM visible frame и геометрия источника WinApp расходятся.",
                 winApp = new { window.Width, window.Height },
                 win32 = new { width = outerBounds.Right - outerBounds.Left, height = outerBounds.Bottom - outerBounds.Top },
                 rawWin32 = new { width = rawBounds.Right - rawBounds.Left, height = rawBounds.Bottom - rawBounds.Top },
@@ -1033,8 +1097,9 @@ internal static partial class PhysicalSession
             },
             physicalColumns = app.Columns,
             physicalRows = app.Rows,
-            requestedColumns = app.Columns,
-            requestedRows = app.Rows,
+            requestedColumns,
+            requestedRows,
+            requestedGeometryMatches = app.Columns == requestedColumns && app.Rows == requestedRows,
         };
     }
 
@@ -1062,6 +1127,75 @@ internal static partial class PhysicalSession
                 }
             }
         }
+    }
+
+    private static string FindTerminalTextSurfaceSelector(JsonElement inspect)
+    {
+        if (!inspect.TryGetProperty("windows", out JsonElement windows)
+            || windows.ValueKind != JsonValueKind.Array || windows.GetArrayLength() != 1
+            || !windows[0].TryGetProperty("elements", out JsonElement elements)
+            || elements.ValueKind != JsonValueKind.Array)
+        {
+            throw new HarnessBlockedException("UIA inspect не содержит дерево выбранного окна для физического ввода.");
+        }
+
+        string[] selectors = [.. Descendants(elements)
+            .Where(element => TextProperty(element, "type") == "Text"
+                && TextProperty(element, "className") == "TermControl"
+                && !(element.TryGetProperty("isOffscreen", out JsonElement offscreen)
+                    && offscreen.ValueKind == JsonValueKind.True))
+            .Select(element => TextProperty(element, "selector"))
+            .Where(selector => !string.IsNullOrWhiteSpace(selector))
+            .Select(selector => selector!)
+            .Distinct(StringComparer.Ordinal)];
+        if (selectors.Length != 1)
+        {
+            throw new HarnessBlockedException("UIA inspect не определил единственную видимую поверхность Terminal TermControl.");
+        }
+
+        return selectors[0];
+    }
+
+    private static async Task<WinAppWindow> WaitForForegroundWindowAsync(
+        WinAppCli winapp, string marker, WinAppWindow ownedWindow)
+    {
+        WinAppWindow current = await winapp.SelectWindowAsync(marker, CancellationToken.None);
+        if (!SameOwnedWindow(ownedWindow, current))
+        {
+            throw new HarnessBlockedException("Перед физическим вводом изменились HWND/PID/marker принадлежащего окна.");
+        }
+
+        if (current.IsForeground == true)
+        {
+            return current;
+        }
+
+        Console.Error.WriteLine($"Активируйте окно Windows Terminal с маркером {marker}; ожидание до "
+            + $"{PhysicalForegroundWaitMs / 1000} секунд перед физическим F2/Escape.");
+        Stopwatch timeout = Stopwatch.StartNew();
+        while (timeout.ElapsedMilliseconds < PhysicalForegroundWaitMs)
+        {
+            await Task.Delay(500, CancellationToken.None);
+            current = await winapp.SelectWindowAsync(marker, CancellationToken.None);
+            if (!SameOwnedWindow(ownedWindow, current))
+            {
+                throw new HarnessBlockedException("Во время ожидания foreground изменились HWND/PID/marker окна.");
+            }
+
+            if (current.IsForeground == true)
+            {
+                return current;
+            }
+        }
+
+        throw new HarnessBlockedException("Пользователь не активировал принадлежащее окно Windows Terminal; физический ввод не отправлен.");
+    }
+
+    private static bool SameOwnedWindow(WinAppWindow expected, WinAppWindow actual)
+    {
+        return actual.Hwnd == expected.Hwnd && actual.ProcessId == expected.ProcessId
+            && actual.Title == expected.Title
+            && string.Equals(actual.ProcessName, expected.ProcessName, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? TextProperty(JsonElement element, string name)
@@ -1166,8 +1300,7 @@ internal static partial class PhysicalSession
         throw new HarnessBlockedException("Physical app process не сообщил PID до истечения срока запуска.");
     }
 
-    private static Process? StartWindowsTerminal(string wt, string marker, HarnessRequest request,
-        TerminalAppearance appearance, string launchRequest)
+    private static Process? StartWindowsTerminal(string wt, string marker, HarnessRequest request, string launchRequest)
     {
         ProcessStartInfo start = new(wt) { UseShellExecute = false, CreateNoWindow = true };
         start.ArgumentList.Add("--window");
@@ -1178,12 +1311,6 @@ internal static partial class PhysicalSession
         start.ArgumentList.Add("--title");
         start.ArgumentList.Add(marker);
         start.ArgumentList.Add("--suppressApplicationTitle");
-        if (!string.IsNullOrWhiteSpace(appearance.ProfileName))
-        {
-            start.ArgumentList.Add("--profile");
-            start.ArgumentList.Add(appearance.ProfileName);
-        }
-
         if (request.TerminalScheme != "current")
         {
             start.ArgumentList.Add("--colorScheme");
@@ -1509,268 +1636,92 @@ internal static partial class PhysicalSession
             return defaultProfile;
         }
 
-        object profile = new
+        Dictionary<string, object?> profile = new(StringComparer.Ordinal)
         {
-            name = $"Physical comparison: {appearance.SchemeName}",
-            fontFamily = appearance.FontFamily ?? "Consolas",
-            fontSize = appearance.FontSize ?? 16,
-            fontWeight = "normal",
-            fontWeightBold = "bold",
-            lineHeight = 1,
-            letterSpacing = 0,
-            cursorStyle = "bar",
-            theme = appearance.Theme,
+            ["name"] = $"Physical comparison: {appearance.SchemeName}",
+            ["lineHeight"] = 1,
+            ["letterSpacing"] = 0,
+            ["cursorStyle"] = "bar",
+            ["theme"] = appearance.Theme,
         };
+        if (appearance.FontFamily is not null)
+        {
+            profile["fontFamily"] = appearance.FontFamily;
+        }
+
+        if (appearance.FontSize is int fontSize)
+        {
+            profile["fontSize"] = fontSize;
+        }
+
         string path = Path.Combine(directory, "comparison-profile.json");
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(profile, HarnessJson.Options));
         return path;
     }
 
-    private static TerminalAppearance ReadTerminalAppearance(string requestedScheme)
+    private static TerminalAppearance ReadTerminalAppearance(string requestedScheme, WinAppWindow window, string? profileId)
     {
-        string? settingsPath = FindTerminalSettings();
+        string? settingsPath;
+        string? terminalPath;
+        try
+        {
+            using Process terminal = Process.GetProcessById(window.ProcessId);
+            terminalPath = terminal.MainModule?.FileName;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException
+            or System.ComponentModel.Win32Exception or NotSupportedException)
+        {
+            return TerminalAppearance.Unknown(requestedScheme,
+                "Не удалось разрешить executable точного Windows Terminal PID: " + exception.Message,
+                profileId: profileId);
+        }
+
+        if (string.IsNullOrWhiteSpace(terminalPath))
+        {
+            return TerminalAppearance.Unknown(requestedScheme,
+                "Точный Windows Terminal PID не сообщил путь исполняемого файла.", profileId: profileId);
+        }
+
+        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        settingsPath = TerminalAppearanceResolver.ResolveSettingsPath(terminalPath, local);
         if (settingsPath is null)
         {
-            return TerminalAppearance.Unknown(requestedScheme, "Не найден активный settings.json Windows Terminal; схема/шрифт не подтверждены.");
+            return TerminalAppearance.Unknown(requestedScheme,
+                "Не найден settings.json пакета, которому принадлежит исполняемый файл выбранного Windows Terminal.",
+                profileId: profileId);
         }
 
         try
         {
-            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(settingsPath), new JsonDocumentOptions
-            {
-                AllowTrailingCommas = true,
-                CommentHandling = JsonCommentHandling.Skip,
-                MaxDepth = 32,
-            });
-            JsonElement root = document.RootElement;
-            JsonElement defaults = root.TryGetProperty("profiles", out JsonElement profilesElement)
-                && profilesElement.ValueKind == JsonValueKind.Object
-                && profilesElement.TryGetProperty("defaults", out JsonElement defaultProfile)
-                ? defaultProfile : default;
-            JsonElement profiles = profilesElement.ValueKind == JsonValueKind.Object
-                && profilesElement.TryGetProperty("list", out JsonElement list) ? list : default;
-            string? defaultProfileId = TextProperty(root, "defaultProfile");
-            JsonElement selected = default;
-            if (profiles.ValueKind == JsonValueKind.Array && defaultProfileId is not null)
-            {
-                selected = profiles.EnumerateArray().FirstOrDefault(profile =>
-                    string.Equals(TextProperty(profile, "guid"), defaultProfileId, StringComparison.OrdinalIgnoreCase));
-            }
-
-            string? profileName = TextProperty(selected, "name");
-            string? profileScheme = TextProperty(selected, "colorScheme") ?? TextProperty(defaults, "colorScheme");
-            string schemeName = requestedScheme == "current" ? profileScheme ?? "UNKNOWN" : requestedScheme;
-            JsonElement scheme = default;
-            if (root.TryGetProperty("schemes", out JsonElement schemes) && schemes.ValueKind == JsonValueKind.Array)
-            {
-                scheme = schemes.EnumerateArray().FirstOrDefault(item =>
-                    string.Equals(TextProperty(item, "name"), schemeName, StringComparison.Ordinal));
-            }
-
-            Dictionary<string, string>? theme = ReadPalette(scheme);
-            string? paletteSource = theme is null ? null : "Windows Terminal settings.json scheme";
-            string? paletteSourcePath = theme is null ? null : settingsPath;
-            string? paletteSourceHash = theme is null ? null : HashFile(settingsPath);
-            if (theme is null && requestedScheme is "Campbell" or "Campbell Light")
-            {
-                (theme, paletteSourcePath, paletteSourceHash) = ReadRepositoryPalette(requestedScheme);
-                if (theme is not null)
-                {
-                    paletteSource = "TUI Harness built-in comparison profile; requested Windows Terminal built-in scheme";
-                }
-            }
-
-            string? fontFamily = ReadNestedText(selected, defaults, "font", "face") ?? "Consolas";
-            int? fontSize = ReadNestedInt(selected, defaults, "font", "size") ?? 16;
-            bool acrylic = ReadNestedBoolean(selected, defaults, "useAcrylic") ?? false;
-            double opacity = ReadNestedDouble(selected, defaults, "opacity") ?? 1;
-            bool backgroundImage = ReadNestedText(selected, defaults, "backgroundImage", null) is not null;
-            bool opaque = theme is not null && !acrylic && opacity >= 1 && !backgroundImage;
-            string? limitation = theme is null
-                ? $"Цветовая схема '{schemeName}' не найдена или не содержит полной 16-color palette."
-                : opaque ? null : "Фон/композиция может включать прозрачность, Acrylic/Mica или background image; фактический RGB будет измеряться после композиции.";
-            return new TerminalAppearance(
-                requestedScheme,
-                schemeName == "UNKNOWN" ? null : schemeName,
-                profileName,
-                fontFamily,
-                fontSize,
-                theme,
-                settingsPath,
-                HashFile(settingsPath),
-                paletteSource,
-                paletteSourcePath,
-                paletteSourceHash,
-                opaque,
-                theme is not null && fontFamily is not null && fontSize is not null,
-                limitation,
-                new
-                {
-                    status = theme is null ? "NOT_TESTED" : "PASS",
-                    settingsPath,
-                    settingsSha256 = HashFile(settingsPath),
-                    profileName,
-                    defaultProfileId,
-                    schemeName,
-                    fontFamily,
-                    fontSize,
-                    useAcrylic = acrylic,
-                    opacity,
-                    backgroundImage,
-                    opaqueBackgroundConfirmed = opaque,
-                    palette = theme,
-                    paletteSource,
-                    paletteSourcePath,
-                    paletteSourceSha256 = paletteSourceHash,
-                    limitation,
-                    settingsWereReadOnly = true,
-                });
+            string json = File.ReadAllText(settingsPath);
+            string? systemTheme = ReadSystemApplicationTheme();
+            return TerminalAppearanceResolver.Resolve(json, requestedScheme, profileId, systemTheme,
+                settingsPath, HashFile(settingsPath));
         }
         catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
         {
-            return TerminalAppearance.Unknown(requestedScheme, "settings.json невозможно прочитать: " + exception.Message, settingsPath);
+            return TerminalAppearance.Unknown(requestedScheme, "settings.json невозможно прочитать: " + exception.Message,
+                settingsPath, profileId);
         }
     }
 
-    private static (Dictionary<string, string>? Theme, string? Path, string? Hash) ReadRepositoryPalette(string schemeName)
+    private static string? ReadSystemApplicationTheme()
     {
-        string fileName = schemeName == "Campbell" ? "campbell.json" : "campbell-light.json";
-        string path = Path.Combine(AppContext.BaseDirectory, "profiles", fileName);
-        if (!File.Exists(path))
-        {
-            return (null, null, null);
-        }
-
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path), new JsonDocumentOptions { MaxDepth = 16 });
-            JsonElement root = document.RootElement;
-            Dictionary<string, string>? theme = root.TryGetProperty("theme", out JsonElement profileTheme)
-                ? ReadPalette(profileTheme) : null;
-            return (theme, path, HashFile(path));
-        }
-        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
-        {
-            return (null, path, null);
-        }
-    }
-
-    private static Dictionary<string, string>? ReadPalette(JsonElement scheme)
-    {
-        if (scheme.ValueKind != JsonValueKind.Object)
+        if (!OperatingSystem.IsWindows())
         {
             return null;
         }
 
-        string[] keys = ["foreground", "background", "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
-            "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue", "brightMagenta", "brightCyan", "brightWhite"];
-        Dictionary<string, string> result = new(StringComparer.Ordinal);
-        foreach (string key in keys)
+        try
         {
-            string source = key switch { "magenta" => "purple", "brightMagenta" => "brightPurple", _ => key };
-            string? value = TextProperty(scheme, source) ?? (source == key ? null : TextProperty(scheme, key));
-            if (!IsOpaqueRgb(value))
-            {
-                return null;
-            }
-
-            result.Add(key, value!);
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", writable: false);
+            return key?.GetValue("AppsUseLightTheme") is int isLight ? isLight == 0 ? "dark" : "light" : null;
         }
-
-        result["cursor"] = TextProperty(scheme, "cursorColor") ?? result["foreground"];
-        result["cursorAccent"] = result["background"];
-        result["selectionBackground"] = TextProperty(scheme, "selectionBackground") ?? "#ffffff";
-        return result;
-    }
-
-    private static bool IsOpaqueRgb(string? value)
-    {
-        return value is { Length: 7 } && value[0] == '#'
-            && uint.TryParse(value.AsSpan(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out _);
-    }
-
-    private static string? FindTerminalSettings()
-    {
-        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        string[] candidates =
-        [
-            Path.Combine(local, "Packages", "Microsoft.WindowsTerminal_8wekyb3d8bbwe", "LocalState", "settings.json"),
-            Path.Combine(local, "Packages", "Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe", "LocalState", "settings.json"),
-            Path.Combine(local, "Packages", "Microsoft.WindowsTerminalDev_8wekyb3d8bbwe", "LocalState", "settings.json"),
-            Path.Combine(local, "Microsoft", "Windows Terminal", "settings.json"),
-        ];
-        return candidates.FirstOrDefault(File.Exists);
-    }
-
-    private static string? ReadNestedText(JsonElement profile, JsonElement defaults, string parent, string? child)
-    {
-        string? Read(JsonElement element)
+        catch (Exception exception) when (exception is UnauthorizedAccessException or System.Security.SecurityException)
         {
-            if (element.ValueKind != JsonValueKind.Object)
-            {
-                return null;
-            }
-
-            JsonElement source = element;
-            if (child is not null)
-            {
-                if (!element.TryGetProperty(parent, out source))
-                {
-                    return null;
-                }
-
-                return TextProperty(source, child);
-            }
-
-            return TextProperty(source, parent);
+            return null;
         }
-
-        return Read(profile) ?? Read(defaults);
-    }
-
-    private static int? ReadNestedInt(JsonElement profile, JsonElement defaults, string parent, string child)
-    {
-        return ReadNested<int>(profile, defaults, parent, child, element => element.TryGetInt32(out int value) ? value : null);
-    }
-
-    private static double? ReadNestedDouble(JsonElement profile, JsonElement defaults, string property)
-    {
-        return ReadNested<double>(profile, defaults, property, null, element => element.TryGetDouble(out double value) ? value : null);
-    }
-
-    private static bool? ReadNestedBoolean(JsonElement profile, JsonElement defaults, string property)
-    {
-        return ReadNested<bool>(profile, defaults, property, null, element => element.ValueKind is JsonValueKind.True or JsonValueKind.False
-            ? element.GetBoolean() : null);
-    }
-
-    private static T? ReadNested<T>(JsonElement profile, JsonElement defaults, string parent, string? child,
-        Func<JsonElement, T?> parse) where T : struct
-    {
-        JsonElement Read(JsonElement element)
-        {
-            if (element.ValueKind != JsonValueKind.Object)
-            {
-                return default;
-            }
-
-            if (child is not null)
-            {
-                return element.TryGetProperty(parent, out JsonElement nested) && nested.TryGetProperty(child, out JsonElement value)
-                    ? value : default;
-            }
-
-            return element.TryGetProperty(parent, out JsonElement direct) ? direct : default;
-        }
-
-        JsonElement profileValue = Read(profile);
-        if (profileValue.ValueKind != JsonValueKind.Undefined)
-        {
-            return parse(profileValue);
-        }
-
-        JsonElement defaultValue = Read(defaults);
-        return defaultValue.ValueKind == JsonValueKind.Undefined ? null : parse(defaultValue);
     }
 
     private static string? FindExecutable(string name)
@@ -1801,10 +1752,10 @@ internal static partial class PhysicalSession
 
     private static PhysicalRgb FromRgb(int value) => new((byte)(value >> 16), (byte)(value >> 8), (byte)value);
 
-    private static PhysicalRgb ThemeColor(JsonElement theme, string name)
+    private static PhysicalRgb? ThemeColor(IReadOnlyDictionary<string, string>? theme, string name)
     {
-        string value = theme.GetProperty(name).GetString()!;
-        return ParseRgb(value[1..]);
+        return theme is not null && theme.TryGetValue(name, out string? value)
+            ? ParseRgb(value[1..]) : null;
     }
 
     private static PhysicalRgb ParseRgb(string value)
@@ -1876,26 +1827,15 @@ internal static partial class PhysicalSession
         string AppStartPath, string ExpectedExeSha256, string? ExpectedAppDllSha256);
 
     private sealed record PhysicalAppStartRecord(int ProcessId, int HelperPid, string Exe, string ExeSha256,
-        string? AppDllSha256, string[] Arguments, string? TerminalSessionId, DateTimeOffset StartedUtc,
-        int? Columns, int? Rows);
+        string? AppDllSha256, string[] Arguments, string? TerminalSessionId, string? TerminalProfileId,
+        DateTimeOffset StartedUtc, int? Columns, int? Rows);
 
     private sealed record ContentRectangle(int X, int Y, int Width, int Height);
     private sealed record UiRectangle(int X, int Y, int Width, int Height, string Name);
     private sealed record Win32Window(long Hwnd, int ProcessId);
     private sealed record PhysicalPngAnalysis(string Status, string Reason,
-        IReadOnlyList<PhysicalPixelMeasurement> Measurements, object Evidence);
-
-    private sealed record TerminalAppearance(string RequestedScheme, string? SchemeName, string? ProfileName,
-        string? FontFamily, int? FontSize, Dictionary<string, string>? Theme, string? SettingsPath,
-        string? SettingsHash, string? PaletteSource, string? PaletteSourcePath, string? PaletteSourceHash,
-        bool OpaqueBackgroundConfirmed, bool ComparisonReady, string? Limitation, object Evidence)
-    {
-        internal static TerminalAppearance Unknown(string requestedScheme, string reason, string? settingsPath = null)
-        {
-            return new(requestedScheme, null, null, null, null, null, settingsPath, null, null, null, null, false, false, reason,
-                new { status = "NOT_TESTED", requestedScheme, settingsPath, reason, settingsWereReadOnly = true });
-        }
-    }
+        IReadOnlyList<PhysicalPixelMeasurement> Measurements, object Evidence,
+        string ComparisonStatus = "NOT_TESTED");
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly struct NativeRect

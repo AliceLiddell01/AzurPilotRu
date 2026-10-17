@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -452,6 +453,43 @@ internal static class ColorSamples
             "palette" => (8 + ((value - 232) * 10)) * 0x010101,
             _ => Convert.ToInt32(theme.GetProperty(defaultName).GetString()![1..], 16),
         };
+    }
+
+    internal static int? TryResolve(JsonElement color, IReadOnlyDictionary<string, string>? theme, string defaultName)
+    {
+        string? mode = color.ValueKind == JsonValueKind.Object && color.TryGetProperty("mode", out JsonElement modeValue)
+            ? modeValue.GetString() : null;
+        int value = color.ValueKind == JsonValueKind.Object && color.TryGetProperty("value", out JsonElement number)
+            && number.TryGetInt32(out int parsed) ? parsed : -1;
+        if (value is < 0 or > 0xFFFFFF)
+        {
+            return null;
+        }
+
+        if (mode == "rgb")
+        {
+            return value;
+        }
+
+        if (mode == "palette" && value < 16)
+        {
+            string[] names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+                "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue", "brightMagenta", "brightCyan", "brightWhite"];
+            return theme is not null && theme.TryGetValue(names[value], out string? colorValue)
+                && int.TryParse(colorValue.AsSpan(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int ansi)
+                    ? ansi : null;
+        }
+
+        if (mode == "palette")
+        {
+            return value < 232
+                ? (Cube((value - 16) / 36) << 16) | (Cube((value - 16) / 6 % 6) << 8) | Cube((value - 16) % 6)
+                : (8 + ((value - 232) * 10)) * 0x010101;
+        }
+
+        return theme is not null && theme.TryGetValue(defaultName, out string? defaultColor)
+            && int.TryParse(defaultColor.AsSpan(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int resolved)
+                ? resolved : null;
     }
 
     private static int Cube(int value)

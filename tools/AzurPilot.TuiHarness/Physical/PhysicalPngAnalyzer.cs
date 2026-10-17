@@ -15,15 +15,17 @@ internal sealed record PhysicalPixelSample(
     string Name,
     PhysicalPixelRectangle Bounds,
     string Kind,
-    PhysicalRgb Expected,
+    PhysicalRgb? Expected,
     PhysicalRgb? ExpectedBackground = null);
 
 internal sealed record PhysicalPixelMeasurement(
     string Name,
     string Kind,
     PhysicalPixelRectangle Bounds,
-    PhysicalRgb Expected,
+    PhysicalRgb? Expected,
     string Status,
+    string MeasurementStatus,
+    string ComparisonStatus,
     string Reason,
     PhysicalRgb? ActualRgb,
     int TotalPixels,
@@ -263,7 +265,7 @@ internal static class PhysicalPngAnalyzer
             if (string.IsNullOrWhiteSpace(sample.Name) || sample.Name.Length > 128
                 || sample.Kind is not ("background" or "foreground")
                 || (sample.Kind == "foreground" && (sample.ExpectedBackground is null
-                    || sample.ExpectedBackground == sample.Expected))
+                    || sample.Expected is not null && sample.ExpectedBackground == sample.Expected))
                 || bounds.X < 0 || bounds.Y < 0 || bounds.Width <= 0 || bounds.Height <= 0
                 || ((long)bounds.X + bounds.Width) > image.Width
                 || ((long)bounds.Y + bounds.Height) > image.Height)
@@ -308,7 +310,7 @@ internal static class PhysicalPngAnalyzer
                 }
 
                 eligible++;
-                if (rgb == sample.Expected)
+                if (sample.Expected is PhysicalRgb expected && rgb == expected)
                 {
                     matching++;
                 }
@@ -346,30 +348,39 @@ internal static class PhysicalPngAnalyzer
         }
 
         int total = bounds.Width * bounds.Height;
-        string status;
+        string measurementStatus;
+        string comparisonStatus;
         string reason;
         if (opaque != total)
         {
-            status = "NOT_TESTED";
+            measurementStatus = "NOT_TESTED";
+            comparisonStatus = "NOT_TESTED";
             reason = "Область содержит прозрачные пиксели; конечный RGB после композиции неизвестен.";
         }
         else if (eligible == 0 || tied || tooManyColors)
         {
-            status = "NOT_TESTED";
+            measurementStatus = "NOT_TESTED";
+            comparisonStatus = "NOT_TESTED";
             reason = "Нет однозначного внутреннего foreground RGB или преобладающего background RGB.";
         }
         else
         {
-            status = actual == sample.Expected ? "PASS" : "FAIL";
-            reason = status == "PASS"
-                ? "Измеренный RGB совпадает с ожидаемым цветом семантической области."
-                : "Измеренный RGB семантической области отличается от ожидаемого.";
+            measurementStatus = "PASS";
+            comparisonStatus = sample.Expected is null ? "NOT_TESTED"
+                : actual == sample.Expected ? "PASS" : "FAIL";
+            reason = sample.Expected is null
+                ? "Фактический RGB измерен; ожидаемый цвет не определён достоверно."
+                : comparisonStatus == "PASS"
+                    ? "Измеренный RGB совпадает с ожидаемым цветом семантической области."
+                    : "Измеренный RGB семантической области отличается от ожидаемого.";
         }
 
-        return new(sample.Name, sample.Kind, bounds, sample.Expected, status, reason,
+        return new(sample.Name, sample.Kind, bounds, sample.Expected, comparisonStatus, measurementStatus,
+            comparisonStatus, reason,
             tied || tooManyColors ? null : actual, total, opaque, eligible, matching,
             eligible == 0 ? 0 : (double)matching / eligible,
-            tied || tooManyColors ? null : actual?.Delta(sample.Expected));
+            tied || tooManyColors || sample.Expected is not PhysicalRgb expectedColor
+                ? null : actual?.Delta(expectedColor));
     }
 
     private static bool IsInterior(PhysicalPngImage image, PhysicalPixelRectangle bounds,

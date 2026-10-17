@@ -7,7 +7,8 @@ using System.Text.Json;
 
 namespace AzurPilot.TuiHarness.Physical;
 
-internal sealed record WinAppWindow(long Hwnd, int ProcessId, string ProcessName, string Title, int Width, int Height);
+internal sealed record WinAppWindow(long Hwnd, int ProcessId, string ProcessName, string Title, int Width, int Height,
+    bool? IsForeground = null);
 
 internal sealed record WinAppCapture(string Path, int Width, int Height, string CaptureMethod,
     string Limitation, JsonElement RawMetadata, bool TargetRevalidated, WinAppWindow Target,
@@ -63,6 +64,7 @@ internal sealed class WinAppCli
         ];
         if (interactive)
         {
+            commands.Add((["ui", "focus", "--help"], ["<selector>", "--window", "--json"]));
             commands.Add((["ui", "send-keys", "--help"], ["--via", "send-input", "--json"]));
         }
 
@@ -135,6 +137,33 @@ internal sealed class WinAppCli
         return metadata.Clone();
     }
 
+    internal async Task<JsonElement> FocusAsync(WinAppWindow window, string selector,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        ArgumentException.ThrowIfNullOrWhiteSpace(selector);
+        if (window.Hwnd <= 0 || window.ProcessId <= 0 || selector.Length > 512
+            || selector.Any(char.IsControl)
+            || !string.Equals(window.ProcessName, "WindowsTerminal", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new HarnessBlockedException("Фокус требует доказанного окна Windows Terminal и ограниченного UIA selector.");
+        }
+
+        WinAppProcessResult result = await ExecuteAsync(
+            ["ui", "focus", selector, "-w", window.Hwnd.ToString(CultureInfo.InvariantCulture), "--json"],
+            cancellationToken);
+        using JsonDocument document = ParseJson(result.StandardOutput);
+        JsonElement metadata = document.RootElement;
+        if (metadata.ValueKind != JsonValueKind.Object
+            || metadata.TryGetProperty("hwnd", out _) && Number(metadata, "hwnd") != window.Hwnd
+            || metadata.TryGetProperty("selector", out _) && Text(metadata, "selector") != selector)
+        {
+            throw new HarnessBlockedException("WinApp focus не подтвердил точный HWND и UIA selector.");
+        }
+
+        return metadata.Clone();
+    }
+
     internal async Task<WinAppWindow> SelectWindowAsync(string marker, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(marker);
@@ -172,7 +201,11 @@ internal sealed class WinAppCli
                 throw new HarnessBlockedException("Окно с маркером не доказало WindowsTerminal, HWND, PID или геометрию.");
             }
 
-            matches.Add(new WinAppWindow(hwnd, (int)processId, processName!, marker, (int)width, (int)height));
+            bool? isForeground = item.TryGetProperty("isForeground", out JsonElement foreground)
+                && foreground.ValueKind is JsonValueKind.True or JsonValueKind.False
+                    ? foreground.GetBoolean() : null;
+            matches.Add(new WinAppWindow(hwnd, (int)processId, processName!, marker, (int)width, (int)height,
+                isForeground));
         }
 
         if (matches.Count != 1)

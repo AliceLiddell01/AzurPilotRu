@@ -215,6 +215,24 @@ public sealed class PhysicalPngAnalyzerTests
         Assert.Equal(0, result.MatchingPixels);
         Assert.Equal(0, result.Frequency);
         Assert.Equal(27, result.MaxChannelDelta);
+        Assert.Equal("PASS", result.MeasurementStatus);
+        Assert.Equal("FAIL", result.ComparisonStatus);
+    }
+
+    [Fact]
+    public void Analyze_ReportsActualRgbWithoutClaimingAComparisonWhenExpectedPaletteIsUnknown()
+    {
+        PhysicalPngImage image = RgbaFixture(5, 5, (_, _) => (30, 27, 24, 255));
+        PhysicalPixelSample sample = new("current-profile background", new(0, 0, 5, 5), "background", Expected: null);
+
+        PhysicalPixelMeasurement result = Assert.Single(PhysicalPngAnalyzer.Analyze(image, [sample]));
+
+        Assert.Equal("PASS", result.MeasurementStatus);
+        Assert.Equal("NOT_TESTED", result.ComparisonStatus);
+        Assert.Equal("NOT_TESTED", result.Status);
+        Assert.Equal(new PhysicalRgb(30, 27, 24), result.ActualRgb);
+        Assert.Null(result.Expected);
+        Assert.Null(result.MaxChannelDelta);
     }
 
     [Fact]
