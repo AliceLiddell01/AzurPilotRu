@@ -19,7 +19,9 @@ internal static class PhysicalLifetimeProbe
         using Process app = ConPty.StartInJob(shell,
             ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 60"],
             Path.GetTempPath(), job);
-        await File.WriteAllTextAsync(recordPath, JsonSerializer.Serialize(new { appPid = app.Id, helperPid = Environment.ProcessId }));
+        string temporary = recordPath + ".tmp";
+        await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(new { appPid = app.Id, helperPid = Environment.ProcessId }));
+        File.Move(temporary, recordPath);
         await PhysicalSession.WaitForOwnedAppAsync(app, owner, job, CancellationToken.None);
         return app.HasExited ? 0 : 1;
     }

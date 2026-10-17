@@ -57,7 +57,7 @@ public sealed class PhysicalProcessLifetimeTests
             ownerJob.Dispose();
             unrelatedJob.Dispose();
             await helper.WaitForExitAsync(TestContext.Current.CancellationToken);
-            Directory.Delete(root, recursive: true);
+            await DeleteTemporaryDirectoryAsync(root);
         }
     }
 
@@ -174,5 +174,23 @@ public sealed class PhysicalProcessLifetimeTests
         return ConPty.StartInJob(shell,
             ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
             Path.GetTempPath(), job);
+    }
+
+    private static async Task DeleteTemporaryDirectoryAsync(string path)
+    {
+        Stopwatch deadline = Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                Directory.Delete(path, recursive: true);
+                return;
+            }
+            catch (IOException) when (deadline.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                // После завершения процессов Windows может ещё удерживать файловый дескриптор.
+                await Task.Delay(50, TestContext.Current.CancellationToken);
+            }
+        }
     }
 }
