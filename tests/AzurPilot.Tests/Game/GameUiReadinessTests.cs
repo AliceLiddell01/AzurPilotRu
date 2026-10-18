@@ -183,6 +183,20 @@ public sealed class GameUiReadinessTests
         Assert.Equal(0, host.Taps);
     }
 
+    [Fact]
+    public async Task LoginToastAfterTapIsExpectedTransitionAndNeverProvesReady()
+    {
+        using ReadyHost host = new("login") { AdvanceOnTap = true, Fault = "login-toast" };
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal(GameUiReadinessState.Ready, result.State);
+        Assert.Equal(2, host.Taps);
+        Assert.Equal(GameMatchStatus.Unique, result.Actions[0].After!.Find("login.success")!.Status);
+        Assert.True(result.Actions[0].ChangeProven);
+        Assert.Contains(result.Evidence, e => e.StateId == "login-transition" && e.State == GameUiReadinessState.Transition);
+        Assert.True(result.StableFrames >= 3);
+        Assert.Equal(GameMatchStatus.Absent, result.LastObservation!.Find("login.success")!.Status);
+    }
+
     [Theory]
     [InlineData("no-change")]
     [InlineData("tap-failure")]
@@ -341,6 +355,11 @@ public sealed class GameUiReadinessTests
             if (Captures <= InitialUnknownFrames || (Fault == "unknown-after-known" && Captures > 1))
             {
                 state = "unknown";
+            }
+
+            if (Fault == "login-toast" && Taps == 1 && Captures <= 5)
+            {
+                state = "login-transition";
             }
 
             string[] present = state switch

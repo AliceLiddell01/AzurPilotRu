@@ -553,15 +553,15 @@
       "postconditionTimeout": "00:00:30",
       "excludedAssetIds": [
         "update.header",
-        "dock.selection-confirm",
-        "login.success"
+        "dock.selection-confirm"
       ],
       "requiredAssetIds": [
         "login.logo"
       ],
       "alternativePostconditionAssetIds": [
         "loading.download",
-        "main.dock"
+        "main.dock",
+        "login.success"
       ]
     },
     {
