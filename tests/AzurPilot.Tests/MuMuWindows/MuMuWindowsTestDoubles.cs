@@ -79,6 +79,8 @@ internal sealed class FakeWindowsProcessRunner : IWindowsProcessRunner
     /// <summary>Явно заданное неожиданное исключение внешней границы.</summary>
     internal Exception? RunException { get; set; }
 
+    internal Action<WindowsProcessRequest>? OnRun { get; set; }
+
     private readonly Queue<ApplicationResult<WindowsProcessOutcome>> _scripted = new();
     private readonly List<RecordedProcessRequest> _requests = [];
 
@@ -149,6 +151,7 @@ internal sealed class FakeWindowsProcessRunner : IWindowsProcessRunner
         CancellationToken cancellationToken)
     {
         _requests.Add(new RecordedProcessRequest(request, cancellationToken));
+        OnRun?.Invoke(request);
 
         if (RunException is not null)
         {

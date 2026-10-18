@@ -17,9 +17,10 @@ public sealed class AndroidTransportPreparationTests
             AndroidTestContext.Device());
         context.Host.BootHandler = _ => ApplicationResult<AndroidBootObservation>.Success(
             AndroidTestContext.Boot(shellAvailable: true, bootCompleted: 1));
+        AndroidMutationProgress progress = new();
 
         ApplicationResult<AndroidTransportPreparationOutcome> result =
-            await context.Readiness.PrepareTransportAsync(AndroidTestContext.Endpoint, CancellationToken.None);
+            await context.Readiness.PrepareTransportAsync(AndroidTestContext.Endpoint, CancellationToken.None, mutationProgress: progress);
 
         Assert.True(result.IsSuccess);
         AndroidTransportPreparationOutcome outcome = result.Value!;
@@ -29,6 +30,10 @@ public sealed class AndroidTransportPreparationTests
         Assert.Empty(context.Host.ConnectRequests);
         Assert.Equal([AndroidTestContext.Endpoint], context.Host.TransportRequests);
         Assert.Equal([AndroidTestContext.Endpoint], context.Host.BootRequests);
+        Assert.False(progress.MutationAttempted);
+        Assert.False(progress.ChangeProven);
+        Assert.Equal(AndroidTransportState.Device, progress.InitialTransport);
+        Assert.Equal(1, progress.LastReadiness!.Boot!.BootCompleted);
     }
 
     [Fact(DisplayName = "Absent выполняет ровно один connect exact endpoint и подтверждает postconditions")]
@@ -44,9 +49,10 @@ public sealed class AndroidTransportPreparationTests
             AndroidTestContext.Command(exitCode: 1);
         context.Host.BootHandler = _ => ApplicationResult<AndroidBootObservation>.Success(
             AndroidTestContext.Boot(shellAvailable: true, bootCompleted: 1));
+        AndroidMutationProgress progress = new();
 
         ApplicationResult<AndroidTransportPreparationOutcome> result =
-            await context.Readiness.PrepareTransportAsync(AndroidTestContext.Endpoint, CancellationToken.None);
+            await context.Readiness.PrepareTransportAsync(AndroidTestContext.Endpoint, CancellationToken.None, mutationProgress: progress);
 
         Assert.True(result.IsSuccess);
         AndroidTransportPreparationOutcome outcome = result.Value!;
@@ -57,6 +63,12 @@ public sealed class AndroidTransportPreparationTests
         Assert.Equal(2, context.Host.TransportRequests.Count);
         Assert.Equal([AndroidTestContext.Endpoint], context.Host.BootRequests);
         Assert.Contains("connect_attempted=true", outcome.Evidence, StringComparison.Ordinal);
+        Assert.True(progress.MutationAttempted);
+        Assert.True(progress.ChangeProven);
+        Assert.Equal(AndroidTransportState.Absent, progress.InitialTransport);
+        Assert.Equal(AndroidTransportState.Device, progress.LastReadiness!.Transport.State);
+        Assert.True(progress.LastReadiness.Boot!.ShellAvailable);
+        Assert.Equal(1, progress.LastReadiness.Boot.BootCompleted);
     }
 
     [Fact(DisplayName = "Текст или exit code connect не заменяет readiness postconditions")]
@@ -132,13 +144,18 @@ public sealed class AndroidTransportPreparationTests
                 AndroidTestContext.Transport(AndroidTransportState.Absent));
         };
 
+        AndroidMutationProgress progress = new();
         ApplicationResult<AndroidTransportPreparationOutcome> result =
-            await context.Readiness.PrepareTransportAsync(AndroidTestContext.Endpoint, source.Token);
+            await context.Readiness.PrepareTransportAsync(AndroidTestContext.Endpoint, source.Token, mutationProgress: progress);
 
         Assert.True(result.IsFailure);
         Assert.Equal(ApplicationFailure.OperationCancelled, result.FailureInfo!.Code);
         Assert.Equal("absent", result.FailureInfo.Details!["initial_transport"]);
         Assert.Empty(context.Host.ConnectRequests);
+        Assert.Equal(AndroidTransportState.Absent, progress.InitialTransport);
+        Assert.Null(progress.LastReadiness!.Boot);
+        Assert.False(progress.MutationAttempted);
+        Assert.False(progress.ChangeProven);
     }
 
     [Fact(DisplayName = "Отмена подготовки логируется с именем prepare_transport")]

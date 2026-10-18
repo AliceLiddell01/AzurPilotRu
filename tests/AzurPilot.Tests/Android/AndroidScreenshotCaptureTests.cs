@@ -151,6 +151,25 @@ public sealed class AndroidScreenshotCaptureTests
         Assert.Equal(2, fixture.Runner.Requests.Count);
     }
 
+    [Theory]
+    [InlineData("exact", false, "absent")]
+    [InlineData("other", false, "unknown")]
+    [InlineData("exact", true, "unknown")]
+    [InlineData("generic", false, "unknown")]
+    public async Task CaptureFailureReportsOnlyProvenExactTransportWithoutPublishingStderr(string scenario, bool truncated, string expected)
+    {
+        CaptureFixture fixture = new();
+        fixture.Discover();
+        string error = scenario == "generic" ? "private error payload"
+            : $"error: device '{(scenario == "exact" ? Endpoint.ToString() : "other-host:16419")}' not found";
+        fixture.Runner.EnqueueBinaryOutcome([], exitCode: 1, standardError: error, standardErrorTruncated: truncated);
+        var result = await fixture.Capture();
+        AssertCaptureFailure(result, "command_failed");
+        Assert.Equal(expected, result.FailureInfo!.Details!["transport_state"]);
+        AssertSanitized(result, fixture.Installation.InstallRoot, error);
+        Assert.Equal(2, fixture.Runner.Requests.Count);
+    }
+
     [Fact(DisplayName = "Усечённый PNG не декодируется даже если сохранённый prefix является PNG")]
     public async Task TruncatedBinaryOutputIsRejected()
     {

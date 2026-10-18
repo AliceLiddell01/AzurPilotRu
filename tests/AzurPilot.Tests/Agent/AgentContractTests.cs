@@ -13,6 +13,29 @@ namespace AzurPilot.Tests.Agent;
 [Trait("Category", "Agent")]
 public sealed class AgentContractTests
 {
+    [Theory]
+    [InlineData("android-prepare", true)]
+    [InlineData("game-dock-roundtrip", true)]
+    [InlineData("android-observe", false)]
+    [InlineData("game-observe", false)]
+    [InlineData("game-ui-observe", false)]
+    [InlineData("game-input-observe", false)]
+    [InlineData("screenshot-scan", false)]
+    [InlineData("diagnostics", false)]
+    [InlineData("status", false)]
+    public async Task DiscoveryMarksTransportMutationAndPreservesReadOnlyCommands(string name, bool mutation)
+    {
+        AgentEnvelope result = await AgentRunner.RunAsync(["agent", "discover"], cancellationToken: TestContext.Current.CancellationToken);
+        using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref result));
+        JsonElement command = json.RootElement.GetProperty("data").GetProperty("commands").EnumerateArray()
+            .Single(c => c.GetProperty("name").GetString() == name);
+        Assert.Equal(mutation, command.GetProperty("mutation").GetBoolean());
+        if (name == "android-prepare")
+        {
+            Assert.True(command.GetProperty("requiresResolvedTarget").GetBoolean());
+        }
+    }
+
     [Fact]
     public void MutationLeaseRejectsNonCanonicalIdentityBeforeFilesystemAccess()
     {

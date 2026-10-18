@@ -19,6 +19,7 @@ AzurPilot.App.exe agent diagnostics
 AzurPilot.App.exe agent instances
 AzurPilot.App.exe agent resolve --target auto
 AzurPilot.App.exe agent android-observe --target mumu:1
+AzurPilot.App.exe agent android-prepare --target mumu:1
 AzurPilot.App.exe agent environment-prepare --target mumu:1 --timeout-ms 180000
 AzurPilot.App.exe agent game-start --target mumu:1
 AzurPilot.App.exe agent screenshot-scan --target mumu:1
@@ -35,6 +36,13 @@ Identity в примере условная: сначала выберите с�
 Подготовка окружения сама обеспечивает MuMu и Android readiness; запуск игры включает эту подготовку.
 Вызывающему агенту не требуется заранее выполнять цепочку низкоуровневых диагностических команд.
 Остальные lifecycle и read-only операции перечисляются discovery.
+
+`android-prepare` подготавливает только transport выбранного target через существующий readiness owner.
+Она не запускает MuMu или игру, не меняет настройки и не выполняет игровой ввод. Один target-local
+connect допускается только при исходном `Absent`; `Device` проверяется без connect, `Offline`/`Unknown`
+дают отказ. Readiness требует независимых наблюдений `Device`, shell и boot `1` в пределах общего
+deadline. Физически недоступный endpoint может остаться неготовым после единственной попытки.
+Процедура живого игрового preflight принадлежит [game-ui acceptance](../testing/game-ui.md#безопасная-живая-проверка).
 
 `--target` применим только к операциям над экземпляром. При его отсутствии используется `mumu.instance`
 эффективного snapshot. `auto` означает единственного кандидата; при неоднозначности изменения запрещены.
@@ -115,6 +123,15 @@ AzurPilot одного Windows-пользователя, включая разн
 с готовым окружением сохраняет `none`, исключение после попытки — `mayHaveChanged`, а доказанное
 частичное изменение подготовки или остановки при restart — `changed`.
 
+У `android-prepare` `data.preparation` содержит доказанный успешный итог либо `null`, а `data.mutation`
+сохраняет `initialTransport`, `mutationAttempted`, `changeProven` и `lastReadiness` даже при ожидаемом
+отказе. `lastReadiness` — последние наблюдённые transport/shell/boot, а не обещание их неизменности;
+ненаблюдавшийся boot остаётся `null`. При исключении эти же факты доступны в
+`data.mutation.androidPreparation`. `failure` сообщает итог отдельно от эффекта: новый transport
+может быть доказан до отказа boot. В `game-dock-roundtrip` успешная preparation хранится рядом с
+`open`/`close`; ранний отказ несёт `androidMutation` и `gameUiMutation`. `effect=changed` из-за ADB
+не означает доказанного перехода игры — проверяй оба `changeProven` игровых результатов.
+
 После частичного отказа `data` сохраняет preparation stage, начальное состояние, результат запуска
 MuMu и доступное postflight-наблюдение. Ошибка shutdown сохраняет уже завершённый результат в
 `data.completed`. Успешный lifecycle несёт наблюдённый `finalState`; код возврата внешнего tool не
@@ -137,6 +154,11 @@ Inventory ограничен количеством наблюдений; пре
 реальные frame dimensions/format, время capture, named ROI, half-open physical pixel bounds и RGB
 statistics. Логическое reference space не является физическим размером кадра. Статистика не означает
 OCR, распознавание игрового экрана или UI readiness.
+
+При ненулевом exit code захвата `failure.details.transport_state` классифицирует доказанный
+`absent` exact endpoint по существующему fail-closed parser либо сообщает `unknown`. Это evidence
+данной команды, а не ретроспективная диагностика старых сбоев. Сырой stderr не публикуется;
+дополнительных ADB-команд и скрытого connect диагностика не выполняет.
 
 PNG-export и файловые артефакты этим интерфейсом не реализованы; discovery возвращает пустой набор
 artifact capabilities. Encoded PNG и native RGB frame не передаются в JSON/base64/stdout. Удалять

@@ -293,6 +293,12 @@ public sealed class AndroidReadinessService
         }
 
         AndroidTransportObservation initialTransport = initialResult.Value!;
+        if (mutationProgress is not null)
+        {
+            mutationProgress.InitialTransport = initialTransport.State;
+            mutationProgress.LastReadiness = new(endpoint, initialTransport, null, initialTransport.Evidence);
+        }
+
         if (cancellationToken.IsCancellationRequested)
         {
             ApplicationFailure cancelled = Cancelled(
@@ -347,7 +353,8 @@ public sealed class AndroidReadinessService
                 readinessDeadline,
                 cancellationToken,
                 initialTransport.State,
-                AndroidNames.PrepareTransportOperation).ConfigureAwait(false);
+                AndroidNames.PrepareTransportOperation,
+                mutationProgress).ConfigureAwait(false);
             if (transport.IsFailure)
             {
                 return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
@@ -378,7 +385,8 @@ public sealed class AndroidReadinessService
             readinessDeadline,
             cancellationToken,
             initialTransport.State,
-            AndroidNames.PrepareTransportOperation).ConfigureAwait(false);
+            AndroidNames.PrepareTransportOperation,
+            mutationProgress).ConfigureAwait(false);
         if (boot.IsFailure)
         {
             return ApplicationResult<AndroidTransportPreparationOutcome>.Failure(
@@ -516,6 +524,7 @@ public sealed class AndroidReadinessService
     /// <param name="cancellationToken">Запрос отмены операции.</param>
     /// <param name="initialTransport">Исходное состояние явной подготовки либо <see langword="null"/>.</param>
     /// <param name="operationName">Имя операции для структурированного лога отмены.</param>
+    /// <param name="mutationProgress">Сохраняет последние независимо наблюдённые факты подготовки.</param>
     /// <returns>Наблюдение готового transport либо терминальный отказ.</returns>
     private async Task<ApplicationResult<AndroidTransportObservation>> WaitForTransportAsync(
         AndroidEndpoint endpoint,
@@ -523,7 +532,8 @@ public sealed class AndroidReadinessService
         TimeSpan deadline,
         CancellationToken cancellationToken,
         AndroidTransportState? initialTransport = null,
-        string operationName = AndroidNames.ReadyOperation)
+        string operationName = AndroidNames.ReadyOperation,
+        AndroidMutationProgress? mutationProgress = null)
     {
         AndroidTransportObservation? last = null;
 
@@ -560,6 +570,11 @@ public sealed class AndroidReadinessService
             }
 
             last = observation.Value!;
+            if (mutationProgress is not null)
+            {
+                mutationProgress.LastReadiness = new(endpoint, last, null, last.Evidence);
+            }
+
             if (last.State == AndroidTransportState.Device)
             {
                 return observation;
@@ -599,6 +614,7 @@ public sealed class AndroidReadinessService
     /// <param name="cancellationToken">Запрос отмены операции.</param>
     /// <param name="initialTransport">Исходное состояние явной подготовки либо <see langword="null"/>.</param>
     /// <param name="operationName">Имя операции для структурированного лога отмены.</param>
+    /// <param name="mutationProgress">Сохраняет последние независимо наблюдённые факты подготовки.</param>
     /// <returns>Наблюдение готового Android либо терминальный отказ.</returns>
     private async Task<ApplicationResult<AndroidBootObservation>> WaitForReadyAsync(
         AndroidEndpoint endpoint,
@@ -606,7 +622,8 @@ public sealed class AndroidReadinessService
         TimeSpan deadline,
         CancellationToken cancellationToken,
         AndroidTransportState? initialTransport = null,
-        string operationName = AndroidNames.ReadyOperation)
+        string operationName = AndroidNames.ReadyOperation,
+        AndroidMutationProgress? mutationProgress = null)
     {
         AndroidBootObservation? last = null;
 
@@ -638,6 +655,11 @@ public sealed class AndroidReadinessService
             }
 
             last = observation.Value!;
+            if (mutationProgress?.LastReadiness is { } facts)
+            {
+                mutationProgress.LastReadiness = facts with { Boot = last, Evidence = last.Evidence };
+            }
+
             if (IsReady(last))
             {
                 return observation;

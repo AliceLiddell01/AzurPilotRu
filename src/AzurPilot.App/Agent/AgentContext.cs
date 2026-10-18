@@ -111,6 +111,16 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
         return new(Preparation, Preparation!.Failure, Effect);
     }
 
+    internal async Task<AgentPayload> PrepareTransportAsync(CancellationToken token)
+    {
+        Stage = "android-prepare";
+        ApplicationResult<AndroidTransportPreparationOutcome> result = await Service.PrepareAndroidAsync(
+            Target!.Value, token, new SynchronousProgress<AndroidReadinessStage>(s => Stage = s.ToString()),
+            _androidMutation).ConfigureAwait(false);
+        return new(new { preparation = result.IsSuccess ? result.Value : null, mutation = _androidMutation },
+            result.IsFailure ? result.FailureInfo : null, Effect);
+    }
+
     internal async Task<AgentPayload> GameAsync(string action, CancellationToken token)
     {
         Stage = "game-lifecycle";
@@ -151,10 +161,11 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
     internal async Task<AgentPayload> GameDockAsync(CancellationToken token)
     {
         Stage = "game-dock-roundtrip";
-        ApplicationResult<GameDockRoundtrip> result = await Service.RunGameDockRoundtripAsync(Target!.Value, _uiMutation, token).ConfigureAwait(false);
+        ApplicationResult<GameDockRoundtrip> result = await Service.RunGameDockRoundtripAsync(
+            Target!.Value, _uiMutation, token, _androidMutation).ConfigureAwait(false);
         if (result.IsFailure)
         {
-            return new(null, result.FailureInfo, Effect);
+            return new(new { androidMutation = _androidMutation, gameUiMutation = _uiMutation }, result.FailureInfo, Effect);
         }
 
         GameDockRoundtrip outcome = result.Value!;
