@@ -1,6 +1,7 @@
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.Game;
 using AzurPilot.Core.MuMu;
+using AzurPilot.Windows;
 using AzurPilot.Windows.Game;
 
 namespace AzurPilot.App.OperatorServices;
@@ -14,10 +15,21 @@ public sealed partial class AzurPilotOperatorService
     public async Task<ApplicationResult<GameUiObservation>> ObserveGameUiAsync(MuMuInstanceId instanceId, CancellationToken cancellationToken)
     {
         ApplicationResult<ResolvedAndroidTarget> target = ResolveAndroidTarget(instanceId);
-        return target.IsFailure
-            ? ApplicationResult<GameUiObservation>.Failure(target.FailureInfo!)
-            : await _gameUi.ObserveAsync(instanceId, target.Value!.Endpoint,
-            [.. GameAssetCatalog.Default.Assets.Select(a => a.Id)], cancellationToken).ConfigureAwait(false);
+        if (target.IsFailure)
+        {
+            return ApplicationResult<GameUiObservation>.Failure(target.FailureInfo!);
+        }
+
+        try
+        {
+            string[] assetIds = [.. GameAssetCatalog.Default.Assets.Select(a => a.Id)];
+            return await _gameUi.ObserveAsync(instanceId, target.Value!.Endpoint, assetIds, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (AzurPilotNativeBoundaryException exception)
+        {
+            return ApplicationResult<GameUiObservation>.Failure(NativeBoundaryFailureMapper.Map(exception));
+        }
     }
 
     /// <summary>Доказывает viewport текущего кадра без ввода.</summary>
@@ -40,17 +52,24 @@ public sealed partial class AzurPilotOperatorService
                 return ApplicationResult<GameDockRoundtrip>.Failure(target.FailureInfo!);
             }
 
-            GameUiActionRunner runner = new(_gameUi, _timeProvider);
-            GameActionOutcome open = await runner.RunAsync(instanceId, target.Value!.Endpoint,
-                GameAssetCatalog.Default.GetAction("dock.open"), progress, cancellationToken).ConfigureAwait(false);
-            if (!open.ChangeProven)
+            try
             {
-                return ApplicationResult<GameDockRoundtrip>.Success(new(open, null));
-            }
+                GameUiActionRunner runner = new(_gameUi, _timeProvider);
+                GameActionOutcome open = await runner.RunAsync(instanceId, target.Value!.Endpoint,
+                    GameAssetCatalog.Default.GetAction("dock.open"), progress, cancellationToken).ConfigureAwait(false);
+                if (!open.ChangeProven)
+                {
+                    return ApplicationResult<GameDockRoundtrip>.Success(new(open, null));
+                }
 
-            GameActionOutcome close = await runner.RunAsync(instanceId, target.Value.Endpoint,
-                GameAssetCatalog.Default.GetAction("dock.close"), progress, cancellationToken).ConfigureAwait(false);
-            return ApplicationResult<GameDockRoundtrip>.Success(new(open, close));
+                GameActionOutcome close = await runner.RunAsync(instanceId, target.Value.Endpoint,
+                    GameAssetCatalog.Default.GetAction("dock.close"), progress, cancellationToken).ConfigureAwait(false);
+                return ApplicationResult<GameDockRoundtrip>.Success(new(open, close));
+            }
+            catch (AzurPilotNativeBoundaryException exception)
+            {
+                return ApplicationResult<GameDockRoundtrip>.Failure(NativeBoundaryFailureMapper.Map(exception));
+            }
         }, cancellationToken);
     }
 }

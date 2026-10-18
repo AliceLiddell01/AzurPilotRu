@@ -3,9 +3,11 @@ using AzurPilot.App;
 using AzurPilot.App.Agent;
 using AzurPilot.Core.Android;
 using AzurPilot.Core.Failures;
+using AzurPilot.Core.Game;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Tests.Game;
 using AzurPilot.Tests.MuMu;
+using AzurPilot.Windows;
 using AzurPilot.Windows.MuMu;
 using Xunit;
 
@@ -13,6 +15,35 @@ namespace AzurPilot.Tests.OperatorServices;
 
 public sealed partial class AzurPilotOperatorServiceTests
 {
+    [Fact(DisplayName = "Оператор возвращает ApplicationResult при native отказе игрового UI")]
+    public async Task GameUiNativeBoundaryFailureIsMappedAtOperatorBoundary()
+    {
+        MuMuInstanceId selected = MuMuInstanceId.FromIndex("7");
+        AndroidEndpoint endpoint = new("explicit-host", 20312);
+        NativeBoundaryUnavailableException exception = new("Native библиотека AzurPilot.Native недоступна в тесте.");
+        OperatorFixture fixture = CreateFixtureWithGameUi(
+            new ThrowingGameUiHost(exception), MuMuLifecycleTestContext.Instance("7"));
+        fixture.Runner.EnqueueOutcome(0, "Android Debug Bridge version 1.0.41\nVersion 35.0.2-test\n");
+        fixture.Runner.EnqueueOutcome(0, InstanceResponse(selected, endpoint));
+
+        ApplicationResult<GameUiObservation> result = await fixture.Service.ObserveGameUiAsync(
+            selected, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(ApplicationFailure.NativeUnavailable, result.FailureInfo!.Code);
+
+        OperatorFixture roundtripFixture = CreateFixtureWithGameUi(
+            new ThrowingGameUiHost(exception), MuMuLifecycleTestContext.Instance("7"));
+        roundtripFixture.Runner.EnqueueOutcome(0, "Android Debug Bridge version 1.0.41\nVersion 35.0.2-test\n");
+        roundtripFixture.Runner.EnqueueOutcome(0, InstanceResponse(selected, endpoint));
+
+        var roundtrip = await roundtripFixture.Service.RunGameDockRoundtripAsync(
+            selected, new GameActionProgress(), CancellationToken.None);
+
+        Assert.True(roundtrip.IsFailure);
+        Assert.Equal(ApplicationFailure.NativeUnavailable, roundtrip.FailureInfo!.Code);
+    }
+
     [Fact]
     public async Task AgentDockRoundtripUsesProductionCaptureMatcherInputAndOneLease()
     {
@@ -78,5 +109,21 @@ public sealed partial class AzurPilotOperatorServiceTests
         fixture.Runner.EnqueueOutcome(0, GameInputViewportTests.Input);
         fixture.Runner.EnqueueOutcome(0, GameInputViewportTests.Window);
         fixture.Runner.EnqueueOutcome(0, GameInputViewportTests.Focus);
+    }
+
+    private sealed class ThrowingGameUiHost(AzurPilotNativeBoundaryException exception) : IGameUiHost
+    {
+        public Task<ApplicationResult<GameUiObservation>> ObserveAsync(
+            MuMuInstanceId instanceId, AndroidEndpoint endpoint, IReadOnlyList<string> assets,
+            CancellationToken cancellationToken)
+            => Task.FromException<ApplicationResult<GameUiObservation>>(exception);
+
+        public Task<ApplicationResult<bool>> ValidateInputAsync(
+            GameFrameProvenance frame, CancellationToken cancellationToken)
+            => Task.FromException<ApplicationResult<bool>>(exception);
+
+        public Task<ApplicationResult<AndroidCommandOutcome>> TapAsync(
+            GameTap tap, CancellationToken cancellationToken)
+            => Task.FromException<ApplicationResult<AndroidCommandOutcome>>(exception);
     }
 }

@@ -8,6 +8,7 @@ using AzurPilot.Core.Android;
 using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
+using AzurPilot.Core.Game;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Tests.Android;
 using AzurPilot.Tests.Diagnostics;
@@ -681,10 +682,19 @@ public sealed partial class AzurPilotOperatorServiceTests
     }
 
     private static OperatorFixture CreateFixture(params MuMuInstance[] instances)
-        => CreateFixture(screenshotHost: null, instances);
+        => CreateFixtureCore(null, null, instances);
 
     private static OperatorFixture CreateFixture(
         IAndroidScreenshotHost? screenshotHost,
+        params MuMuInstance[] instances)
+        => CreateFixtureCore(screenshotHost, null, instances);
+
+    private static OperatorFixture CreateFixtureWithGameUi(IGameUiHost gameUi, params MuMuInstance[] instances)
+        => CreateFixtureCore(null, gameUi, instances);
+
+    private static OperatorFixture CreateFixtureCore(
+        IAndroidScreenshotHost? screenshotHost,
+        IGameUiHost? gameUi,
         params MuMuInstance[] instances)
     {
         MuMuInstallation installation = AndroidTestContext.Installation;
@@ -746,7 +756,7 @@ public sealed partial class AzurPilotOperatorServiceTests
             activeScreenshotHost,
             configuration,
             timeProvider,
-            gameUi: new AzurPilot.Windows.Game.GameUiWindowsHost(activeScreenshotHost, androidHost));
+            gameUi: gameUi ?? new AzurPilot.Windows.Game.GameUiWindowsHost(activeScreenshotHost, androidHost));
 
         return new OperatorFixture(muMuHost, runner, observingScreenshotHost, service);
     }

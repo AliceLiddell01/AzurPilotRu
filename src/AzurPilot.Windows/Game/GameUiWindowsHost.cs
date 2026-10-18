@@ -13,18 +13,26 @@ public sealed class GameUiWindowsHost(IAndroidScreenshotHost screenshots, IAndro
     public async Task<ApplicationResult<GameUiObservation>> ObserveAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,
         IReadOnlyList<string> assets, CancellationToken cancellationToken)
     {
-        ApplicationResult<CapturedAndroidScreenshot> result = await screenshots.CaptureScreenshotAsync(instanceId, endpoint, cancellationToken).ConfigureAwait(false);
-        if (result.IsFailure)
+        try
         {
-            return ApplicationResult<GameUiObservation>.Failure(result.FailureInfo!);
-        }
+            ApplicationResult<CapturedAndroidScreenshot> result = await screenshots.CaptureScreenshotAsync(
+                instanceId, endpoint, cancellationToken).ConfigureAwait(false);
+            if (result.IsFailure)
+            {
+                return ApplicationResult<GameUiObservation>.Failure(result.FailureInfo!);
+            }
 
-        using CapturedAndroidScreenshot capture = result.Value!;
-        GameFrameProvenance provenance = new(Guid.NewGuid(), capture.Info.InstanceId, capture.Info.Endpoint,
-            capture.Info.CaptureStartedAtUtc, capture.Info.CaptureStartedTimestamp,
-            checked((int)capture.Info.FrameInfo.Width), checked((int)capture.Info.FrameInfo.Height));
-        GameUiObservation observation = new GameUiRecognizer(GameAssetCatalog.Default).Observe(capture.Frame, provenance, assets);
-        return ApplicationResult<GameUiObservation>.Success(observation);
+            using CapturedAndroidScreenshot capture = result.Value!;
+            GameFrameProvenance provenance = new(Guid.NewGuid(), capture.Info.InstanceId, capture.Info.Endpoint,
+                capture.Info.CaptureStartedAtUtc, capture.Info.CaptureStartedTimestamp,
+                checked((int)capture.Info.FrameInfo.Width), checked((int)capture.Info.FrameInfo.Height));
+            GameUiObservation observation = new GameUiRecognizer(GameAssetCatalog.Default).Observe(capture.Frame, provenance, assets);
+            return ApplicationResult<GameUiObservation>.Success(observation);
+        }
+        catch (AzurPilotNativeBoundaryException exception)
+        {
+            return ApplicationResult<GameUiObservation>.Failure(NativeBoundaryFailureMapper.Map(exception));
+        }
     }
 
     /// <inheritdoc />

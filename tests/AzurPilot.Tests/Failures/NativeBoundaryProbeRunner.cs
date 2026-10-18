@@ -85,6 +85,7 @@ internal static class NativeBoundaryProbeRunner
                     ProbeMode.AbiV3MissingRoi => "abi-v3-missing-roi",
                     ProbeMode.AbiMissingMatch => "abi-missing-match",
                     ProbeMode.MissingLibrary or ProbeMode.BrokenLibrary or ProbeMode.DisposedFrame
+                        or ProbeMode.RetryableGameCatalog
                         => throw new ArgumentOutOfRangeException(nameof(mode)),
                     _ => throw new ArgumentOutOfRangeException(nameof(mode)),
                 };
@@ -127,6 +128,9 @@ internal static class NativeBoundaryProbeRunner
                     break;
                 case ProbeMode.DisposedFrame:
                     startInfo.ArgumentList.Add("--disposed-frame");
+                    break;
+                case ProbeMode.RetryableGameCatalog:
+                    startInfo.ArgumentList.Add("--retryable-game-catalog");
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(mode), mode, "Неизвестный режим пробы.");
@@ -230,5 +234,8 @@ internal static class NativeBoundaryProbeRunner
 
         /// <summary>Проверяется вызов GetInfo после Dispose без native DLL.</summary>
         DisposedFrame,
+
+        /// <summary>Отказ загрузки игрового каталога не кешируется type initializer-ом.</summary>
+        RetryableGameCatalog,
     }
 }

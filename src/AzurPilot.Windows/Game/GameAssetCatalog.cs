@@ -26,11 +26,12 @@ public sealed class GameAssetCatalog
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         Converters = { new JsonStringEnumConverter() },
     };
+    private static readonly Lazy<GameAssetCatalog> DefaultCatalog = new(Load, LazyThreadSafetyMode.PublicationOnly);
     private readonly FrozenDictionary<string, GameAsset> _assets;
     private readonly FrozenDictionary<string, byte[]> _templates;
     private readonly FrozenDictionary<string, GameUiAction> _actions;
     /// <summary>Общий неизменяемый каталог с ограниченным кешем закодированных шаблонов.</summary>
-    public static GameAssetCatalog Default { get; } = Load();
+    public static GameAssetCatalog Default => DefaultCatalog.Value;
     /// <summary>Проверенные игровые ассеты.</summary>
     public IReadOnlyCollection<GameAsset> Assets => _assets.Values;
     /// <summary>Разрешённые обратимые переходы.</summary>

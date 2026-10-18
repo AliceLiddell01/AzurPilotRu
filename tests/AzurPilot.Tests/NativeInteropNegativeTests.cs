@@ -50,6 +50,20 @@ public sealed class NativeInteropNegativeTests
         Assert.Equal(ApplicationFailure.NativeUnavailable, result.FailureCode);
     }
 
+    [Fact(DisplayName = "Native отказ игрового каталога не кешируется type initializer-ом")]
+    public void GameCatalogNativeFailureCanBeRetried()
+    {
+        NativeBoundaryProbeRunner.ProbeRun result = NativeBoundaryProbeRunner.Run(
+            NativeBoundaryProbeRunner.ProbeMode.RetryableGameCatalog);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("отказ загрузки каталога 1 получен напрямую и не кеширован", result.StandardOutput,
+            StringComparison.Ordinal);
+        Assert.Contains("отказ загрузки каталога 2 получен напрямую и не кеширован", result.StandardOutput,
+            StringComparison.Ordinal);
+        Assert.Equal(ApplicationFailure.NativeUnavailable, result.FailureCode);
+    }
+
     [Fact(DisplayName = "Повреждённая native библиотека обязана выбросить исключение с диагностикой")]
     public void BrokenNativeLibraryThrowsWithDiagnostics()
     {
