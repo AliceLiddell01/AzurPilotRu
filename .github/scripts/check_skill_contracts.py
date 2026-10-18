@@ -31,6 +31,19 @@ def owner_path(path: Path, root: Path) -> bool:
     )
 
 
+def exact_case(path: Path, root: Path) -> bool:
+    """Проверяет регистр каждого компонента пути по записям каталогов checkout."""
+    try:
+        current = root
+        for part in path.relative_to(root).parts:
+            if part not in os.listdir(current):
+                return False
+            current /= part
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def anchors(source: str) -> set[str]:
     """Anchors заголовков Markdown по правилам GitHub; HTML id не поддерживаются."""
     result = set()
@@ -74,6 +87,8 @@ def validate_links(path: Path, root: Path, source: str | None = None) -> list[st
                 resolved = lexical.resolve(strict=True)
                 if not lexical.is_relative_to(root) or not resolved.is_relative_to(root):
                     raise ValueError("выход за checkout, включая symlink/junction")
+                if not exact_case(lexical, root):
+                    raise ValueError("регистр пути не совпадает с записью каталога checkout")
                 if not owner_path(lexical, root) or not owner_path(resolved, root) or not resolved.is_file():
                     raise ValueError("ссылка не на файл постоянного владельца")
                 if url.fragment and resolved.suffix.lower() == ".md":

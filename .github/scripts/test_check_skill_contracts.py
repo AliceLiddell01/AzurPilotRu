@@ -126,6 +126,14 @@ class SkillContractTests(unittest.TestCase):
         (references / "details.md").write_text("[Нет](missing.md)", encoding="utf-8")
         self.assertIn("missing.md", " ".join(self.errors()))
 
+    @unittest.skipUnless(os.name == "nt", "Проверка регистра путей Windows")
+    def test_link_with_wrong_case_is_rejected(self):
+        docs = self.root / "docs/testing"
+        docs.mkdir(parents=True)
+        (docs / "verification.md").write_text("# Проверка", encoding="utf-8")
+        self.write(body="[Проверка](../../../Docs/testing/verification.md)")
+        self.assertIn("регистр пути", " ".join(self.errors()))
+
     def test_missing_internal_external_and_anchor_links(self):
         for link in ("references/missing.md", "../../../docs/missing.md", "#нет-такого-заголовка",
                      "../../../../outside.md", "file:///C:/secret", "//server/share", "/absolute.md",
