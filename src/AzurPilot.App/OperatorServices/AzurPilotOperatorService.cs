@@ -150,7 +150,7 @@ public sealed partial class AzurPilotOperatorService
     private readonly IAndroidScreenshotHost _screenshots;
     private readonly AzurPilotConfigurationSnapshot _configuration;
     private readonly AzurPilotLogViewerSession? _logViewer;
-    private readonly Core.Game.IGameUiHost? _gameUi;
+    private readonly Core.Game.IGameUiHost _gameUi;
 
     /// <summary>Создаёт сценарии оператора поверх singleton-сервисов одного хоста приложения.</summary>
     public AzurPilotOperatorService(
@@ -163,8 +163,8 @@ public sealed partial class AzurPilotOperatorService
         AzurLaneGameLifecycleService gameLifecycle,
         IAndroidScreenshotHost screenshots,
         AzurPilotConfigurationSnapshot configuration,
-        AzurPilotLogViewerSession? logViewer = null,
-        Core.Game.IGameUiHost? gameUi = null)
+        Core.Game.IGameUiHost gameUi,
+        AzurPilotLogViewerSession? logViewer = null)
     {
         ArgumentNullException.ThrowIfNull(diagnostics);
         ArgumentNullException.ThrowIfNull(muMuHost);
@@ -175,6 +175,7 @@ public sealed partial class AzurPilotOperatorService
         ArgumentNullException.ThrowIfNull(gameLifecycle);
         ArgumentNullException.ThrowIfNull(screenshots);
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(gameUi);
 
         _diagnostics = diagnostics;
         _muMuHost = muMuHost;
@@ -185,8 +186,8 @@ public sealed partial class AzurPilotOperatorService
         _gameLifecycle = gameLifecycle;
         _screenshots = screenshots;
         _configuration = configuration;
-        _logViewer = logViewer;
         _gameUi = gameUi;
+        _logViewer = logViewer;
     }
 
     /// <summary>Неизменяемая конфигурация текущего хоста приложения.</summary>

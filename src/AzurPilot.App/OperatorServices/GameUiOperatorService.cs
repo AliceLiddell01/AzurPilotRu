@@ -16,7 +16,7 @@ public sealed partial class AzurPilotOperatorService
         ApplicationResult<ResolvedAndroidTarget> target = ResolveAndroidTarget(instanceId);
         return target.IsFailure
             ? ApplicationResult<GameUiObservation>.Failure(target.FailureInfo!)
-            : await RequireGameUi().ObserveAsync(instanceId, target.Value!.Endpoint,
+            : await _gameUi.ObserveAsync(instanceId, target.Value!.Endpoint,
             [.. GameAssetCatalog.Default.Assets.Select(a => a.Id)], cancellationToken).ConfigureAwait(false);
     }
 
@@ -25,7 +25,7 @@ public sealed partial class AzurPilotOperatorService
     {
         ApplicationResult<GameUiObservation> observed = await ObserveGameUiAsync(instanceId, cancellationToken).ConfigureAwait(false);
         return observed.IsFailure ? ApplicationResult<bool>.Failure(observed.FailureInfo!)
-            : await RequireGameUi().ValidateInputAsync(observed.Value!.Frame, cancellationToken).ConfigureAwait(false);
+            : await _gameUi.ValidateInputAsync(observed.Value!.Frame, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Целый обратимый сценарий под общей межпроцессной арендой exact identity.</summary>
@@ -40,7 +40,7 @@ public sealed partial class AzurPilotOperatorService
                 return ApplicationResult<GameDockRoundtrip>.Failure(target.FailureInfo!);
             }
 
-            GameUiActionRunner runner = new(RequireGameUi());
+            GameUiActionRunner runner = new(_gameUi);
             GameActionOutcome open = await runner.RunAsync(instanceId, target.Value!.Endpoint,
                 GameAssetCatalog.Default.GetAction("dock.open"), progress, cancellationToken).ConfigureAwait(false);
             if (!open.ChangeProven)
@@ -52,10 +52,5 @@ public sealed partial class AzurPilotOperatorService
                 GameAssetCatalog.Default.GetAction("dock.close"), progress, cancellationToken).ConfigureAwait(false);
             return ApplicationResult<GameDockRoundtrip>.Success(new(open, close));
         }, cancellationToken);
-    }
-
-    private IGameUiHost RequireGameUi()
-    {
-        return _gameUi ?? throw new InvalidOperationException("Game UI host не зарегистрирован.");
     }
 }
