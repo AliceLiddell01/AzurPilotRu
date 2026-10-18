@@ -12,11 +12,12 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
     internal MuMuInstanceId? Target { get; set; }
     private readonly AndroidMutationProgress _gameMutation = new();
     private readonly AndroidMutationProgress _androidMutation = new();
+    private readonly Core.Game.GameActionProgress _uiMutation = new();
     private string _effect = "none";
     internal string Effect
     {
-        get => _effect == "changed" || _gameMutation.ChangeProven || _androidMutation.ChangeProven ? "changed"
-            : _gameMutation.MutationAttempted || _androidMutation.MutationAttempted ? "mayHaveChanged" : _effect;
+        get => _effect == "changed" || _gameMutation.ChangeProven || _androidMutation.ChangeProven || _uiMutation.ChangeProven ? "changed"
+            : _gameMutation.MutationAttempted || _androidMutation.MutationAttempted || _uiMutation.MutationAttempted ? "mayHaveChanged" : _effect;
         private set => _effect = value;
     }
     internal string Stage { get; private set; } = "dispatch";
@@ -142,9 +143,23 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
             stage = Stage,
             preparation = Preparation,
             completed = Completed?.Data,
-            mutation = new { androidPreparation = _androidMutation, game = _gameMutation },
+            mutation = new { androidPreparation = _androidMutation, game = _gameMutation, gameUi = _uiMutation },
             postcondition = (object?)null,
         }, failure, Effect);
+    }
+
+    internal async Task<AgentPayload> GameDockAsync(CancellationToken token)
+    {
+        Stage = "game-dock-roundtrip";
+        ApplicationResult<GameDockRoundtrip> result = await Service.RunGameDockRoundtripAsync(Target!.Value, _uiMutation, token).ConfigureAwait(false);
+        if (result.IsFailure)
+        {
+            return new(null, result.FailureInfo, Effect);
+        }
+
+        GameDockRoundtrip outcome = result.Value!;
+        return new(outcome, outcome.Open.Failure ?? outcome.Close?.Failure
+            ?? (outcome.Close?.ChangeProven == true ? null : Core.Game.GameUiActionRunner.Failure("roundtrip_incomplete", _uiMutation.MutationAttempted)), Effect);
     }
 
     private void BeginMutation()

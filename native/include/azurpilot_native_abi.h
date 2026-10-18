@@ -2,7 +2,7 @@
  * azurpilot_native_abi.h — замороженный C ABI между managed (C#) и native (C++) частями AzurPilot.
  *
  * НАЗНАЧЕНИЕ
- *   Единственный владелец формы C ABI версии 3. Managed сторона и native реализация обязаны
+ *   Единственный владелец формы C ABI версии 4. Managed сторона и native реализация обязаны
  *   совпадать побайтово: любое расхождение — ошибка совместимости, а не повод продолжать работу.
  *   Изменение формы (поля, порядок, типы, коды возврата, смысл битов) требует нового номера ABI
  *   и согласованного обновления обеих сторон; обратная совместимость формой не гарантируется.
@@ -44,8 +44,16 @@
 
 /* Версия ABI. Единственный нормативный владелец значения — этот заголовок.
  * Managed и native стороны проверяют совместимость границы до использования данных. */
-#define AZURPILOT_NATIVE_ABI_VERSION 3
-#define AZURPILOT_NATIVE_ABI_VERSION_STRING "3"
+#define AZURPILOT_NATIVE_ABI_VERSION 4
+#define AZURPILOT_NATIVE_ABI_VERSION_STRING "4"
+
+/* Бюджет одного bounded template search. Полный кадр не масштабируется. */
+#define AZURPILOT_NATIVE_MAX_TEMPLATE_PNG_BYTES UINT32_C(262144)
+#define AZURPILOT_NATIVE_MAX_TEMPLATE_PIXELS UINT32_C(262144)
+#define AZURPILOT_NATIVE_MAX_SEARCH_PIXELS UINT32_C(2097152)
+#define AZURPILOT_NATIVE_MIN_TEMPLATE_STDDEV 5.0
+#define AZURPILOT_NATIVE_MATCH_RGB UINT32_C(0)
+#define AZURPILOT_NATIVE_MATCH_LUMA UINT32_C(1)
 
 /* Коды возврата. 0 — единственный успешный код; любой ненулевой код означает, что результат
  * недействителен и использовать его нельзя. */
@@ -91,6 +99,8 @@
 #define AZURPILOT_NATIVE_CAPABILITY_CORE (1u << 0)
 /* imgcodecs: cv::imwrite и cv::imread. */
 #define AZURPILOT_NATIVE_CAPABILITY_IMGCODECS (1u << 1)
+/* imgproc: cv::matchTemplate реально исполнен при query. */
+#define AZURPILOT_NATIVE_CAPABILITY_IMGPROC (1u << 2)
 
 /* Разворачивается в __declspec(dllexport) при сборке DLL и в __declspec(dllimport) для
  * native-потребителя import library. */
@@ -228,6 +238,30 @@ _Static_assert(sizeof(AzurPilotNativeRegionStatistics) == 56 &&
 #if defined(__cplusplus)
 extern "C" {
 #endif
+
+/* Результат CCOEFF_NORMED и независимой проверки ошибки пикселей (0..255).
+ * second_score — максимум вне окрестности первого кандидата (половина шаблона по каждой оси).
+ * Низкотекстурный шаблон отвергается; оценки сами по себе не означают подтверждённого match.
+ * Раскладка: region 0..15, score 16, second_score 24, mean_absolute_error 32, stddev 40; size=48. */
+typedef struct AzurPilotNativeMatchResult {
+    AzurPilotNativeRegion region;
+    double score;
+    double second_score;
+    double mean_absolute_error;
+    double template_stddev;
+} AzurPilotNativeMatchResult;
+
+/* Синхронный поиск small PNG template в ROI native RGB8. Размер шаблона задаётся physical pixels;
+ * mode = MATCH_RGB либо MATCH_LUMA (RGB2GRAY). Меняется только размер шаблона через INTER_AREA
+ * при уменьшении, INTER_CUBIC при увеличении. Маски/повороты и letterbox transform не предполагаются.
+ * При ошибке out_result обнуляется; NULL — INVALID_ARGUMENT, бюджеты — IMAGE_TOO_LARGE,
+ * низкая текстура/невалидный mode/ROI/размер — INVALID_ARGUMENT; decoder statuses сохраняются.
+ * Lifetime frame и PNG буфера покрывает весь вызов. Пиксели и handle через границу не выдаются. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_match(
+    AzurPilotNativeFrameHandle frame, const AzurPilotNativeRegion* search,
+    const uint8_t* template_png, uint32_t template_png_size,
+    int32_t template_width, int32_t template_height, uint32_t mode,
+    AzurPilotNativeMatchResult* out_result) AZURPILOT_NATIVE_NOEXCEPT;
 
 /* Возвращает AZURPILOT_NATIVE_ABI_VERSION.
  * Никогда не падает, не обращается к OpenCV и не требует инициализации. Managed сторона обязана

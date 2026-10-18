@@ -19,6 +19,10 @@
     <ProjectReference Include="..\AzurPilot.Core\AzurPilot.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="../../assets/game/*.json;../../assets/game/*.png" LogicalName="AzurPilot.GameAssets.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <!-- Автоматический staging native runtime и проверка его наличия принадлежат
        Directory.Build.targets; native build graph подготавливает файлы через CMake. -->
 

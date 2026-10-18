@@ -38,7 +38,8 @@ namespace azurpilot::native::detail {
 std::int32_t decode_png_frame(
     const std::uint8_t* png_bytes,
     std::uint32_t png_size,
-    AzurPilotNativeFrameOpaque** out_frame);
+    AzurPilotNativeFrameOpaque** out_frame,
+    std::uint64_t maximum_pixels = AZURPILOT_NATIVE_MAX_FRAME_PIXELS);
 
 /* Возвращает OK только при согласованности пикселей и неизменяемых метаданных. */
 std::int32_t get_frame_info(

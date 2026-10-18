@@ -13,6 +13,7 @@
   параллельного владельца этих решений.
 - UI readiness, input, vision, OCR/ONNX/GPU, APK install/uninstall, permissions и настройки
   эмулятора в эту capability не входят.
+- Реализованная отдельная capability безопасного игрового ввода и распознавания описана в `game-ui.md`.
 - Product identity, ADB endpoint и lifecycle timings не становятся пользовательскими настройками только
   ради удобства реализации.
 

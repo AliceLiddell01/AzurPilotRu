@@ -30,6 +30,12 @@ internal static class AgentCommands
         new("game-restart", true, true, "Перезапустить Azur Lane Global/EN с проверкой postcondition.", (c, t) => c.GameAsync("restart", t)),
         new("screenshot-scan", false, true, "Один capture и native RGB statistics FullFrame/Center без экспорта файла.",
             async (c, t) => AgentContext.Result(await c.Service.CaptureAndScanAsync(c.Target!.Value, t).ConfigureAwait(false))),
+        new("game-ui-observe", false, true, "Свежий снимок и ограниченный набор результатов распознавания известных игровых ассетов Global/EN.",
+            async (c, t) => AgentContext.Result(await c.Service.ObserveGameUiAsync(c.Target!.Value, t).ConfigureAwait(false))),
+        new("game-input-observe", false, true, "Проверить передний план, полноэкранную область игры и систему координат ввода без нажатия.",
+            async (c, t) => AgentContext.Result(await c.Service.ObserveGameInputAsync(c.Target!.Value, t).ConfigureAwait(false))),
+        new("game-dock-roundtrip", true, true, "Распознать Dock, открыть его и подтвердить возврат по новым кадрам под одной арендой.",
+            (c, t) => c.GameDockAsync(t)),
     ]);
 
     internal static object Describe()

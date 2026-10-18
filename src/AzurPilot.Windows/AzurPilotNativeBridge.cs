@@ -69,6 +69,9 @@ public static partial class AzurPilotNativeBridge
     /// </summary>
     public const uint CapabilityImgcodecs = 1u << 1;
 
+    /// <summary>Бит capability imgproc: поиск по шаблону.</summary>
+    public const uint CapabilityImgproc = 1u << 2;
+
     /// <summary>
     /// Размер managed объявления структуры сведений о native boundary в байтах.
     /// </summary>
@@ -227,6 +230,7 @@ public static partial class AzurPilotNativeBridge
         EnsureFrameAbiVersion();
         EnsureFrameReleaseApi();
         EnsureFrameScanApi();
+        EnsureFrameMatchApi();
 
         NativeFrameSafeHandle frame;
         int status;
@@ -658,6 +662,11 @@ public static partial class AzurPilotNativeBridge
         if ((capabilities & CapabilityImgcodecs) != 0)
         {
             names.Add("imgcodecs");
+        }
+
+        if ((capabilities & CapabilityImgproc) != 0)
+        {
+            names.Add("imgproc");
         }
 
         return [.. names];

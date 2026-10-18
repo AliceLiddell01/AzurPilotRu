@@ -1,0 +1,24 @@
+{
+  "depot": {
+    "sourceSha256": "56619a6e1360e313cb74acc7f2f049d3a1fbd8b2cb9470ceca57231347563074",
+    "sourceWidth": 3840,
+    "sourceHeight": 2160,
+    "crop": {
+      "left": 2,
+      "top": 0,
+      "right": 240,
+      "bottom": 64
+    }
+  },
+  "technology": {
+    "sourceSha256": "c9ac77abc5160f18535c6d4e080a68af838b3d1586c2475794cb0ed5336c8077",
+    "sourceWidth": 3840,
+    "sourceHeight": 2160,
+    "crop": {
+      "left": 2,
+      "top": 0,
+      "right": 240,
+      "bottom": 64
+    }
+  }
+}

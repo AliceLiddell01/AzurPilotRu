@@ -3,6 +3,7 @@ using System.Text;
 using AzurPilot.App;
 using AzurPilot.Core.Failures;
 using AzurPilot.Windows;
+using AzurPilot.Windows.Game;
 
 // Проба для негативной проверки interop boundary и application startup.
 //
@@ -13,10 +14,11 @@ using AzurPilot.Windows;
 //
 // Режим --abi-mismatch загружает DLL с несовместимой версией ABI. Её экспорт функции декодирования
 // возвращает INVALID_PNG, поэтому ожидаемый отказ по версии доказывает проверку до вызова этой функции.
-// Режим --abi-v3-missing-release загружает DLL ABI v3 без обязательной функции освобождения и
+// Режим --abi-v3-missing-release загружает DLL текущего ABI без обязательной функции освобождения и
 // проверяет, что несовместимость обнаруживается до вызова декодирования.
 // Режим --abi-v3-missing-roi проверяет обязательный ROI экспорт до создания native frame.
 // Режим --disposed-frame проверяет отказ GetInfo/ScanRegion после Dispose в процессе без native DLL.
+// Режим --retryable-game-catalog проверяет повторный native отказ загрузки каталога без type initializer.
 // Режим --process-output выдаёт детерминированный бинарный stdout и конкурентный stderr для runner tests.
 //
 // Режим --application-composition <путь> выполняет реальный startup приложения через composition root
@@ -130,9 +132,28 @@ if (args.Length == 1 && string.Equals(args[0], "--abi-v3-missing-roi", StringCom
     return RunMissingRoiProbe();
 }
 
+if (args.Length == 1 && string.Equals(args[0], "--abi-missing-match", StringComparison.Ordinal))
+{
+    try
+    {
+        using NativeFrame frame = AzurPilotNativeBridge.DecodePng([]);
+        return 1;
+    }
+    catch (NativeAbiMismatchException exception) when (exception.Message.Contains("azurpilot_native_frame_match", StringComparison.Ordinal))
+    {
+        Console.WriteLine("Проба: match export отклонён до декодирования: " + exception.Message);
+        return ReportMappedFailure(exception);
+    }
+}
+
 if (args.Length == 1 && string.Equals(args[0], "--disposed-frame", StringComparison.Ordinal))
 {
     return RunDisposedFrameProbe();
+}
+
+if (args.Length == 1 && string.Equals(args[0], "--retryable-game-catalog", StringComparison.Ordinal))
+{
+    return RunRetryableGameCatalogProbe();
 }
 
 if (args.Length == 2 && string.Equals(args[0], "--application-composition", StringComparison.Ordinal))
@@ -149,7 +170,8 @@ if (args.Length != 0)
 {
     Console.Error.WriteLine(
         "Проба: неизвестные аргументы; допустимы --abi-mismatch, --abi-v3-missing-release, "
-        + "--abi-v3-missing-roi, --disposed-frame, --process-output <stdout> <stderr> <delay> "
+        + "--abi-v3-missing-roi, --disposed-frame, --retryable-game-catalog, "
+        + "--process-output <stdout> <stderr> <delay> "
         + "и --application-composition <путь>.");
     return 1;
 }
@@ -176,7 +198,7 @@ Console.Error.WriteLine(
     $"Проба: отсутствие native библиотеки «{AzurPilotNativeBridge.LibraryName}» не привело к исключению.");
 return 1;
 
-// Проверяет, что DLL ABI v3 без обязательной функции освобождения отвергается до декодирования.
+// Проверяет, что DLL текущего ABI без обязательной функции освобождения отвергается до декодирования.
 static int RunMissingReleaseProbe()
 {
     try
@@ -197,7 +219,7 @@ static int RunMissingReleaseProbe()
         }
 
         Console.WriteLine(
-            "Проба: ABI v3 без обязательной функции освобождения отклонён до декодирования: "
+            "Проба: текущий ABI без обязательной функции освобождения отклонён до декодирования: "
             + exception.Message);
         return ReportMappedFailure(exception);
     }
@@ -228,7 +250,7 @@ static int RunMissingRoiProbe()
             return 1;
         }
 
-        Console.WriteLine("Проба: ABI v3 без обязательного ROI экспорта отклонён до декодирования: " + exception.Message);
+        Console.WriteLine("Проба: текущий ABI без обязательного ROI экспорта отклонён до декодирования: " + exception.Message);
         return ReportMappedFailure(exception);
     }
     catch (Exception exception)
@@ -301,6 +323,37 @@ static int RunDisposedFrameProbe()
             + $"{exception.GetType().Name}: {exception.Message}");
         return 1;
     }
+}
+
+// Проверяет, что native отказ загрузки каталога остаётся повторяемым и проецируется production-маппером.
+static int RunRetryableGameCatalogProbe()
+{
+    for (int attempt = 1; attempt <= 2; attempt++)
+    {
+        try
+        {
+            _ = GameAssetCatalog.Default;
+            Console.Error.WriteLine("Проба: каталог успешно загрузился без native библиотеки.");
+            return 1;
+        }
+        catch (AzurPilotNativeBoundaryException exception)
+        {
+            if (!exception.Message.Contains(AzurPilotNativeBridge.LibraryName, StringComparison.Ordinal)
+                || ReportMappedFailure(exception) != 0)
+            {
+                return 1;
+            }
+
+            Console.WriteLine($"Проба: отказ загрузки каталога {attempt} получен напрямую и не кеширован.");
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"Проба: отказ каталога обёрнут в {exception.GetType().Name}.");
+            return 1;
+        }
+    }
+
+    return 0;
 }
 
 // Изолированный child process для побайтового доказательства общей process boundary.

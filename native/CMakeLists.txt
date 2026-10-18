@@ -52,7 +52,7 @@ function(azurpilot_native_apply_compile_options target)
   endif()
 endfunction()
 
-add_library(AzurPilot.Native SHARED src/azurpilot_native.cpp src/native_frame.cpp src/opencv_probe.cpp)
+add_library(AzurPilot.Native SHARED src/azurpilot_native.cpp src/native_frame.cpp src/opencv_probe.cpp src/game_match.cpp)
 target_include_directories(AzurPilot.Native
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -104,6 +104,15 @@ set_target_properties(AzurPilot.Native.SmokeTest PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_OUTPUT_DIR}/$<CONFIG>")
 
 enable_testing()
+add_executable(AzurPilot.Native.GameMatchTest tests/game_match_test.cpp)
+target_compile_definitions(AzurPilot.Native.GameMatchTest PRIVATE AZURPILOT_NATIVE_IMPORT)
+target_link_libraries(AzurPilot.Native.GameMatchTest PRIVATE AzurPilot.Native "${AZURPILOT_OPENCV_WORLD_TARGET}")
+azurpilot_native_apply_compile_options(AzurPilot.Native.GameMatchTest)
+add_dependencies(AzurPilot.Native.GameMatchTest AzurPilot.Native.Runtime)
+set_target_properties(AzurPilot.Native.GameMatchTest PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_OUTPUT_DIR}/$<CONFIG>")
+add_test(NAME native_game_match COMMAND AzurPilot.Native.GameMatchTest)
+set_tests_properties(native_game_match PROPERTIES TIMEOUT 120 FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
 add_test(NAME native_abi_smoke COMMAND AzurPilot.Native.SmokeTest)
 set_tests_properties(native_abi_smoke PROPERTIES TIMEOUT 300 FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
 set_tests_properties(native_abi_smoke PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -111,6 +120,7 @@ set_tests_properties(native_abi_smoke PROPERTIES WORKING_DIRECTORY "${CMAKE_CURR
 # Тест внутреннего decoder/ownership-модуля: counters компилируются только в этом test executable.
 add_executable(AzurPilot.Native.FrameOwnershipTest
   tests/native_frame_ownership_test.cpp
+  src/game_match.cpp
   src/native_frame.cpp)
 target_include_directories(AzurPilot.Native.FrameOwnershipTest PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -151,6 +161,15 @@ set_target_properties(AzurPilot.Native.AbiV3MissingReleaseFixture PROPERTIES
   PDB_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-v3-missing-release/$<CONFIG>")
 
 # Неполная DLL текущего ABI проверяет обязательный ROI-экспорт до создания кадра.
+add_library(AzurPilot.Native.AbiMissingMatchFixture SHARED tests/abi_missing_match_fixture.cpp)
+target_include_directories(AzurPilot.Native.AbiMissingMatchFixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+azurpilot_native_apply_compile_options(AzurPilot.Native.AbiMissingMatchFixture)
+set_target_properties(AzurPilot.Native.AbiMissingMatchFixture PROPERTIES
+  OUTPUT_NAME "AzurPilot.Native"
+  RUNTIME_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-missing-match/$<CONFIG>"
+  ARCHIVE_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-missing-match/$<CONFIG>"
+  PDB_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_ARTIFACT_DIR}/abi-missing-match/$<CONFIG>")
+
 add_library(AzurPilot.Native.AbiV3MissingRoiFixture SHARED tests/abi_v3_missing_roi_fixture.cpp)
 target_include_directories(AzurPilot.Native.AbiV3MissingRoiFixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 azurpilot_native_apply_compile_options(AzurPilot.Native.AbiV3MissingRoiFixture)

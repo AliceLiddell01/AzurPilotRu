@@ -76,6 +76,7 @@ public sealed class NativeInteropTests
 
         Assert.Contains("core", info.Capabilities);
         Assert.Contains("imgcodecs", info.Capabilities);
+        Assert.Contains("imgproc", info.Capabilities);
 
         NativeBoundaryCompatibility compatibility = NativeBoundaryContract.Canonical.Check(info);
         Assert.True(compatibility.IsCompatible, compatibility.Reason);

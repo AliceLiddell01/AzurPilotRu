@@ -32,6 +32,15 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: uv для проверки генератора ассетов
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: latest-known
+          enable-cache: false
+
+      - name: Целостность генерации игровых ассетов
+        run: uv run tests/tools/test_prepare_game_assets.py
+
       - name: Кэш архива OpenCV
         uses: actions/cache@v6.1.0
         with:

@@ -1,6 +1,8 @@
+using System.Reflection;
 using AzurPilot.Core.Android;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
+using AzurPilot.Tests.MuMu;
 using AzurPilot.Tests.MuMuWindows;
 using AzurPilot.Windows;
 using AzurPilot.Windows.Android;
@@ -61,6 +63,40 @@ public sealed class AndroidScreenshotCaptureTests
         screenshot.Dispose();
         screenshot.Dispose();
         _ = Assert.Throws<ObjectDisposedException>(() => screenshot.Frame.GetInfo());
+    }
+
+    [Fact(DisplayName = "Провенанс кадра использует внедрённый TimeProvider")]
+    public async Task CaptureProvenanceUsesInjectedTimeProvider()
+    {
+        MuMuTestTimeProvider timeProvider = new();
+        CaptureFixture fixture = new(timeProvider);
+        fixture.Discover();
+        fixture.Runner.EnqueueBinaryOutcome(ReadFixture("rgb_red_blue.png"));
+        DateTimeOffset expectedStart = timeProvider.GetUtcNow();
+        long expectedTimestamp = timeProvider.GetTimestamp();
+
+        ApplicationResult<CapturedAndroidScreenshot> result = await fixture.Capture();
+
+        Assert.True(result.IsSuccess, result.ToString());
+        using CapturedAndroidScreenshot screenshot = result.Value!;
+        Assert.Equal(expectedStart, screenshot.Info.CaptureStartedAtUtc);
+        Assert.Equal(expectedTimestamp, screenshot.Info.CaptureStartedTimestamp);
+        Assert.Equal(timeProvider.GetUtcNow(), screenshot.Info.CapturedAtUtc);
+    }
+
+    [Fact(DisplayName = "Каждый Android host требует общий TimeProvider")]
+    public void AndroidHostConstructorsRequireTimeProvider()
+    {
+        ConstructorInfo[] constructors = typeof(AndroidWindowsHost).GetConstructors();
+        Assert.NotEmpty(constructors);
+
+        foreach (ConstructorInfo constructor in constructors)
+        {
+            ParameterInfo clock = Assert.Single(
+                constructor.GetParameters(),
+                static parameter => parameter.ParameterType == typeof(TimeProvider));
+            Assert.False(clock.IsOptional);
+        }
     }
 
     [Fact(DisplayName = "Неизвестный endpoint отвергается до любого процесса или native вызова")]
@@ -256,13 +292,13 @@ public sealed class AndroidScreenshotCaptureTests
 
     private sealed class CaptureFixture
     {
-        internal CaptureFixture()
+        internal CaptureFixture(TimeProvider? timeProvider = null)
         {
             string installRoot = AndroidTestPaths.Create("screenshot-install");
             Installation = new MuMuInstallation(
                 "test-version", installRoot, Path.Combine(installRoot, "control.exe"));
             Runner = new FakeWindowsProcessRunner();
-            Host = new AndroidWindowsHost(Runner);
+            Host = new AndroidWindowsHost(Runner, timeProvider ?? TimeProvider.System);
         }
 
         internal MuMuInstallation Installation { get; }

@@ -95,7 +95,7 @@ public sealed record AzurPilotOperatorAndroidPreparationOutcome(
 /// времени жизни кадра.
 /// </para>
 /// </remarks>
-public sealed class AzurPilotOperatorService
+public sealed partial class AzurPilotOperatorService
 {
     // Устанавливается только composition root изолированного интерактивного запуска.
     // Отказ до аренды также исключает записи в пользовательский runtime-каталог.
@@ -149,6 +149,8 @@ public sealed class AzurPilotOperatorService
     private readonly AzurLaneGameLifecycleService _gameLifecycle;
     private readonly IAndroidScreenshotHost _screenshots;
     private readonly AzurPilotConfigurationSnapshot _configuration;
+    private readonly TimeProvider _timeProvider;
+    private readonly Core.Game.IGameUiHost _gameUi;
     private readonly AzurPilotLogViewerSession? _logViewer;
 
     /// <summary>Создаёт сценарии оператора поверх singleton-сервисов одного хоста приложения.</summary>
@@ -162,6 +164,8 @@ public sealed class AzurPilotOperatorService
         AzurLaneGameLifecycleService gameLifecycle,
         IAndroidScreenshotHost screenshots,
         AzurPilotConfigurationSnapshot configuration,
+        TimeProvider timeProvider,
+        Core.Game.IGameUiHost gameUi,
         AzurPilotLogViewerSession? logViewer = null)
     {
         ArgumentNullException.ThrowIfNull(diagnostics);
@@ -173,6 +177,8 @@ public sealed class AzurPilotOperatorService
         ArgumentNullException.ThrowIfNull(gameLifecycle);
         ArgumentNullException.ThrowIfNull(screenshots);
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(gameUi);
 
         _diagnostics = diagnostics;
         _muMuHost = muMuHost;
@@ -183,6 +189,8 @@ public sealed class AzurPilotOperatorService
         _gameLifecycle = gameLifecycle;
         _screenshots = screenshots;
         _configuration = configuration;
+        _timeProvider = timeProvider;
+        _gameUi = gameUi;
         _logViewer = logViewer;
     }
 

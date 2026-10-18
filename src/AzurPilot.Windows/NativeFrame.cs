@@ -88,6 +88,17 @@ public sealed class NativeFrame : IDisposable
         }
     }
 
+    /// <summary>Ищет небольшой PNG-шаблон в ROI физических пикселей без копирования полного кадра.</summary>
+    public NativeTemplateMatch MatchTemplate(PixelRegion search, ReadOnlySpan<byte> templatePng,
+        int templateWidth, int templateHeight, NativeTemplateMode mode)
+    {
+        lock (_lifetimeLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return AzurPilotNativeBridge.MatchTemplate(_handle, search, templatePng, templateWidth, templateHeight, mode);
+        }
+    }
+
     /// <summary>Освобождает кадр; повторный вызов безопасен.</summary>
     public void Dispose()
     {

@@ -8,6 +8,7 @@ using AzurPilot.Core.Android;
 using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
+using AzurPilot.Core.Game;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Tests.Android;
 using AzurPilot.Tests.Diagnostics;
@@ -681,10 +682,19 @@ public sealed partial class AzurPilotOperatorServiceTests
     }
 
     private static OperatorFixture CreateFixture(params MuMuInstance[] instances)
-        => CreateFixture(screenshotHost: null, instances);
+        => CreateFixtureCore(null, null, instances);
 
     private static OperatorFixture CreateFixture(
         IAndroidScreenshotHost? screenshotHost,
+        params MuMuInstance[] instances)
+        => CreateFixtureCore(screenshotHost, null, instances);
+
+    private static OperatorFixture CreateFixtureWithGameUi(IGameUiHost gameUi, params MuMuInstance[] instances)
+        => CreateFixtureCore(null, gameUi, instances);
+
+    private static OperatorFixture CreateFixtureCore(
+        IAndroidScreenshotHost? screenshotHost,
+        IGameUiHost? gameUi,
         params MuMuInstance[] instances)
     {
         MuMuInstallation installation = AndroidTestContext.Installation;
@@ -701,7 +711,7 @@ public sealed partial class AzurPilotOperatorServiceTests
             MuMuLifecycleTimings.Default,
             NullLogger<MuMuLifecycleService>.Instance);
         FakeWindowsProcessRunner runner = new();
-        AndroidWindowsHost androidHost = new(runner);
+        AndroidWindowsHost androidHost = new(runner, timeProvider);
         AndroidReadinessService readiness = new(
             androidHost,
             AndroidLifecycleTimings.Default,
@@ -744,7 +754,9 @@ public sealed partial class AzurPilotOperatorServiceTests
             gameState,
             gameLifecycle,
             activeScreenshotHost,
-            configuration);
+            configuration,
+            timeProvider,
+            gameUi: gameUi ?? new AzurPilot.Windows.Game.GameUiWindowsHost(activeScreenshotHost, androidHost));
 
         return new OperatorFixture(muMuHost, runner, observingScreenshotHost, service);
     }
@@ -807,6 +819,7 @@ public sealed partial class AzurPilotOperatorServiceTests
 
     private sealed class ObservingScreenshotHost(AndroidWindowsHost inner) : IAndroidScreenshotHost
     {
+        internal Action? OnCapture { get; set; }
         public int CaptureCount { get; private set; }
 
         public MuMuInstanceId? LastInstanceId { get; private set; }
@@ -821,6 +834,7 @@ public sealed partial class AzurPilotOperatorServiceTests
             CancellationToken cancellationToken)
         {
             CaptureCount++;
+            OnCapture?.Invoke();
             LastInstanceId = instanceId;
             LastEndpoint = endpoint;
             ApplicationResult<CapturedAndroidScreenshot> result = await inner.CaptureScreenshotAsync(

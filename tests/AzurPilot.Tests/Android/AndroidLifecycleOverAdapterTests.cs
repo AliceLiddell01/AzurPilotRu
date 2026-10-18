@@ -203,8 +203,8 @@ public sealed class AndroidLifecycleOverAdapterTests
                 InstallRoot,
                 MuMuInstallationLayout.GetControlExecutablePath(InstallRoot));
             Runner = new FakeWindowsProcessRunner();
-            Host = new AndroidWindowsHost(Runner);
             TimeProvider = new MuMuTestTimeProvider();
+            Host = new AndroidWindowsHost(Runner, TimeProvider);
             GameState = new AzurLaneGameStateService(
                 Host,
                 TimeProvider,

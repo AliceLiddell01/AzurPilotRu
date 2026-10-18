@@ -277,7 +277,8 @@ namespace azurpilot::native::detail {
 std::int32_t decode_png_frame(
     const std::uint8_t* png_bytes,
     std::uint32_t png_size,
-    AzurPilotNativeFrameOpaque** out_frame) {
+    AzurPilotNativeFrameOpaque** out_frame,
+    std::uint64_t maximum_pixels) {
     if (out_frame == nullptr) {
         return AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT;
     }
@@ -295,6 +296,9 @@ std::int32_t decode_png_frame(
         preflight_status(inspect_png(png_bytes, png_size, png_header));
     if (validation_status != AZURPILOT_NATIVE_OK) {
         return validation_status;
+    }
+    if (static_cast<std::uint64_t>(png_header.width) * png_header.height > maximum_pixels) {
+        return AZURPILOT_NATIVE_ERROR_IMAGE_TOO_LARGE;
     }
 
     std::uint32_t expected_stride = 0u;

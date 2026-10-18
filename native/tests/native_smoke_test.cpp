@@ -1,5 +1,5 @@
 /* =============================================================================
- * native_smoke_test.cpp — проверка native-реализации замороженного C ABI v3.
+ * native_smoke_test.cpp — проверка native-реализации замороженного C ABI.
  *
  * Тест линкуется с AzurPilot.Native.dll через import library и вызывает ровно те
  * экспорты, которые объявлены в native/include/azurpilot_native_abi.h. Заголовки
@@ -400,7 +400,8 @@ int main() {
           "build_flags не содержит неизвестных битов");
     check((info.capabilities & AZURPILOT_NATIVE_CAPABILITY_CORE) != 0u, "capabilities содержит core");
     check((info.capabilities & AZURPILOT_NATIVE_CAPABILITY_IMGCODECS) != 0u, "capabilities содержит imgcodecs");
-    check((info.capabilities & ~(AZURPILOT_NATIVE_CAPABILITY_CORE | AZURPILOT_NATIVE_CAPABILITY_IMGCODECS)) == 0u,
+    check((info.capabilities & AZURPILOT_NATIVE_CAPABILITY_IMGPROC) != 0u, "capabilities содержит исполненный imgproc");
+    check((info.capabilities & ~(AZURPILOT_NATIVE_CAPABILITY_CORE | AZURPILOT_NATIVE_CAPABILITY_IMGCODECS | AZURPILOT_NATIVE_CAPABILITY_IMGPROC)) == 0u,
           "capabilities не содержит неизвестных битов");
 
     // --- 4. Повторный вызов: нет изменяемого состояния ---------------------------

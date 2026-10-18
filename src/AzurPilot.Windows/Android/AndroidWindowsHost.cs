@@ -41,29 +41,37 @@ namespace AzurPilot.Windows.Android;
 /// конкретный код общим <see cref="ApplicationFailure.InternalError"/>.
 /// </para>
 /// </remarks>
-public sealed class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost
+public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost, IAndroidGameInputHost
 {
     private readonly IWindowsProcessRunner _processRunner;
     private readonly AndroidEndpointResolver _endpointResolver;
     private readonly TimeSpan _commandTimeout;
+    private readonly TimeProvider _timeProvider;
     private AndroidAdbExecutable? _adbExecutable;
 
-    /// <summary>Создаёт host-side поверхность Android с дедлайном команды по умолчанию.</summary>
+    /// <summary>Создаёт host-side поверхность Android с дедлайном команды по умолчанию и общими часами.</summary>
     /// <param name="processRunner">Общая граница запуска процесса.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="processRunner"/> равен <see langword="null"/>.</exception>
-    public AndroidWindowsHost(IWindowsProcessRunner processRunner)
-        : this(processRunner, AdbClient.DefaultCommandTimeout)
+    /// <param name="timeProvider">Общий источник времени процесса.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="processRunner"/> или <paramref name="timeProvider"/> равны <see langword="null"/>.
+    /// </exception>
+    public AndroidWindowsHost(IWindowsProcessRunner processRunner, TimeProvider timeProvider)
+        : this(processRunner, AdbClient.DefaultCommandTimeout, timeProvider)
     {
     }
 
     /// <summary>Создаёт host-side поверхность Android с явным дедлайном команды.</summary>
     /// <param name="processRunner">Общая граница запуска процесса.</param>
     /// <param name="commandTimeout">Дедлайн одной команды ADB и одной команды чтения сведений.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="processRunner"/> равен <see langword="null"/>.</exception>
+    /// <param name="timeProvider">Общий источник времени процесса.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="processRunner"/> или <paramref name="timeProvider"/> равны <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">Дедлайн команды не положителен.</exception>
-    public AndroidWindowsHost(IWindowsProcessRunner processRunner, TimeSpan commandTimeout)
+    public AndroidWindowsHost(IWindowsProcessRunner processRunner, TimeSpan commandTimeout, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(processRunner);
+        ArgumentNullException.ThrowIfNull(timeProvider);
 
         if (commandTimeout <= TimeSpan.Zero)
         {
@@ -74,6 +82,7 @@ public sealed class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost
         _processRunner = processRunner;
         _endpointResolver = new AndroidEndpointResolver(processRunner, commandTimeout);
         _commandTimeout = commandTimeout;
+        _timeProvider = timeProvider;
     }
 
     /// <inheritdoc />
@@ -156,6 +165,8 @@ public sealed class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost
                 NativeBoundaryFailureMapper.Map(exception));
         }
 
+        DateTimeOffset captureStartedAtUtc = _timeProvider.GetUtcNow();
+        long captureStartedTimestamp = _timeProvider.GetTimestamp();
         ApplicationResult<WindowsProcessOutcome> command = await client.RunBinaryAsync(
             AdbCommandBuilder.BuildScreenshotArguments(endpoint),
             maximumPngBytes,
@@ -200,11 +211,15 @@ public sealed class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost
                 new AndroidScreenshotCaptureInfo(
                     instanceId,
                     endpoint,
-                    DateTimeOffset.UtcNow,
+                    _timeProvider.GetUtcNow(),
                     outcome.Duration,
                     outcome.StandardOutputBytes.Length,
                     outcome.ExitCode,
-                    info));
+                    info)
+                {
+                    CaptureStartedAtUtc = captureStartedAtUtc,
+                    CaptureStartedTimestamp = captureStartedTimestamp,
+                });
             frame = null;
             return ApplicationResult<CapturedAndroidScreenshot>.Success(screenshot);
         }
