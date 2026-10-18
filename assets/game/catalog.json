@@ -21,7 +21,7 @@
         {
           "id": "global-en-white",
           "file": "main.dock.png",
-          "sourceSha256": "25e71d2bfb447836fa749cbc56554f8bf500dcdb3a6a6e9111545ccc7000ef83",
+          "sourceSha256": "66ea44215e2292b5cdd277f971c48511ab88b8fbc78432d38b04b17d3d2a50d9",
           "sourceWidth": 3840,
           "sourceHeight": 2160,
           "crop": {
@@ -30,7 +30,7 @@
             "right": 320,
             "bottom": 702
           },
-          "sha256": "4d669630e2599618a9be277876ddf2321350b4573426099e1c16dbf435685a16",
+          "sha256": "4e0064ecb9d5410f3c400543ce606774d6ab9d4ccf58e5e3d47f9cf963dbe056",
           "mode": "Luma",
           "minimumScore": 0.9,
           "minimumMargin": 0.06,
@@ -52,7 +52,7 @@
         {
           "id": "global-en-white",
           "file": "main.depot.png",
-          "sourceSha256": "25e71d2bfb447836fa749cbc56554f8bf500dcdb3a6a6e9111545ccc7000ef83",
+          "sourceSha256": "66ea44215e2292b5cdd277f971c48511ab88b8fbc78432d38b04b17d3d2a50d9",
           "sourceWidth": 3840,
           "sourceHeight": 2160,
           "crop": {
@@ -61,7 +61,7 @@
             "right": 474,
             "bottom": 702
           },
-          "sha256": "95d265f1cc610bb93490e98ad4517eb6dde3b9e9c05ccb9bd393db168ca08c9e",
+          "sha256": "d977a45010185e01fd900befc58d57952ad55e6a8427fa15c97873e87acfdc40",
           "mode": "Luma",
           "minimumScore": 0.9,
           "minimumMargin": 0.06,
@@ -88,16 +88,16 @@
         {
           "id": "global-en-white",
           "file": "dock.header.png",
-          "sourceSha256": "fe0d854d16f0f9a9ff05dc94e80b0b3ec106b5591ac8ec59fd9b83679600fe6e",
-          "sourceWidth": 1280,
-          "sourceHeight": 720,
+          "sourceSha256": "aee9d6bf00c8639c241ca8157248468a6d4a361b918abb6b5ed407e7abdd0e29",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
           "crop": {
             "left": 2,
             "top": 0,
             "right": 240,
             "bottom": 64
           },
-          "sha256": "2cd4d1592c20b41f316014390a0b87ddf7d8243731352a027ca5e5f222b2257d",
+          "sha256": "a3f995906f9a513c60cb69b19ca90599f7ead2d9f94888bb917210349292f859",
           "mode": "Rgb",
           "minimumScore": 0.9,
           "minimumMargin": 0.06,
@@ -119,7 +119,7 @@
         {
           "id": "global-en-selection",
           "file": "dock.selection-confirm.png",
-          "sourceSha256": "02d7a9022a058d2ec10307897c241ac164213cacf5d78e70e3a6dd979e5691c2",
+          "sourceSha256": "942448f41e26e286f347a2d6fc951faec8fa69170f8a63a399c2ef9f76e75e01",
           "sourceWidth": 3840,
           "sourceHeight": 2160,
           "crop": {
@@ -128,7 +128,7 @@
             "right": 1105,
             "bottom": 696
           },
-          "sha256": "fd2459e4dfd43ba5292bff57d8de1fe92bad547fbb70b69ccc06b0c9f93f2b3d",
+          "sha256": "97169c802930a4d81df537698f5e66f2a315116d6605f32b7303aef69f545e51",
           "mode": "Rgb",
           "minimumScore": 0.95,
           "minimumMargin": 0.06,
