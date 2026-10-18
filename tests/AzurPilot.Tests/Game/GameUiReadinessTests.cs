@@ -197,6 +197,48 @@ public sealed class GameUiReadinessTests
         Assert.Equal(GameMatchStatus.Absent, result.LastObservation!.Find("login.success")!.Status);
     }
 
+    [Fact]
+    public async Task BlinkingStartWaitsForFreshUniqueWithoutBlindInput()
+    {
+        using ReadyHost host = new("server") { AdvanceOnTap = true, Fault = "blink-start" };
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal(GameUiReadinessState.Ready, result.State);
+        GameActionOutcome action = Assert.Single(result.Actions);
+        Assert.Equal(4, action.SourceObservations);
+        Assert.Equal(GameMatchStatus.Unique, action.Before!.Find("login.start")!.Status);
+        Assert.True(action.ChangeProven);
+        Assert.Equal(1, result.TapAttempts);
+        Assert.Equal(1, host.Taps);
+    }
+
+    [Theory]
+    [InlineData("blink-timeout")]
+    [InlineData("blink-guard")]
+    public async Task BlinkingStartNeverWaitsThroughUnknownGuardOrSendsUnprovenInput(string fault)
+    {
+        using ReadyHost host = new("server") { AdvanceOnTap = true, Fault = fault };
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.NotEqual(GameUiReadinessState.Ready, result.State);
+        Assert.Equal(0, host.Taps);
+        GameActionOutcome action = Assert.Single(result.Actions);
+        Assert.False(action.MutationAttempted);
+        Assert.Equal(fault == "blink-guard" ? "excluded_asset_present_or_unproven" : "source_appearance_timeout",
+            action.Failure!.Details!["reason"]);
+    }
+
+    [Fact]
+    public async Task CancelDuringBlinkWaitKeepsZeroTapAttempts()
+    {
+        using ReadyHost host = new("server") { Fault = "blink-cancel" };
+        GameActionProgress progress = new();
+        GameUiReadinessOutcome result = await host.Run(true, progress);
+        Assert.Equal(ApplicationFailure.OperationCancelled, result.Failure!.Code);
+        Assert.Equal(0, host.Taps);
+        Assert.Equal(0, result.TapAttempts);
+        Assert.False(progress.MutationAttempted);
+        Assert.False(progress.ChangeProven);
+    }
+
     [Theory]
     [InlineData("no-change")]
     [InlineData("tap-failure")]
@@ -333,6 +375,12 @@ public sealed class GameUiReadinessTests
             Assert.Equal(Endpoint, endpoint);
             OnCapture?.Invoke();
             Captures++;
+            if (Fault == "blink-cancel" && Captures == 3)
+            {
+                _cancel.Cancel();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             Clock.Now += TimeSpan.TicksPerMillisecond;
             if (Fault == "transport" || (Fault == "post-transport" && Taps > 0))
             {
@@ -405,6 +453,9 @@ public sealed class GameUiReadinessTests
                 .Select(id => new GameUiMatch(id, "test",
                 Fault == "native" ? GameMatchStatus.TechnicalFailure : id == "dock.selection-confirm" && Guard is not null
                     ? Guard.Value : Fault == "purpose-changed" && Captures > 1 && id == "update.download" ? GameMatchStatus.Absent
+                        : Fault == "blink-guard" && Captures > 1 && id == "update.header" ? GameMatchStatus.Ambiguous
+                        : Captures > 1 && id == "login.start" && (Fault is "blink-timeout" or "blink-guard" or "blink-cancel"
+                            || (Fault == "blink-start" && Captures <= 4)) ? GameMatchStatus.Absent
                         : present.Contains(id, StringComparer.Ordinal) ? GameMatchStatus.Unique : GameMatchStatus.Absent,
                 new(10, 10, 100, 80), new(20, 20, 80, 60), 1, 0, 0, "test"))])
             { VisualActivity = Activity ? Captures * 0.1 : 1 };

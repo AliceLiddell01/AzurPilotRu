@@ -43,7 +43,8 @@ public sealed record GameUiObservation(GameFrameProvenance Frame, IReadOnlyList<
 /// <summary>Разрешённый переход между независимо наблюдаемыми признаками.</summary>
 public sealed record GameUiAction(string Id, string SourceAssetId, string PostconditionAssetId,
     TimeSpan MaximumObservationAge, TimeSpan PostconditionTimeout, IReadOnlyList<string>? ExcludedAssetIds = null,
-    IReadOnlyList<string>? RequiredAssetIds = null, IReadOnlyList<string>? AlternativePostconditionAssetIds = null);
+    IReadOnlyList<string>? RequiredAssetIds = null, IReadOnlyList<string>? AlternativePostconditionAssetIds = null,
+    TimeSpan SourceAppearanceTimeout = default);
 
 /// <summary>Однократное разрешение нажатия, создаваемое Core после проверки распознавания, области игры и свежести кадра.</summary>
 public sealed class GameTap
@@ -102,4 +103,5 @@ public sealed class GameActionProgress
 
 /// <summary>Итог действия с ограничением времени; Unknown не означает NoEffect.</summary>
 public sealed record GameActionOutcome(string ActionId, GameUiObservation? Before, GameUiObservation? After,
-    GameInputPoint? Point, bool MutationAttempted, bool ChangeProven, ApplicationFailure? Failure);
+    GameInputPoint? Point, bool MutationAttempted, bool ChangeProven, ApplicationFailure? Failure,
+    int SourceObservations = 0, int PostconditionObservations = 0);

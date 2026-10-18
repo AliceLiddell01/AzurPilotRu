@@ -111,6 +111,12 @@ public sealed class GameAssetCatalog
                 throw new InvalidDataException("Непригодные дополнительные признаки перехода.");
             }
 
+            if (action.SourceAppearanceTimeout < TimeSpan.Zero || action.SourceAppearanceTimeout > GameUiActionRunner.MaximumSourceAppearanceTimeout
+                || (action.SourceAppearanceTimeout > TimeSpan.Zero && action.RequiredAssetIds.Count < 2))
+            {
+                throw new InvalidDataException("Ожидание пульсирующего признака требует отдельного контекста и ограниченного времени.");
+            }
+
             if (action.ExcludedAssetIds!.Count > 4 || action.ExcludedAssetIds.Any(id => !_assets.ContainsKey(id)
                 || id == action.SourceAssetId || id == action.PostconditionAssetId))
             {

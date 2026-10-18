@@ -7,6 +7,8 @@ namespace AzurPilot.Core.Game;
 /// <summary>Одно действие: свежее распознавание → проверка ввода → нажатие → отдельное наблюдение эффекта с ограничением времени.</summary>
 public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
 {
+    /// <summary>Верхняя граница пассивного ожидания исходного пульсирующего признака.</summary>
+    public static TimeSpan MaximumSourceAppearanceTimeout => TimeSpan.FromSeconds(10);
     private readonly TimeProvider _clock = clock ?? throw new ArgumentNullException(nameof(clock));
 
     /// <summary>Выполняет переход под арендой вызывающего операторского сервиса.</summary>
@@ -20,13 +22,14 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
         GameInputPoint? point = null;
         bool attempted = false;
         bool proven = false;
+        int sourceObservations = 0, postconditionObservations = 0;
         IReadOnlyList<string> excluded = action.ExcludedAssetIds ?? [];
         IReadOnlyList<string> required = action.RequiredAssetIds ?? [];
         string[] posts = [action.PostconditionAssetId, .. action.AlternativePostconditionAssetIds ?? []];
         string[] assets = [.. new[] { action.SourceAssetId }.Concat(posts).Concat(excluded).Concat(required).Distinct(StringComparer.Ordinal)];
         GameActionOutcome Result(ApplicationFailure? failure)
         {
-            return new(action.Id, before, after, point, attempted, proven, failure);
+            return new(action.Id, before, after, point, attempted, proven, failure, sourceObservations, postconditionObservations);
         }
 
         GameActionOutcome Rejected(string reason)
@@ -36,39 +39,80 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
 
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            ApplicationResult<GameUiObservation> observed = await host.ObserveAsync(instanceId, endpoint,
-                assets, cancellationToken).ConfigureAwait(false);
-            if (observed.IsFailure)
+            if (action.SourceAppearanceTimeout < TimeSpan.Zero || action.SourceAppearanceTimeout > MaximumSourceAppearanceTimeout
+                || (action.SourceAppearanceTimeout > TimeSpan.Zero && required.Count < 2))
             {
-                return Result(observed.FailureInfo);
+                return Rejected("source_wait_context_unproven");
             }
 
-            before = observed.Value!;
-            if (!SameTarget(before.Frame, instanceId, endpoint))
+            long sourceStarted = _clock.GetTimestamp();
+            HashSet<Guid> sourceFrames = [];
+            GameUiMatch? match;
+            while (true)
             {
-                return Rejected("target_mismatch");
+                cancellationToken.ThrowIfCancellationRequested();
+                long requestedAt = _clock.GetTimestamp();
+                ApplicationResult<GameUiObservation> observed = await host.ObserveAsync(instanceId, endpoint,
+                    assets, cancellationToken).ConfigureAwait(false);
+                sourceObservations++;
+                if (observed.IsFailure)
+                {
+                    return Result(observed.FailureInfo);
+                }
+
+                before = observed.Value!;
+                if (action.SourceAppearanceTimeout > TimeSpan.Zero && _clock.GetElapsedTime(sourceStarted) >= action.SourceAppearanceTimeout)
+                {
+                    return Rejected("source_appearance_timeout");
+                }
+
+                if (!SameTarget(before.Frame, instanceId, endpoint))
+                {
+                    return Rejected("target_mismatch");
+                }
+
+                if (!sourceFrames.Add(before.Frame.FrameId) || before.Frame.CaptureStartedTimestamp < requestedAt)
+                {
+                    return Rejected("source_frame_invalid");
+                }
+
+                if (excluded.Any(id => before.Find(id)?.Status != GameMatchStatus.Absent))
+                {
+                    return Rejected("excluded_asset_present_or_unproven");
+                }
+
+                if (required.Any(id => before.Find(id)?.Status != GameMatchStatus.Unique))
+                {
+                    return Rejected("required_asset_unproven");
+                }
+
+                if (posts.Any(id => before.Find(id)?.Status != GameMatchStatus.Absent))
+                {
+                    return Rejected("postcondition_not_absent_before_action");
+                }
+
+                match = before.Find(action.SourceAssetId);
+                if (match?.Status == GameMatchStatus.Absent && action.SourceAppearanceTimeout > TimeSpan.Zero
+                    && _clock.GetElapsedTime(sourceStarted) < action.SourceAppearanceTimeout)
+                {
+                    // Пульсирующий PRESS TO START: ожидаем только при доказанных context/guards.
+                    // Unknown и неоднозначность не ожидаются; ни одного разрешения tap ещё нет.
+                    TimeSpan sourceAge = _clock.GetElapsedTime(before.Frame.CaptureStartedTimestamp);
+                    if (sourceAge < TimeSpan.Zero || sourceAge > action.MaximumObservationAge)
+                    {
+                        return Rejected("observation_stale");
+                    }
+
+                    await Task.Delay(TimeSpan.FromMilliseconds(150), _clock, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                break;
             }
 
-            if (excluded.Any(id => before.Find(id)?.Status != GameMatchStatus.Absent))
-            {
-                return Rejected("excluded_asset_present_or_unproven");
-            }
-
-            if (required.Any(id => before.Find(id)?.Status != GameMatchStatus.Unique))
-            {
-                return Rejected("required_asset_unproven");
-            }
-
-            GameUiMatch? match = before.Find(action.SourceAssetId);
             if (match?.Status != GameMatchStatus.Unique || match.SafeTapBounds is not GamePixelRect safe)
             {
                 return Rejected("source_" + (match?.Status.ToString() ?? "missing"));
-            }
-
-            if (posts.Any(id => before.Find(id)?.Status != GameMatchStatus.Absent))
-            {
-                return Rejected("postcondition_not_absent_before_action");
             }
 
             GameGeometry geometry;
@@ -130,6 +174,7 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
                 cancellationToken.ThrowIfCancellationRequested();
                 ApplicationResult<GameUiObservation> next = await host.ObserveAsync(instanceId, endpoint,
                     assets, cancellationToken).ConfigureAwait(false);
+                postconditionObservations++;
                 if (next.IsFailure)
                 {
                     return Result(next.FailureInfo);

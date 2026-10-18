@@ -582,7 +582,8 @@
       ],
       "alternativePostconditionAssetIds": [
         "loading.download"
-      ]
+      ],
+      "sourceAppearanceTimeout": "00:00:10"
     },
     {
       "id": "update.download",
