@@ -20,9 +20,9 @@ public sealed record AndroidScreenshotCaptureInfo(
     int ProcessExitCode,
     NativeFrameInfo FrameInfo)
 {
-    /// <summary>Начало capture: свежесть не продлевается временем передачи и decode PNG.</summary>
+    /// <summary>Начало захвата: свежесть не продлевается временем передачи и декодирования PNG.</summary>
     public DateTimeOffset CaptureStartedAtUtc { get; init; }
-    /// <summary>Monotonic момент начала capture в текущем процессе.</summary>
+    /// <summary>Момент начала захвата по монотонным часам текущего процесса.</summary>
     public long CaptureStartedTimestamp { get; init; }
 }
 

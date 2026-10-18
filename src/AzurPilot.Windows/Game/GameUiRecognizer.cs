@@ -2,10 +2,10 @@ using AzurPilot.Core.Game;
 
 namespace AzurPilot.Windows.Game;
 
-/// <summary>Распознаёт известные ассеты на исходном native кадре, масштабируя только шаблоны.</summary>
+/// <summary>Распознаёт известные ассеты на исходном нативном кадре, масштабируя только шаблоны.</summary>
 public sealed class GameUiRecognizer(GameAssetCatalog catalog)
 {
-    /// <summary>Возвращает provenance и типизированные evidence; никогда не выдаёт разрешение ввода.</summary>
+    /// <summary>Возвращает происхождение кадра и типизированные результаты распознавания; никогда не выдаёт разрешение ввода.</summary>
     public GameUiObservation Observe(NativeFrame frame, GameFrameProvenance provenance, IReadOnlyList<string> assetIds)
     {
         ArgumentNullException.ThrowIfNull(frame);

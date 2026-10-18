@@ -1,6 +1,6 @@
 namespace AzurPilot.Core.Game;
 
-/// <summary>Логическая полуоткрытая область игрового UI в reference space.</summary>
+/// <summary>Полуоткрытая область игрового UI в логической системе координат.</summary>
 public readonly record struct GameRect(int Left, int Top, int Right, int Bottom);
 
 /// <summary>Полуоткрытая область физических пикселей кадра.</summary>
@@ -13,10 +13,10 @@ public readonly record struct GamePixelRect(int Left, int Top, int Right, int Bo
     }
 }
 
-/// <summary>Точка Android input в проверенной системе физических координат.</summary>
+/// <summary>Точка ввода Android в проверенной системе физических координат.</summary>
 public readonly record struct GameInputPoint(int X, int Y);
 
-/// <summary>Геометрия поддерживаемого landscape 16:9; не утверждает совпадение с Android viewport.</summary>
+/// <summary>Геометрия поддерживаемой альбомной ориентации 16:9; не доказывает совпадение с областью игры Android.</summary>
 public sealed class GameGeometry
 {
     /// <summary>Ширина логического пространства UI.</summary>
@@ -34,14 +34,14 @@ public sealed class GameGeometry
         if (width < LogicalWidth || height < LogicalHeight || width > 3840 || height > 2160
             || (long)width * LogicalHeight != (long)height * LogicalWidth)
         {
-            throw new ArgumentOutOfRangeException(nameof(width), "Требуется landscape 16:9 в проверенном диапазоне 720p–4K.");
+            throw new ArgumentOutOfRangeException(nameof(width), "Требуется альбомная ориентация 16:9 в проверенном диапазоне 720p–4K.");
         }
 
         Width = width;
         Height = height;
     }
 
-    /// <summary>Округляет границы наружу; не выполняет clipping.</summary>
+    /// <summary>Округляет границы наружу; не обрезает область по границам кадра.</summary>
     public GamePixelRect Map(GameRect rect)
     {
         Validate(rect);

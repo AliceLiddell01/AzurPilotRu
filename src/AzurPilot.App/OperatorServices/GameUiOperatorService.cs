@@ -10,7 +10,7 @@ public sealed record GameDockRoundtrip(GameActionOutcome Open, GameActionOutcome
 
 public sealed partial class AzurPilotOperatorService
 {
-    /// <summary>Свежий read-only capture и поиск известных ассетов, без игрового ввода.</summary>
+    /// <summary>Свежий снимок и поиск известных ассетов, без игрового ввода.</summary>
     public async Task<ApplicationResult<GameUiObservation>> ObserveGameUiAsync(MuMuInstanceId instanceId, CancellationToken cancellationToken)
     {
         ApplicationResult<ResolvedAndroidTarget> target = ResolveAndroidTarget(instanceId);

@@ -6,7 +6,7 @@ using AzurPilot.Windows.Android;
 
 namespace AzurPilot.Windows.Game;
 
-/// <summary>Использует существующий capture/frame owner и тот же Android host.</summary>
+/// <summary>Использует существующий механизм захвата и владения кадром и тот же адаптер Android.</summary>
 public sealed class GameUiWindowsHost(IAndroidScreenshotHost screenshots, IAndroidGameInputHost input) : IGameUiHost
 {
     /// <inheritdoc />

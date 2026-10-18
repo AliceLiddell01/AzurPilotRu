@@ -16,7 +16,7 @@ public sealed record GameAssetVariant(string Id, string File, string SourceSha25
 public sealed record GameAsset(string Id, string Purpose, GameRect Search, GameRect? SafeTapOffset,
     IReadOnlyList<GameAssetVariant> Variants);
 
-/// <summary>Небольшой immutable каталог embedded игровых ресурсов Global/EN.</summary>
+/// <summary>Небольшой неизменяемый каталог встроенных игровых ресурсов Global/EN.</summary>
 public sealed class GameAssetCatalog
 {
     private const string ResourcePrefix = "AzurPilot.GameAssets.";
@@ -29,7 +29,7 @@ public sealed class GameAssetCatalog
     private readonly FrozenDictionary<string, GameAsset> _assets;
     private readonly FrozenDictionary<string, byte[]> _templates;
     private readonly FrozenDictionary<string, GameUiAction> _actions;
-    /// <summary>Общий immutable каталог с ограниченным кешем encoded шаблонов.</summary>
+    /// <summary>Общий неизменяемый каталог с ограниченным кешем закодированных шаблонов.</summary>
     public static GameAssetCatalog Default { get; } = Load();
     /// <summary>Проверенные игровые ассеты.</summary>
     public IReadOnlyCollection<GameAsset> Assets => _assets.Values;
@@ -112,7 +112,7 @@ public sealed class GameAssetCatalog
         }
     }
 
-    /// <summary>Возвращает известный ассет; fallback по имени отсутствует.</summary>
+    /// <summary>Возвращает известный ассет; подстановки по имени нет.</summary>
     public GameAsset GetAsset(string id)
     {
         return _assets[id];
@@ -139,11 +139,11 @@ public sealed class GameAssetCatalog
     {
         if (name.Contains('/', StringComparison.Ordinal) || name.Contains('\\', StringComparison.Ordinal))
         {
-            throw new InvalidDataException("Путь ресурса не является именем embedded ассета.");
+            throw new InvalidDataException("Путь ресурса не является именем встроенного ассета.");
         }
 
         using Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourcePrefix + name)
-            ?? throw new InvalidDataException("Embedded игровой ресурс не найден.");
+            ?? throw new InvalidDataException("Встроенный игровой ресурс не найден.");
         if (stream.Length is < 1 or > 262144)
         {
             throw new InvalidDataException("Игровой ресурс превышает бюджет.");

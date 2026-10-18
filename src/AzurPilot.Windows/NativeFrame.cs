@@ -88,7 +88,7 @@ public sealed class NativeFrame : IDisposable
         }
     }
 
-    /// <summary>Ищет небольшой PNG-шаблон в physical ROI без копирования полного кадра.</summary>
+    /// <summary>Ищет небольшой PNG-шаблон в ROI физических пикселей без копирования полного кадра.</summary>
     public NativeTemplateMatch MatchTemplate(PixelRegion search, ReadOnlySpan<byte> templatePng,
         int templateWidth, int templateHeight, NativeTemplateMode mode)
     {

@@ -4,12 +4,12 @@ using AzurPilot.Core.MuMu;
 
 namespace AzurPilot.Core.Game;
 
-/// <summary>Одно действие: fresh match → input proof → tap → отдельное bounded наблюдение эффекта.</summary>
+/// <summary>Одно действие: свежее распознавание → проверка ввода → нажатие → отдельное наблюдение эффекта с ограничением времени.</summary>
 public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider? clock = null)
 {
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
-    /// <summary>Выполняет переход под арендой, которой владеет вызывающий operator service.</summary>
+    /// <summary>Выполняет переход под арендой вызывающего операторского сервиса.</summary>
     public async Task<GameActionOutcome> RunAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,
         GameUiAction action, GameActionProgress progress, CancellationToken cancellationToken)
     {
@@ -190,7 +190,7 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider? clock = n
         return frame.InstanceId == instanceId && frame.Endpoint == endpoint;
     }
 
-    /// <summary>Единая bounded диагностика отказа игрового действия.</summary>
+    /// <summary>Единая диагностика отказа игрового действия с ограниченным объёмом данных.</summary>
     public static ApplicationFailure Failure(string reason, bool attempted = false)
     {
         return new()

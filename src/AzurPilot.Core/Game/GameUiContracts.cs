@@ -19,7 +19,7 @@ public enum GameMatchStatus
     TechnicalFailure,
 }
 
-/// <summary>Provenance одного свежего наблюдения; timestamp принадлежит monotonic clock текущего процесса.</summary>
+/// <summary>Происхождение одного свежего наблюдения; временная метка принадлежит монотонным часам текущего процесса.</summary>
 public sealed record GameFrameProvenance(Guid FrameId, MuMuInstanceId InstanceId, AndroidEndpoint Endpoint,
     DateTimeOffset CaptureStartedAtUtc, long CaptureStartedTimestamp, int Width, int Height);
 
@@ -42,7 +42,7 @@ public sealed record GameUiObservation(GameFrameProvenance Frame, IReadOnlyList<
 public sealed record GameUiAction(string Id, string SourceAssetId, string PostconditionAssetId,
     TimeSpan MaximumObservationAge, TimeSpan PostconditionTimeout, IReadOnlyList<string>? ExcludedAssetIds = null);
 
-/// <summary>Однократное разрешение tap, создаваемое Core после проверки match, viewport и свежести.</summary>
+/// <summary>Однократное разрешение нажатия, создаваемое Core после проверки распознавания, области игры и свежести кадра.</summary>
 public sealed class GameTap
 {
     private int _consumed;
@@ -61,9 +61,9 @@ public sealed class GameTap
     public string AssetId { get; }
     /// <summary>Проверенная безопасная область.</summary>
     public GamePixelRect SafeBounds { get; }
-    /// <summary>Разрешённая точка input.</summary>
+    /// <summary>Разрешённая точка ввода.</summary>
     public GameInputPoint Point { get; }
-    /// <summary>Срок действия, принадлежащий исходному action.</summary>
+    /// <summary>Срок действия, заданный исходным переходом.</summary>
     public TimeSpan MaximumObservationAge { get; }
     /// <summary>Атомарно расходует разрешение; повторный вызов запрещает второй ввод.</summary>
     public bool TryConsume()
@@ -72,29 +72,29 @@ public sealed class GameTap
     }
 }
 
-/// <summary>Граница наблюдения, проверки Android viewport и одного адресованного tap.</summary>
+/// <summary>Граница наблюдения, проверки области игры Android и одного адресованного нажатия.</summary>
 public interface IGameUiHost
 {
-    /// <summary>Новый захват exact target; старый кадр не переиспользуется.</summary>
+    /// <summary>Новый захват кадра точно выбранного устройства; старый кадр не переиспользуется.</summary>
     Task<ApplicationResult<GameUiObservation>> ObserveAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,
         IReadOnlyList<string> assets, CancellationToken cancellationToken);
 
-    /// <summary>Доказывает foreground, полноэкранный viewport и идентичность координат input/кадра.</summary>
+    /// <summary>Доказывает передний план, полноэкранную область игры и совпадение координат ввода и кадра.</summary>
     Task<ApplicationResult<bool>> ValidateInputAsync(GameFrameProvenance frame, CancellationToken cancellationToken);
 
-    /// <summary>Ровно один tap через тот же bundled ADB, без retry.</summary>
+    /// <summary>Ровно одно нажатие через тот же поставляемый ADB, без повторной попытки.</summary>
     Task<ApplicationResult<AndroidCommandOutcome>> TapAsync(GameTap tap, CancellationToken cancellationToken);
 }
 
 /// <summary>Сохраняет известный частичный эффект при исключениях и отмене.</summary>
 public sealed class GameActionProgress
 {
-    /// <summary>Внешняя mutation вызвана.</summary>
+    /// <summary>Вызвана внешняя операция изменения состояния.</summary>
     public bool MutationAttempted { get; internal set; }
     /// <summary>Переход доказан отдельным кадром.</summary>
     public bool ChangeProven { get; internal set; }
 }
 
-/// <summary>Итог bounded действия; Unknown не означает NoEffect.</summary>
+/// <summary>Итог действия с ограничением времени; Unknown не означает NoEffect.</summary>
 public sealed record GameActionOutcome(string ActionId, GameUiObservation? Before, GameUiObservation? After,
     GameInputPoint? Point, bool MutationAttempted, bool ChangeProven, ApplicationFailure? Failure);

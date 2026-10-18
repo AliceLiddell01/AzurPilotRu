@@ -69,7 +69,7 @@ public static partial class AzurPilotNativeBridge
     /// </summary>
     public const uint CapabilityImgcodecs = 1u << 1;
 
-    /// <summary>Бит capability imgproc: template matching.</summary>
+    /// <summary>Бит capability imgproc: поиск по шаблону.</summary>
     public const uint CapabilityImgproc = 1u << 2;
 
     /// <summary>

@@ -206,8 +206,8 @@ MSBuild работает по принципу fail-closed и перед managed
   диагностической capability. Подробности — [screenshot-diagnostics.md](screenshot-diagnostics.md).
 - Product surfaces: интерактивный TUI и [Agent CLI](../reference/agent-cli.md) с версионированным JSON,
   явными mutation-командами и общей межпроцессной арендой exact identity.
-- Отдельная игровая capability добавляет типизированную геометрию, известные ассеты, native ROI matching
-  и безопасный tap с postcondition; владелец — [game-ui.md](game-ui.md).
+- Отдельные игровые операции добавляют типизированную геометрию, известные ассеты, нативное сопоставление в ROI
+  и безопасное нажатие с проверкой результата; владелец — [game-ui.md](game-ui.md).
 - Не входят в текущую capability OCR/ONNX/GPU
   inference, готовность UI по изображению, REPL и визуальный TUI Harness.
   Для них не создаются placeholder-документы, секции конфигурации, коды отказов и диагностические секции. Общие
