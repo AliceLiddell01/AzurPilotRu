@@ -7,10 +7,8 @@ description: >-
   проверяет ссылки. Используй при добавлении или изменении документации, постоянных правил, архитектурных
   контрактов и при завершении feature, которая создаёт новое durable knowledge. Не активируй только ради
   обычной локальной правки кода, если постоянное знание не изменилось.
-whenToUse: >-
-  Задача добавляет/меняет AGENTS.md, .codex/context, docs или .agents/skills; появляется новая capability
-  с архитектурными правилами; нужно задокументировать решение, acceptance evidence или troubleshooting;
-  требуется сократить/нормализовать agent context и убрать дублирование знаний.
+  Включает изменения AGENTS.md, .codex/context, docs и .agents/skills, фиксацию acceptance evidence,
+  troubleshooting, сокращение agent context и устранение дублирования знаний.
 ---
 
 # AzurPilotRu: управление документацией и agent context
