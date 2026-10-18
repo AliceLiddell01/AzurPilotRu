@@ -16,8 +16,19 @@ from pathlib import Path
 from PIL import Image, UnidentifiedImageError
 
 
+LOGICAL_WIDTH = 1280
+LOGICAL_HEIGHT = 720
+
+
 def bounds(rect):
     return tuple(rect[key] for key in ("left", "top", "right", "bottom"))
+
+
+def physical_bounds(rect, width, height):
+    left, top, right, bottom = rect
+    return (left * width // LOGICAL_WIDTH, top * height // LOGICAL_HEIGHT,
+            (right * width + LOGICAL_WIDTH - 1) // LOGICAL_WIDTH,
+            (bottom * height + LOGICAL_HEIGHT - 1) // LOGICAL_HEIGHT)
 
 
 def validate_recipe(recipe):
@@ -28,9 +39,9 @@ def validate_recipe(recipe):
         left, top, right, bottom = bounds(recipe["crop"])
         if (not isinstance(source_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", source_hash)
                 or any(type(v) is not int for v in (width, height, left, top, right, bottom))
-                or not (1280 <= width <= 3840 and 720 <= height <= 2160)
-                or width * 720 != height * 1280
-                or not (0 <= left < right <= 1280 and 0 <= top < bottom <= 720)):
+                or not (LOGICAL_WIDTH <= width <= 3840 and LOGICAL_HEIGHT <= height <= 2160)
+                or width * LOGICAL_HEIGHT != height * LOGICAL_WIDTH
+                or not (0 <= left < right <= LOGICAL_WIDTH and 0 <= top < bottom <= LOGICAL_HEIGHT)):
             raise ValueError
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("Неполный или недопустимый рецепт происхождения ассета") from error
@@ -133,7 +144,7 @@ def prepare(source_paths: list[Path], root: Path):
         for variant in asset["variants"]:
             source = sources[variant["sourceSha256"]]
             logical = bounds(variant["crop"])
-            physical = tuple(v * source.width // 1280 for v in logical)
+            physical = physical_bounds(logical, source.width, source.height)
             crop = source.crop(physical)
             output = root / "assets/game" / variant["file"]
             crops[variant["file"]] = crop
@@ -152,18 +163,14 @@ def prepare(source_paths: list[Path], root: Path):
                     state == "selection" and asset["id"] == "dock.selection-confirm")
                 if included:
                     variant = asset["variants"][0]
-                    left, top, right, bottom = bounds(variant["crop"])
-                    box = (left * width // 1280, top * height // 720,
-                           (right * width + 1279) // 1280, (bottom * height + 719) // 720)
+                    box = physical_bounds(bounds(variant["crop"]), width, height)
                     patch = crops[variant["file"]].resize((box[2] - box[0], box[3] - box[1]), Image.Resampling.BOX)
                     canvas.paste(patch, box[:2])
             outputs[root / "tests/fixtures/game" / f"{state}-{height}.png"] = png_bytes(canvas)
 
     for name, recipe in negative_recipes.items():
         source = sources[recipe["sourceSha256"]]
-        left, top, right, bottom = bounds(recipe["crop"])
-        box = (left * source.width // 1280, top * source.height // 720,
-               right * source.width // 1280, bottom * source.height // 720)
+        box = physical_bounds(bounds(recipe["crop"]), source.width, source.height)
         canvas = Image.new("RGB", source.size, (37, 46, 58))
         canvas.paste(source.crop(box), box[:2])
         output = root / "tests/fixtures/game" / f"{name}-{source.height}.png"

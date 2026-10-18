@@ -182,6 +182,28 @@ class PrepareGameAssetsTests(unittest.TestCase):
         self.assertEqual(before["tests/fixtures/game/dock-720.png"], (recovery / "old-3").read_bytes())
         self.assertEqual(before["assets/game/catalog.json"], self.catalog_path.read_bytes())
 
+    def test_physical_crops_round_outward_at_1920x1080(self):
+        crop = dict(left=3, top=1, right=23, bottom=17)
+        recipes = [self.catalog["assets"][0]["variants"][0], self.provenance["depot"],
+                   self.provenance["technology"]]
+        for index, recipe in enumerate(recipes):
+            Image.new("RGB", (1920, 1080), (20 + index * 40, 80, 120)).save(self.sources[index])
+            recipe.update(sourceSha256=hashlib.sha256(self.sources[index].read_bytes()).hexdigest(),
+                          sourceWidth=1920, sourceHeight=1080, crop=dict(crop))
+        self.write_recipes()
+
+        generator.prepare(self.sources, self.root)
+
+        with Image.open(self.root / "assets/game/dock.header.png") as generated_crop:
+            self.assertEqual((31, 25), generated_crop.size)
+        with Image.open(self.root / "tests/fixtures/game/technology-1080.png") as negative:
+            self.assertEqual((1920, 1080), negative.size)
+            self.assertEqual((100, 80, 120), negative.getpixel((4, 1)))
+            self.assertEqual((100, 80, 120), negative.getpixel((34, 25)))
+            self.assertEqual((37, 46, 58), negative.getpixel((3, 1)))
+            self.assertEqual((37, 46, 58), negative.getpixel((35, 25)))
+            self.assertEqual((37, 46, 58), negative.getpixel((34, 26)))
+
     def test_complete_sources_produce_consistent_idempotent_set(self):
         sources_before = [path.read_bytes() for path in self.sources]
         generator.prepare(self.sources, self.root)
