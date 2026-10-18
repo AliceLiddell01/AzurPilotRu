@@ -55,7 +55,7 @@ public sealed partial class AzurPilotOperatorService
                 return ApplicationResult<GameDockRoundtrip>.Failure(target.FailureInfo!);
             }
 
-            // Аренда уже удерживается. Подготовка и UI используют один разрешённый exact endpoint;
+            // Аренда уже удерживается. Подготовка и UI используют один разрешённый точный endpoint;
             // последующие проверки свежего кадра и viewport остаются обязательными перед каждым tap.
             ApplicationResult<AndroidTransportPreparationOutcome> prepared = await _androidReadiness.PrepareTransportAsync(
                 target.Value!.Endpoint, cancellationToken, mutationProgress: androidMutationProgress).ConfigureAwait(false);

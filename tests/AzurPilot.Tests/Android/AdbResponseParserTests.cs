@@ -76,6 +76,69 @@ public sealed class AdbResponseParserTests
                 Endpoint).State);
     }
 
+    [Theory(DisplayName = "Absent требует полного однозначного отказа для точного endpoint")]
+    [InlineData("stderr", true)]
+    [InlineData("stdout", true)]
+    [InlineData("line_endings", true)]
+    [InlineData("zero_exit", false)]
+    [InlineData("endpoint_prefix", false)]
+    [InlineData("unrelated_lines", false)]
+    [InlineData("unrelated_streams", false)]
+    [InlineData("split_message", false)]
+    [InlineData("incomplete_message", false)]
+    [InlineData("unrecognized_message", false)]
+    [InlineData("extra_prefix", false)]
+    [InlineData("extra_suffix", false)]
+    [InlineData("conflicting_lines", false)]
+    [InlineData("conflicting_streams", false)]
+    [InlineData("stdout_truncated", false)]
+    [InlineData("stderr_truncated", false)]
+    [InlineData("binary_stdout", false)]
+    [InlineData("binary_stdout_truncated", false)]
+    public void AbsentTransportRequiresCompleteExactTargetError(string scenario, bool absent)
+    {
+        AndroidEndpoint endpoint = new("127.0.0.1", 2031);
+        string error = $"error: device '{endpoint}' not found";
+        const string OtherError = "error: device '127.0.0.1:20312' not found";
+        WindowsProcessOutcome outcome = scenario switch
+        {
+            "stderr" => Outcome(1, string.Empty, error),
+            "stdout" => Outcome(1, error),
+            "line_endings" => Outcome(1, " \r\n", error + "\r\n"),
+            "zero_exit" => Outcome(0, string.Empty, error),
+            "endpoint_prefix" => Outcome(1, string.Empty, OtherError),
+            "unrelated_lines" => Outcome(1, string.Empty, $"target={endpoint}\n{OtherError}"),
+            "unrelated_streams" => Outcome(1, endpoint.ToString(), OtherError),
+            "split_message" => Outcome(1, "not found", $"error: device '{endpoint}'"),
+            "incomplete_message" => Outcome(1, string.Empty, $"error: device '{endpoint}' not foun"),
+            "unrecognized_message" => Outcome(1, string.Empty, $"endpoint {endpoint} not found"),
+            "extra_prefix" => Outcome(1, string.Empty, "context: " + error),
+            "extra_suffix" => Outcome(1, string.Empty, error + " in cache"),
+            "conflicting_lines" => Outcome(1, string.Empty, error + "\n" + OtherError),
+            "conflicting_streams" => Outcome(1, "device", error),
+            "stdout_truncated" => Outcome(1, string.Empty, error, truncated: true),
+            "stderr_truncated" => Outcome(1, string.Empty, error) with { StandardErrorTruncated = true },
+            "binary_stdout" => Outcome(1, string.Empty, error) with
+            {
+                Mode = WindowsProcessStandardOutputMode.Binary,
+                StandardOutputBytes = [1],
+                StandardOutputBytesRead = 1,
+            },
+            "binary_stdout_truncated" => Outcome(1, string.Empty, error) with
+            {
+                Mode = WindowsProcessStandardOutputMode.Binary,
+                StandardOutputBytesTruncated = true,
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+        };
+
+        Assert.Equal(absent, AdbResponseParser.IsTargetNotFound(outcome, endpoint));
+        AndroidTransportObservation observation = AdbResponseParser.ParseTransport(outcome, endpoint);
+        Assert.Equal(absent ? AndroidTransportState.Absent : AndroidTransportState.Unknown, observation.State);
+        AssertBounded(observation.Evidence);
+        Assert.DoesNotContain(error, observation.Evidence, StringComparison.Ordinal);
+    }
+
     [Fact(DisplayName = "Усечённый вывод transport полноценным ответом не считается")]
     public void TruncatedTransportOutputIsNotAProvenObservation()
         => Assert.Equal(

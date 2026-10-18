@@ -429,9 +429,9 @@ public static class AdbResponseParser
 
     /// <summary>Определяет, что ADB сообщил об отсутствии запрошенного target-а.</summary>
     /// <remarks>
-    /// Признаком служит документированная форма отказа ADB: ненулевой код выхода и сообщение, которое
-    /// одновременно называет отсутствующим устройство и содержит запрошенный endpoint. Любая другая
-    /// форма отказа не истолковывается: недостижимость target-а не выдаётся за доказанное отсутствие.
+    /// Признаком служит ненулевой код выхода и полное сообщение об отсутствии устройства с точным
+    /// endpoint в одном потоке при пустом другом потоке. Усечение, посторонний текст и любая другая
+    /// форма отказа не истолковываются: недостижимость target-а не выдаётся за доказанное отсутствие.
     /// </remarks>
     /// <param name="outcome">Результат завершившейся команды ADB.</param>
     /// <param name="endpoint">Точный endpoint, к которому относилась команда.</param>
@@ -440,15 +440,19 @@ public static class AdbResponseParser
     {
         ArgumentNullException.ThrowIfNull(outcome);
 
-        if (outcome.ExitCode == 0)
+        if (outcome.ExitCode == 0 || IsOutputTruncated(outcome)
+            || outcome.StandardOutputBytesTruncated
+            || outcome.StandardOutputBytesRead != 0 || outcome.StandardOutputBytes.Length != 0)
         {
             return false;
         }
 
-        string diagnostics = outcome.StandardError + " " + outcome.StandardOutput;
+        string expectedError = $"error: device '{endpoint}' not found";
 
-        return diagnostics.Contains("not found", StringComparison.OrdinalIgnoreCase)
-            && diagnostics.Contains(endpoint.ToString(), StringComparison.Ordinal);
+        return (string.IsNullOrWhiteSpace(outcome.StandardOutput)
+                && string.Equals(outcome.StandardError.Trim(), expectedError, StringComparison.Ordinal))
+            || (string.IsNullOrWhiteSpace(outcome.StandardError)
+                && string.Equals(outcome.StandardOutput.Trim(), expectedError, StringComparison.Ordinal));
     }
 
     private static AndroidLauncherResolution QueryFailedResolution(string evidence)

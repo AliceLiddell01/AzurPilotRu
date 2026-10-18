@@ -154,20 +154,49 @@ public sealed class AndroidScreenshotCaptureTests
     [Theory]
     [InlineData("exact", false, "absent")]
     [InlineData("other", false, "unknown")]
+    [InlineData("endpoint_prefix", false, "unknown")]
+    [InlineData("unrelated_lines", false, "unknown")]
+    [InlineData("incomplete_message", false, "unknown")]
+    [InlineData("unrecognized_message", false, "unknown")]
+    [InlineData("conflicting_lines", false, "unknown")]
+    [InlineData("binary_stdout", false, "unknown")]
+    [InlineData("binary_stdout_truncated", false, "unknown")]
     [InlineData("exact", true, "unknown")]
     [InlineData("generic", false, "unknown")]
     public async Task CaptureFailureReportsOnlyProvenExactTransportWithoutPublishingStderr(string scenario, bool truncated, string expected)
     {
         CaptureFixture fixture = new();
         fixture.Discover();
-        string error = scenario == "generic" ? "private error payload"
-            : $"error: device '{(scenario == "exact" ? Endpoint.ToString() : "other-host:16419")}' not found";
-        fixture.Runner.EnqueueBinaryOutcome([], exitCode: 1, standardError: error, standardErrorTruncated: truncated);
-        var result = await fixture.Capture();
+        AndroidEndpoint endpoint = new(Endpoint.Host, 2031);
+        string exactError = $"error: device '{endpoint}' not found";
+        string otherError = $"error: device '{endpoint.Host}:20312' not found";
+        string error = scenario switch
+        {
+            "exact" or "binary_stdout" or "binary_stdout_truncated" => exactError,
+            "other" => "error: device 'other-host:16419' not found",
+            "endpoint_prefix" => otherError,
+            "unrelated_lines" => $"target={endpoint}\n{otherError}",
+            "incomplete_message" => $"error: device '{endpoint}' not foun",
+            "unrecognized_message" => $"endpoint {endpoint} not found",
+            "conflicting_lines" => exactError + "\n" + otherError,
+            "generic" => "private error payload",
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+        };
+        fixture.Runner.EnqueueBinaryOutcome(
+            scenario == "binary_stdout" ? [1] : [],
+            exitCode: 1,
+            truncated: scenario == "binary_stdout_truncated",
+            standardError: error,
+            standardErrorTruncated: truncated);
+        var result = await fixture.Host.CaptureScreenshotAsync(InstanceId, endpoint, CancellationToken.None);
         AssertCaptureFailure(result, "command_failed");
         Assert.Equal(expected, result.FailureInfo!.Details!["transport_state"]);
         AssertSanitized(result, fixture.Installation.InstallRoot, error);
+        AssertSanitized(result, fixture.Installation.InstallRoot, "not found");
         Assert.Equal(2, fixture.Runner.Requests.Count);
+        Assert.Equal(
+            ["-s", endpoint.ToString(), "exec-out", "screencap", "-p"],
+            fixture.Runner.Requests[1].Request.Arguments);
     }
 
     [Fact(DisplayName = "Усечённый PNG не декодируется даже если сохранённый prefix является PNG")]
