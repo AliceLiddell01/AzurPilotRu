@@ -68,7 +68,7 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
 
     /// <summary>Наблюдает или обеспечивает UI; общий token содержит deadline всей операции, включая lifecycle.</summary>
     public async Task<GameUiReadinessOutcome> RunAsync(MuMuInstanceId target, AndroidEndpoint endpoint, bool ensure,
-        GameActionProgress mutation, CancellationToken cancellationToken)
+        GameActionProgress mutation, CancellationToken cancellationToken, bool allowInitialTransition = false)
     {
         long started = clock.GetTimestamp();
         long stateStarted = started;
@@ -86,6 +86,7 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
         double? previousActivity = null;
         GameUiReadinessState state = GameUiReadinessState.Unknown;
         bool readyProven = false;
+        bool supportedStateObserved = false;
         GameUiReadinessOutcome Result(string reason, ApplicationFailure? failure = null)
         {
             return new(state == GameUiReadinessState.Ready && !readyProven ? GameUiReadinessState.Transition : state,
@@ -135,6 +136,7 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                 }
 
                 GameUiStateRule? rule = policy.Classify(last);
+                supportedStateObserved |= rule is not null;
                 state = rule?.State ?? GameUiReadinessState.Unknown;
                 if (last.Matches.Any(m => m.Status == GameMatchStatus.TechnicalFailure))
                 {
@@ -232,7 +234,9 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                     }
 
                     TimeSpan inactivity = clock.GetElapsedTime(stateStarted);
-                    if (inactivity >= TimeSpan.FromSeconds(state == GameUiReadinessState.Loading ? 40 : 12))
+                    TimeSpan inactivityLimit = state == GameUiReadinessState.Unknown && allowInitialTransition && !supportedStateObserved
+                        ? limit : TimeSpan.FromSeconds(state == GameUiReadinessState.Loading ? 40 : 12);
+                    if (inactivity >= inactivityLimit)
                     {
                         return Rejected(state == GameUiReadinessState.Loading ? "loading_no_visual_activity" : "state_unproven_or_no_progress");
                     }

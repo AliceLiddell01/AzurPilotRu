@@ -160,6 +160,29 @@ public sealed class GameUiReadinessTests
         Assert.Empty(result.Actions);
     }
 
+    [Fact]
+    public async Task ColdInitialUnknownWaitsForFreshKnownUiWithoutGuessingOrTap()
+    {
+        using ReadyHost host = new("main") { InitialUnknownFrames = 40 };
+        GameUiReadinessOutcome result = await host.Run(true, new(), allowInitialTransition: true);
+        Assert.Equal(GameUiReadinessState.Ready, result.State);
+        Assert.True(result.Elapsed > TimeSpan.FromSeconds(20));
+        Assert.True(result.Observations > 40);
+        Assert.Equal(0, host.Taps);
+        Assert.True(result.StableFrames >= 3);
+    }
+
+    [Fact]
+    public async Task InitialUnknownBudgetDoesNotExtendUnknownAfterKnownState()
+    {
+        using ReadyHost host = new("main") { Fault = "unknown-after-known" };
+        GameUiReadinessOutcome result = await host.Run(true, new(), allowInitialTransition: true);
+        Assert.Equal(GameUiReadinessState.Unknown, result.State);
+        Assert.Equal("state_unproven_or_no_progress", result.Reason);
+        Assert.InRange(result.Elapsed.TotalSeconds, 12, 15);
+        Assert.Equal(0, host.Taps);
+    }
+
     [Theory]
     [InlineData("no-change")]
     [InlineData("tap-failure")]
@@ -273,6 +296,7 @@ public sealed class GameUiReadinessTests
         internal int Captures { get; private set; }
         internal int Viewports { get; private set; }
         internal int Taps { get; private set; }
+        internal int InitialUnknownFrames { get; init; }
         private Guid _firstId;
         private long _firstTime;
         private readonly CancellationTokenSource _cancel = new();
@@ -281,11 +305,11 @@ public sealed class GameUiReadinessTests
         internal AndroidEndpoint Endpoint { get; } = AndroidTestContext.Endpoint;
         internal Action? OnCapture { get; set; }
 
-        internal async Task<GameUiReadinessOutcome> Run(bool ensure, GameActionProgress progress)
+        internal async Task<GameUiReadinessOutcome> Run(bool ensure, GameActionProgress progress, bool allowInitialTransition = false)
         {
             using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(_cancel.Token, TestContext.Current.CancellationToken);
             return await new GameUiReadinessService(this, GameAssetCatalog.Default.Readiness,
-                GameAssetCatalog.Default.GetAction, Clock).RunAsync(Target, Endpoint, ensure, progress, linked.Token);
+                GameAssetCatalog.Default.GetAction, Clock).RunAsync(Target, Endpoint, ensure, progress, linked.Token, allowInitialTransition);
         }
 
         public Task<ApplicationResult<GameUiObservation>> ObserveAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,
@@ -312,6 +336,11 @@ public sealed class GameUiReadinessTests
             if (Fault == "cycle" && Taps > 0 && Captures >= 4)
             {
                 state = "login";
+            }
+
+            if (Captures <= InitialUnknownFrames || (Fault == "unknown-after-known" && Captures > 1))
+            {
+                state = "unknown";
             }
 
             string[] present = state switch

@@ -49,7 +49,7 @@ public sealed partial class AzurPilotOperatorServiceTests
     [Fact]
     public async Task ReadyEnsureColdStartUsesExistingLifecycleAndRetainsPreparation()
     {
-        using GameUiReadinessTests.ReadyHost ui = new("login") { AdvanceOnTap = true };
+        using GameUiReadinessTests.ReadyHost ui = new("login") { AdvanceOnTap = true, InitialUnknownFrames = 40 };
         OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
         AndroidTestContext android = new();
         var service = CreateAgentService(fixture, android, gameUi: ui, clock: ui.Clock);
@@ -61,6 +61,7 @@ public sealed partial class AzurPilotOperatorServiceTests
         Assert.Equal(0, result.ExitCode);
         Assert.Equal("changed", result.Effect);
         Assert.Equal(2, ui.Taps);
+        Assert.True(ui.Captures > 40);
         Assert.Equal(MuMuLifecycleMutation.Start, Assert.Single(fixture.MuMuHost.MutationRequests).Mutation);
         _ = Assert.Single(android.Host.MutationRequests);
         using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref result));

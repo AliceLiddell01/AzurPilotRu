@@ -61,7 +61,8 @@ public sealed partial class AzurPilotOperatorService
             try
             {
                 GameUiReadinessOutcome ready = await Readiness(instanceId, target.Value!.Endpoint)
-                    .RunAsync(instanceId, target.Value.Endpoint, true, uiMutation, token).ConfigureAwait(false);
+                    .RunAsync(instanceId, target.Value.Endpoint, true, uiMutation, token,
+                        allowInitialTransition: started.Value!.InitialState == AzurLaneGameState.Stopped).ConfigureAwait(false);
                 return ApplicationResult<GameUiEnsureOutcome>.Success(new(started.Value, ready));
             }
             catch (AzurPilotNativeBoundaryException exception)
