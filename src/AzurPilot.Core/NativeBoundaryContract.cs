@@ -58,7 +58,7 @@ public sealed class NativeBoundaryContract
     }
 
     private NativeBoundaryContract()
-        : this(ExpectedAbiVersion, ["core", "imgcodecs"])
+        : this(ExpectedAbiVersion, ["core", "imgcodecs", "imgproc"])
     {
     }
 
