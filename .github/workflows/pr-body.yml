@@ -1,0 +1,32 @@
+name: Контракт описания PR
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-body:
+    name: Структура PR
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: uv для repository tooling
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: latest-known
+          enable-cache: false
+      # Пользовательский body читается из event JSON, а не подставляется в shell.
+      # Тесты обоих валидаторов принадлежат ci.yml, включая push в main.
+      - name: Проверить описание текущего PR
+        run: uv run --python 3.15 --with-requirements .github/scripts/requirements.txt python -B .github/scripts/check_pr_body.py --event-path "$env:GITHUB_EVENT_PATH"

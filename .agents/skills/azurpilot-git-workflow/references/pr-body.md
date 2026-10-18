@@ -35,6 +35,13 @@ Body строится по **фактическому текущему сост�
 ## Ограничения
 ```
 
+Структуру подготовленного body и event JSON проверяет
+[`check_pr_body.py`](../../../../.github/scripts/check_pr_body.py).
+Команды и границы автоматической проверки —
+[agent infrastructure](../../../../docs/testing/agent-infrastructure.md).
+Dependency automation имеет узкое исключение по проверенной bot identity и её branch policy;
+человеческие PR проходят полный контракт.
+
 ### `## Цель`
 
 1–3 плотных предложения:
@@ -152,7 +159,10 @@ recovery/rollback или другого переходного состояни�
 - если findings были, но все оказались stale/false positive, сохраняй их
   отдельными строками вместо искусственного `clean`;
 - fix/marker commit после review не выдаётся за reviewed HEAD той же итерации;
-- сырой поток CLI, prompts и длинные codegen instructions в PR body не копируй.
+- сырой поток CLI, prompts и длинные codegen instructions в PR body не копируй;
+- все строки таблицы идут подряд, без пустых строк; номер и reviewed HEAD присутствуют в каждой
+  строке (SHA из 7–40 hex-символов, при необходимости в backticks), остальные поля содержательны;
+  `—` в уровне/пути допустимо только для `clean` summary. Структурный checker не доказывает факт ревью.
 
 `azurpilot-coderabbit-review` владеет завершённостью итерации и содержательным
 triage. Этот файл владеет представлением накопительного результата в PR body.

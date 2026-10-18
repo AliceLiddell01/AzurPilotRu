@@ -168,4 +168,4 @@ Managed tests запускают настоящий EXE для JSON/negative sta
 управляемым `IMuMuHost` для CLI↔CLI и взаимодействия общей границы сервиса TUI↔CLI. Screenshot-тест исполняет
 настоящую native DLL с управляемым PNG. Это Windows/runtime evidence без физической mutation MuMu.
 Real MuMu lifecycle acceptance и визуальная проверка TUI остаются отдельными доказательствами.
-Будущий визуальный TUI Harness не является частью Agent CLI.
+Визуальный [TUI Harness](../testing/tui-harness.md) не является частью Agent CLI.

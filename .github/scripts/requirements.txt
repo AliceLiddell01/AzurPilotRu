@@ -1,0 +1,3 @@
+# Только repository tooling; продукт не зависит от Python.
+ruamel.yaml==0.19.1
+markdown-it-py==4.2.0

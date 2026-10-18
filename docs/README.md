@@ -24,6 +24,7 @@ verification/acceptance, troubleshooting и других деталей, кот�
 - `testing/game-ui.md` — fixture/native/managed проверки и безопасная живая проверка игрового перехода.
 - `testing/operator-tui-acceptance.md` — приёмка самого TUI на Windows и live MuMu.
 - `testing/tui-harness.md` — постоянный ConPTY/xterm.js CLI, воспроизводимые PNG, ячейки и границы точности воспроизведения.
+- `testing/agent-infrastructure.md` — валидаторы Agent Skills/PR body, локальные команды и границы их доказательства.
 
 ## Чем `docs/` отличается от agent context
 

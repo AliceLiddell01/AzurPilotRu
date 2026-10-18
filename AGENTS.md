@@ -43,8 +43,8 @@ AzurPilotRu — Windows-only x64 приложение: managed часть на .
 
 Перед каждым соответствующим этапом сопоставь текущую задачу и её scope с этой таблицей и
 `description` применимых project skills. При совпадении прочитай их `SKILL.md` до начала этапа,
-следуй его контракту, а нужные references прочитай перед соответствующими шагами. Поле `whenToUse`
-само по себе не гарантирует автоматическое применение skill. При изменении scope повтори
+следуй его контракту, а нужные references прочитай перед соответствующими шагами. Условия активации
+содержатся в стандартном поле `description`. При изменении scope повтори
 маршрутизацию и выбор agent-context для новой capability. Если нужный файл недоступен, обозначь
 блокер и не подменяй его workflow.
 
@@ -53,8 +53,11 @@ AzurPilotRu — Windows-only x64 приложение: managed часть на .
 | Карта agent-context и владельцев | `.codex/context/INDEX.md` |
 | Человеческая документация проекта | `docs/README.md` |
 | Делегирование и координация субагентов | `.agents/skills/azurpilot-agent-coordination/SKILL.md` |
+| Независимое ревью PR/ветки/diff без CodeRabbit | `.agents/skills/azurpilot-code-review/SKILL.md` |
 | Git/branch/commit/push/PR/Draft/merge lifecycle | `.agents/skills/azurpilot-git-workflow/SKILL.md` |
 | Явно запрошенный CodeRabbit review cycle | `.agents/skills/azurpilot-coderabbit-review/SKILL.md` |
+| Реальная runtime-приёмка через production Agent CLI | `.agents/skills/azurpilot-live-testing/SKILL.md` |
+| Визуально значимое поведение TUI, ввод/resize и physical Windows Terminal | `.agents/skills/azurpilot-tui-harness/SKILL.md` |
 | Классификация и оформление новых правил/документации | `.agents/skills/azurpilot-documentation/SKILL.md` |
 
 ## Изменение постоянных знаний
