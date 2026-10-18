@@ -34,8 +34,10 @@ public sealed class GameAssetCatalog
     public static GameAssetCatalog Default => DefaultCatalog.Value;
     /// <summary>Проверенные игровые ассеты.</summary>
     public IReadOnlyCollection<GameAsset> Assets => _assets.Values;
-    /// <summary>Разрешённые обратимые переходы.</summary>
+    /// <summary>Разрешённые переходы с независимо проверяемым postcondition.</summary>
     public IReadOnlyCollection<GameUiAction> Actions => _actions.Values;
+    /// <summary>Единый профиль UI readiness, принадлежащий тому же каталогу.</summary>
+    public GameUiReadinessPolicy Readiness { get; }
 
     private GameAssetCatalog(Manifest manifest)
     {
@@ -94,9 +96,21 @@ public sealed class GameAssetCatalog
             a => a with { Variants = Array.AsReadOnly(a.Variants.ToArray()) }, StringComparer.Ordinal);
         _templates = templates.ToFrozenDictionary(StringComparer.Ordinal);
         _actions = manifest.Actions.ToFrozenDictionary(a => a.Id,
-            a => a with { ExcludedAssetIds = Array.AsReadOnly((a.ExcludedAssetIds ?? []).ToArray()) }, StringComparer.Ordinal);
+            a => a with
+            {
+                ExcludedAssetIds = Array.AsReadOnly((a.ExcludedAssetIds ?? []).ToArray()),
+                RequiredAssetIds = Array.AsReadOnly((a.RequiredAssetIds ?? []).ToArray()),
+                AlternativePostconditionAssetIds = Array.AsReadOnly((a.AlternativePostconditionAssetIds ?? []).ToArray())
+            }, StringComparer.Ordinal);
         foreach (GameUiAction action in _actions.Values)
         {
+            if (action.RequiredAssetIds!.Count > 4 || action.AlternativePostconditionAssetIds!.Count > 3
+                || action.RequiredAssetIds.Concat(action.AlternativePostconditionAssetIds).Any(id => !_assets.ContainsKey(id))
+                || action.AlternativePostconditionAssetIds.Contains(action.SourceAssetId, StringComparer.Ordinal))
+            {
+                throw new InvalidDataException("Непригодные дополнительные признаки перехода.");
+            }
+
             if (action.ExcludedAssetIds!.Count > 4 || action.ExcludedAssetIds.Any(id => !_assets.ContainsKey(id)
                 || id == action.SourceAssetId || id == action.PostconditionAssetId))
             {
@@ -110,6 +124,21 @@ public sealed class GameAssetCatalog
             {
                 throw new InvalidDataException("Непригодный игровой переход.");
             }
+        }
+
+        Readiness = new(Array.AsReadOnly(manifest.Readiness.Rules.Select(r => r with
+        {
+            RequiredAssetIds = Array.AsReadOnly(r.RequiredAssetIds.ToArray()),
+            AbsentAssetIds = Array.AsReadOnly(r.AbsentAssetIds.ToArray()),
+        }).ToArray()));
+        if (Readiness.Rules.Count is < 1 or > 12 || Readiness.Rules.Count(r => r.State == GameUiReadinessState.Ready) != 1
+            || Readiness.Rules.Select(r => r.Id).Distinct(StringComparer.Ordinal).Count() != Readiness.Rules.Count
+            || Readiness.Rules.Any(r => !Enum.IsDefined(r.State) || r.RequiredAssetIds.Count == 0
+                || r.RequiredAssetIds.Intersect(r.AbsentAssetIds, StringComparer.Ordinal).Any()
+                || r.RequiredAssetIds.Concat(r.AbsentAssetIds).Any(id => !_assets.ContainsKey(id))
+                || (r.ActionId is not null && (!_actions.ContainsKey(r.ActionId) || r.State != GameUiReadinessState.AwaitingInput))))
+        {
+            throw new InvalidDataException("Непригодный профиль готовности игрового UI.");
         }
     }
 
@@ -155,5 +184,6 @@ public sealed class GameAssetCatalog
         return output.ToArray();
     }
 
-    private sealed record Manifest(int SchemaVersion, string Client, IReadOnlyList<GameAsset> Assets, IReadOnlyList<GameUiAction> Actions);
+    private sealed record Manifest(int SchemaVersion, string Client, IReadOnlyList<GameAsset> Assets,
+        IReadOnlyList<GameUiAction> Actions, GameUiReadinessPolicy Readiness);
 }

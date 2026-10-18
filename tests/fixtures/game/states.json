@@ -1,0 +1,59 @@
+{
+  "main": [
+    "main.dock",
+    "main.depot",
+    "main.battle",
+    "main.clear-center",
+    "main.clear-left"
+  ],
+  "dock": [
+    "dock.header"
+  ],
+  "selection": [
+    "dock.header",
+    "dock.selection-confirm"
+  ],
+  "login": [
+    "login.logo",
+    "login.enter",
+    "login.start"
+  ],
+  "server": [
+    "login.logo",
+    "login.server",
+    "login.start"
+  ],
+  "login-transition": [
+    "login.logo",
+    "login.server",
+    "login.start",
+    "login.success"
+  ],
+  "download": [
+    "loading.download"
+  ],
+  "download-confirm": [
+    "update.header",
+    "update.download",
+    "update.confirm"
+  ],
+  "main-overlay": [
+    "main.dock",
+    "main.depot",
+    "main.battle",
+    "main.clear-left",
+    "update.header",
+    "update.download",
+    "update.confirm"
+  ],
+  "main-unknown-overlay": [
+    "main.dock",
+    "main.depot",
+    "main.battle",
+    "main.clear-left"
+  ],
+  "unverified-update": [
+    "update.header",
+    "update.confirm"
+  ]
+}

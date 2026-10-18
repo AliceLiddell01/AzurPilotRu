@@ -33,6 +33,21 @@ Native CTest `native_game_match` проверяет C ABI на сдвинуты�
 кадры/RGB-байты при повторных поисках на 4K. Негативная managed проба отвергает DLL текущего ABI без
 обязательного экспорта сопоставления до создания кадра.
 
+`GameUiReadinessTests` проверяет независимость и устойчивость Ready, replay/stale/target/viewport/native
+отказы, неизвестные guards, перекрытие при видимых main-кнопках, bounded пассивную загрузку,
+единственный tap и отмену с сохранением эффекта. `GameUiReadinessAgentTests` проверяет существующий
+lifecycle из Stopped, идемпотентность, общую lease, исчезновение exact target и смену endpoint.
+`states.json` задаёт неперсональные синтетические композиции UI-crops; это не полные реальные экраны.
+Синтетические login/server/download/update/main-overlay fixtures отличаются от живой приёмки.
+Все source-примеры текущих новых crops — настоящие 4K-оригиналы; их rescale не доказывает нативный UI
+на другом разрешении. Сборка и тесты не читают `assets_raw`.
+
+Для live UI Ready отдельно нужны cold start, повторный ensure без lifecycle mutation/tap, возврат
+из Dock, доступные login/download состояния и независимый итоговый capture/foreground.
+Следуйте [live-testing skill](../../.agents/skills/azurpilot-live-testing/SKILL.md): read-only preflight
+и отдельное актуальное подтверждение exact identity/границ mutation обязательны. Не провоцируйте logout,
+обновление или награды для покрытия теста. Невстретившиеся live-состояния отмечаются `NOT_TESTED`.
+
 ## Реальные исходники и временные материалы
 
 Полные снимки экрана и каталоги пользователя для тестов не требуются у другого разработчика.

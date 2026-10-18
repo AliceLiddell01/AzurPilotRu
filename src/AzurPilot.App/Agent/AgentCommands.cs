@@ -38,6 +38,10 @@ internal static class AgentCommands
             async (c, t) => AgentContext.Result(await c.Service.ObserveGameInputAsync(c.Target!.Value, t).ConfigureAwait(false))),
         new("game-dock-roundtrip", true, true, "Распознать Dock, открыть его и подтвердить возврат по новым кадрам под одной арендой.",
             (c, t) => c.GameDockAsync(t)),
+        new("game-ui-ready-observe", false, true, "Независимо подтвердить устойчивый главный игровой экран без запуска, connect или ввода.",
+            (c, t) => c.GameUiReadyAsync(false, t)),
+        new("game-ui-ready-ensure", true, true, "Подготовить точное окружение и обеспечить главный UI через известные bounded переходы под одной арендой.",
+            (c, t) => c.GameUiReadyAsync(true, t)),
     ]);
 
     internal static object Describe()

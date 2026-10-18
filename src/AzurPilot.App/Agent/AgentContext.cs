@@ -179,6 +179,30 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
         Effect = "mayHaveChanged";
     }
 
+    internal async Task<AgentPayload> GameUiReadyAsync(bool ensure, CancellationToken token)
+    {
+        Stage = ensure ? "game-ui-ready-ensure" : "game-ui-ready-observe";
+        if (!ensure)
+        {
+            ApplicationResult<Core.Game.GameUiReadinessOutcome> observed = await Service.ObserveGameUiReadyAsync(Target!.Value, token).ConfigureAwait(false);
+            return observed.IsFailure ? new(null, observed.FailureInfo)
+                : new(observed.Value, observed.Value!.Failure);
+        }
+
+        ApplicationResult<GameUiEnsureOutcome> result = await Service.EnsureGameUiReadyAsync(Target!.Value,
+            _uiMutation, _gameMutation, _androidMutation, RecordPreparation, token).ConfigureAwait(false);
+        GameUiEnsureOutcome? outcome = result.IsSuccess ? result.Value : null;
+        return new(new
+        {
+            preparation = Preparation,
+            game = outcome?.Game,
+            ui = outcome?.Ui,
+            mutation = new { android = _androidMutation, game = _gameMutation, gameUi = _uiMutation }
+        },
+            result.IsFailure ? result.FailureInfo : outcome!.Ui!.Failure
+                ?? (outcome.Ui.State == Core.Game.GameUiReadinessState.Ready ? null : Core.Game.GameUiActionRunner.Failure("ui_not_ready", _uiMutation.MutationAttempted)), Effect);
+    }
+
     private void RecordPreparation(AzurPilotOperatorAndroidPreparationOutcome outcome)
     {
         Preparation = outcome;

@@ -27,6 +27,13 @@ public sealed class GameUiWindowsHost(IAndroidScreenshotHost screenshots, IAndro
                 capture.Info.CaptureStartedAtUtc, capture.Info.CaptureStartedTimestamp,
                 checked((int)capture.Info.FrameInfo.Width), checked((int)capture.Info.FrameInfo.Height));
             GameUiObservation observation = new GameUiRecognizer(GameAssetCatalog.Default).Observe(capture.Frame, provenance, assets);
+            if (observation.Find("loading.download")?.Status == GameMatchStatus.Unique)
+            {
+                GamePixelRect band = new GameGeometry(provenance.Width, provenance.Height).Map(new(185, 671, 1100, 705));
+                RegionRgbStatistics metric = capture.Frame.ScanRegion(new(band.Left, band.Top, band.Right, band.Bottom));
+                observation = observation with { VisualActivity = Math.Round((metric.MeanRed + metric.MeanGreen + metric.MeanBlue) / 3, 3) };
+            }
+
             return ApplicationResult<GameUiObservation>.Success(observation);
         }
         catch (AzurPilotNativeBoundaryException exception)

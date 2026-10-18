@@ -69,6 +69,20 @@ class PrepareGameAssetsTests(unittest.TestCase):
             with self.subTest(negative=index):
                 self.assert_rejected_unchanged([p for i, p in enumerate(self.sources) if i != index], "SHA256")
 
+    def test_data_driven_states_reject_unknown_asset_without_publication(self):
+        states = self.root / "tests/fixtures/game/states.json"
+        states.write_text(json.dumps({"known": ["missing.asset"]}), encoding="utf-8")
+        self.assert_rejected_unchanged(self.sources, "состав")
+
+    def test_data_driven_states_generate_only_selected_patches(self):
+        states = self.root / "tests/fixtures/game/states.json"
+        states.write_text(json.dumps({"positive": ["dock.header"], "negative": []}), encoding="utf-8")
+        generator.prepare(self.sources, self.root)
+        with Image.open(self.root / "tests/fixtures/game/positive-720.png") as positive, Image.open(
+                self.root / "tests/fixtures/game/negative-720.png") as negative:
+            self.assertEqual((20, 80, 120), positive.getpixel((3, 3)))
+            self.assertEqual((37, 46, 58), negative.getpixel((3, 3)))
+
     def test_wrong_negative_hash_preserves_entire_set(self):
         Image.new("RGB", (1280, 720), (1, 2, 3)).save(self.sources[2])
         self.assert_rejected_unchanged(self.sources, "SHA256")

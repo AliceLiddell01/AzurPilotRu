@@ -154,14 +154,20 @@ def prepare(source_paths: list[Path], root: Path):
 
     # Искусственные образцы содержат только неперсональные UI-crops на однотонном фоне.
     # Это доказательство масштабирования/ROI, а не работы нативного UI в другом разрешении.
+    states_path = root / "tests/fixtures/game/states.json"
+    known = {a["id"] for a in catalog["assets"]}
+    states = json.loads(states_path.read_text(encoding="utf-8")) if states_path.exists() else {
+        "main": [a["id"] for a in catalog["assets"] if a["id"].startswith("main.")],
+        "dock": [a for a in ("dock.header",) if a in known],
+        "selection": [a for a in ("dock.header", "dock.selection-confirm") if a in known]}
+    if any(not re.fullmatch(r"[a-zA-Z0-9_-]+", name) or not isinstance(ids, list)
+           or any(asset_id not in known for asset_id in ids) for name, ids in states.items()):
+        raise ValueError("Недопустимый состав синтетического состояния")
     for width, height in ((1280, 720), (1920, 1080), (2560, 1440), (3840, 2160)):
-        for state in ("main", "dock", "selection"):
+        for state, included_ids in states.items():
             canvas = Image.new("RGB", (width, height), (37, 46, 58))
             for asset in catalog["assets"]:
-                included = (state == "main" and asset["id"].startswith("main.")) or (
-                    state in ("dock", "selection") and asset["id"] == "dock.header") or (
-                    state == "selection" and asset["id"] == "dock.selection-confirm")
-                if included:
+                if asset["id"] in included_ids:
                     variant = asset["variants"][0]
                     box = physical_bounds(bounds(variant["crop"]), width, height)
                     patch = crops[variant["file"]].resize((box[2] - box[0], box[3] - box[1]), Image.Resampling.BOX)

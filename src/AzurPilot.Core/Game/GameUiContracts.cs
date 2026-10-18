@@ -31,6 +31,8 @@ public sealed record GameUiMatch(string AssetId, string? VariantId, GameMatchSta
 /// <summary>Один кадр и результаты поиска в нём.</summary>
 public sealed record GameUiObservation(GameFrameProvenance Frame, IReadOnlyList<GameUiMatch> Matches)
 {
+    /// <summary>Ограниченная метрика активности нижней полосы загрузки; не доказывает завершение загрузки.</summary>
+    public double? VisualActivity { get; init; }
     /// <summary>Требует единственного результата запрошенного ассета.</summary>
     public GameUiMatch? Find(string id)
     {
@@ -40,7 +42,8 @@ public sealed record GameUiObservation(GameFrameProvenance Frame, IReadOnlyList<
 
 /// <summary>Разрешённый переход между независимо наблюдаемыми признаками.</summary>
 public sealed record GameUiAction(string Id, string SourceAssetId, string PostconditionAssetId,
-    TimeSpan MaximumObservationAge, TimeSpan PostconditionTimeout, IReadOnlyList<string>? ExcludedAssetIds = null);
+    TimeSpan MaximumObservationAge, TimeSpan PostconditionTimeout, IReadOnlyList<string>? ExcludedAssetIds = null,
+    IReadOnlyList<string>? RequiredAssetIds = null, IReadOnlyList<string>? AlternativePostconditionAssetIds = null);
 
 /// <summary>Однократное разрешение нажатия, создаваемое Core после проверки распознавания, области игры и свежести кадра.</summary>
 public sealed class GameTap
@@ -89,6 +92,8 @@ public interface IGameUiHost
 /// <summary>Сохраняет известный частичный эффект при исключениях и отмене.</summary>
 public sealed class GameActionProgress
 {
+    /// <summary>Число начатых вызовов однократного ввода; сохраняется также при исключении внешней границы.</summary>
+    public int TapAttempts { get; internal set; }
     /// <summary>Вызвана внешняя операция изменения состояния.</summary>
     public bool MutationAttempted { get; internal set; }
     /// <summary>Переход доказан отдельным кадром.</summary>

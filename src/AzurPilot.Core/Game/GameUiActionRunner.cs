@@ -21,7 +21,9 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
         bool attempted = false;
         bool proven = false;
         IReadOnlyList<string> excluded = action.ExcludedAssetIds ?? [];
-        string[] assets = [.. new[] { action.SourceAssetId, action.PostconditionAssetId }.Concat(excluded).Distinct(StringComparer.Ordinal)];
+        IReadOnlyList<string> required = action.RequiredAssetIds ?? [];
+        string[] posts = [action.PostconditionAssetId, .. action.AlternativePostconditionAssetIds ?? []];
+        string[] assets = [.. new[] { action.SourceAssetId }.Concat(posts).Concat(excluded).Concat(required).Distinct(StringComparer.Ordinal)];
         GameActionOutcome Result(ApplicationFailure? failure)
         {
             return new(action.Id, before, after, point, attempted, proven, failure);
@@ -53,13 +55,18 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
                 return Rejected("excluded_asset_present_or_unproven");
             }
 
+            if (required.Any(id => before.Find(id)?.Status != GameMatchStatus.Unique))
+            {
+                return Rejected("required_asset_unproven");
+            }
+
             GameUiMatch? match = before.Find(action.SourceAssetId);
             if (match?.Status != GameMatchStatus.Unique || match.SafeTapBounds is not GamePixelRect safe)
             {
                 return Rejected("source_" + (match?.Status.ToString() ?? "missing"));
             }
 
-            if (before.Find(action.PostconditionAssetId)?.Status != GameMatchStatus.Absent)
+            if (posts.Any(id => before.Find(id)?.Status != GameMatchStatus.Absent))
             {
                 return Rejected("postcondition_not_absent_before_action");
             }
@@ -102,6 +109,7 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
             cancellationToken.ThrowIfCancellationRequested();
             attempted = true;
             progress.MutationAttempted = true;
+            progress.TapAttempts++;
             GameTap permit = new(before.Frame, action.SourceAssetId, safe, point.Value, action.MaximumObservationAge);
             ApplicationResult<AndroidCommandOutcome> tap = await host.TapAsync(permit, cancellationToken).ConfigureAwait(false);
             if (tap.IsFailure)
@@ -115,6 +123,8 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
             }
 
             long started = _clock.GetTimestamp();
+            HashSet<Guid> frames = [before.Frame.FrameId];
+            long previousCapture = before.Frame.CaptureStartedTimestamp;
             while (_clock.GetElapsedTime(started) < action.PostconditionTimeout)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -131,19 +141,23 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
                     return Rejected("excluded_asset_present_or_unproven");
                 }
 
-                if (!SameTarget(after.Frame, instanceId, endpoint) || after.Frame.FrameId == before.Frame.FrameId
+                if (!SameTarget(after.Frame, instanceId, endpoint) || !frames.Add(after.Frame.FrameId)
+                    || after.Frame.CaptureStartedTimestamp < previousCapture
                     || after.Frame.CaptureStartedTimestamp < started
                     || after.Frame.Width != before.Frame.Width || after.Frame.Height != before.Frame.Height)
                 {
                     return Rejected("postcondition_frame_invalid");
                 }
 
+                previousCapture = after.Frame.CaptureStartedTimestamp;
+
                 if (_clock.GetElapsedTime(started) >= action.PostconditionTimeout)
                 {
                     return Rejected("postcondition_unknown");
                 }
 
-                if (after.Find(action.PostconditionAssetId)?.Status == GameMatchStatus.Unique
+                if (posts.Any(id => after.Find(id)?.Status == GameMatchStatus.Unique)
+                    && posts.All(id => after.Find(id)?.Status is GameMatchStatus.Unique or GameMatchStatus.Absent)
                     && after.Find(action.SourceAssetId)?.Status == GameMatchStatus.Absent)
                 {
                     ApplicationResult<bool> postMapping = await host.ValidateInputAsync(after.Frame, cancellationToken).ConfigureAwait(false);

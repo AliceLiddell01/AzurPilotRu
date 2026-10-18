@@ -135,6 +135,393 @@
           "maximumMeanAbsoluteError": 16
         }
       ]
+    },
+    {
+      "id": "main.battle",
+      "purpose": "Независимый правый признак главного меню; ввод запрещён.",
+      "search": {
+        "left": 1117,
+        "top": 542,
+        "right": 1243,
+        "bottom": 584
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "main.battle.png",
+          "sourceSha256": "66ea44215e2292b5cdd277f971c48511ab88b8fbc78432d38b04b17d3d2a50d9",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 1120,
+            "top": 545,
+            "right": 1240,
+            "bottom": 581
+          },
+          "sha256": "4b70d1d9c060a4288b88e5da77300fb85182975031c9db54702af64df163d8c0",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "main.clear-center",
+      "purpose": "Положительное подтверждение свободного центра для предоставленного варианта фона; другой фон остаётся Unknown.",
+      "search": {
+        "left": 547,
+        "top": 277,
+        "right": 713,
+        "bottom": 443
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "main.clear-center.png",
+          "sourceSha256": "66ea44215e2292b5cdd277f971c48511ab88b8fbc78432d38b04b17d3d2a50d9",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 550,
+            "top": 280,
+            "right": 710,
+            "bottom": 440
+          },
+          "sha256": "3f55dbee0dd1ecd7d2aba667c08d71544341e32843cd077209f0c68f41f0f31d",
+          "mode": "Rgb",
+          "minimumScore": 0.96,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 10
+        }
+      ]
+    },
+    {
+      "id": "main.clear-left",
+      "purpose": "Положительное подтверждение свободной области слева; открытая панель не считается Ready.",
+      "search": {
+        "left": 77,
+        "top": 267,
+        "right": 233,
+        "bottom": 423
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "main.clear-left.png",
+          "sourceSha256": "66ea44215e2292b5cdd277f971c48511ab88b8fbc78432d38b04b17d3d2a50d9",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 80,
+            "top": 270,
+            "right": 230,
+            "bottom": 420
+          },
+          "sha256": "ff9944b76e8af9560434b3f0eb130045fa38992bb22b88f5cfbf08a5ba29b5f9",
+          "mode": "Rgb",
+          "minimumScore": 0.96,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 10
+        }
+      ]
+    },
+    {
+      "id": "login.logo",
+      "purpose": "Контекст Global/EN login; не подтверждает успешный вход.",
+      "search": {
+        "left": 21,
+        "top": 7,
+        "right": 181,
+        "bottom": 94
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "login.logo.png",
+          "sourceSha256": "248f5e284f0c2e7008f768da50ecf0aee910f337e9e18ab2af59e5e991c79cd2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 24,
+            "top": 10,
+            "right": 178,
+            "bottom": 91
+          },
+          "sha256": "188fd5e82c3bdde78f854d0e8199766859fdeed40b252774d5c45eb630f340d9",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "login.enter",
+      "purpose": "Только LOG IN существующей сессии, без logout/recovery.",
+      "search": {
+        "left": 549,
+        "top": 533,
+        "right": 731,
+        "bottom": 576
+      },
+      "safeTapOffset": {
+        "left": 30,
+        "top": 8,
+        "right": 145,
+        "bottom": 30
+      },
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "login.enter.png",
+          "sourceSha256": "248f5e284f0c2e7008f768da50ecf0aee910f337e9e18ab2af59e5e991c79cd2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 552,
+            "top": 536,
+            "right": 728,
+            "bottom": 573
+          },
+          "sha256": "b0548afca9f5abcb1b66515f3768c2806c69652769bd2df64324194a05e495cd",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "login.server",
+      "purpose": "Фиксированная подпись SERVER без имени сервера или аккаунта.",
+      "search": {
+        "left": 431,
+        "top": 556,
+        "right": 540,
+        "bottom": 601
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "login.server.png",
+          "sourceSha256": "5e3be6cded7ae81d7f9461f5eb9c339d7113e27862e3499ac4d60bdf78ded5a0",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 434,
+            "top": 559,
+            "right": 537,
+            "bottom": 598
+          },
+          "sha256": "8245c39bdd0d3bf27c9ff3bb4ca811b0cc1ce5d857b9cb61a1b84420e8984aa3",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "login.start",
+      "purpose": "PRESS TO START допускает ввод только вместе с SERVER и логотипом.",
+      "search": {
+        "left": 1032,
+        "top": 517,
+        "right": 1275,
+        "bottom": 553
+      },
+      "safeTapOffset": {
+        "left": 35,
+        "top": 8,
+        "right": 200,
+        "bottom": 25
+      },
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "login.start.png",
+          "sourceSha256": "5e3be6cded7ae81d7f9461f5eb9c339d7113e27862e3499ac4d60bdf78ded5a0",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 1035,
+            "top": 520,
+            "right": 1272,
+            "bottom": 550
+          },
+          "sha256": "7e6d44f6bc267bd8c4505ab2f5fe37a9a8e1b058e9bae939e981a47e3c5361ee",
+          "mode": "Rgb",
+          "minimumScore": 0.9,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 18
+        }
+      ]
+    },
+    {
+      "id": "login.success",
+      "purpose": "Временный баннер не является доказательством Ready; только пассивное ожидание.",
+      "search": {
+        "left": 506,
+        "top": 297,
+        "right": 738,
+        "bottom": 346
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "login.success.png",
+          "sourceSha256": "5e3be6cded7ae81d7f9461f5eb9c339d7113e27862e3499ac4d60bdf78ded5a0",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 509,
+            "top": 300,
+            "right": 735,
+            "bottom": 343
+          },
+          "sha256": "9c5a0144f31dad09636cbacafdb13f93083819a08d5a0b2939ce4cee47a437e4",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "loading.download",
+      "purpose": "Фиксированная подпись загрузки, без чисел и файлов; только ожидание.",
+      "search": {
+        "left": 188,
+        "top": 666,
+        "right": 373,
+        "bottom": 695
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "loading.download.png",
+          "sourceSha256": "3233eca025e50b85a3a44dd4664203bd8111146365db25171a6909297d2c32fb",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 191,
+            "top": 669,
+            "right": 370,
+            "bottom": 692
+          },
+          "sha256": "f1f19feb2ccfe4a01a759464b5b152d6f27c630be5b301df34e0575e8996b459",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "update.header",
+      "purpose": "Только известный заголовок окна Update; сам по себе не разрешает Confirm.",
+      "search": {
+        "left": 321,
+        "top": 176,
+        "right": 524,
+        "bottom": 225
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "update.header.png",
+          "sourceSha256": "23bf78b7b59004f1865aeef157287f391e771d25f583552bbb3a6dd186af44b2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 324,
+            "top": 179,
+            "right": 521,
+            "bottom": 222
+          },
+          "sha256": "59ff66da7f0836c66f55f74d1eead8798dd095fd5e2c3815ac5bceeab5bbe35b",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "update.download",
+      "purpose": "Назначение конкретного окна: This update requires downloading; размер файлов не используется.",
+      "search": {
+        "left": 357,
+        "top": 315,
+        "right": 690,
+        "bottom": 347
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "update.download.png",
+          "sourceSha256": "23bf78b7b59004f1865aeef157287f391e771d25f583552bbb3a6dd186af44b2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 360,
+            "top": 318,
+            "right": 687,
+            "bottom": 344
+          },
+          "sha256": "cfdf159891506f127ceb7aa80c400a9f5e0cb8880f9d41fd0608d65e0ade5abc",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "update.confirm",
+      "purpose": "Confirm только проверенного запроса загрузки игровых файлов; не обновление APK.",
+      "search": {
+        "left": 697,
+        "top": 469,
+        "right": 876,
+        "bottom": 533
+      },
+      "safeTapOffset": {
+        "left": 30,
+        "top": 12,
+        "right": 140,
+        "bottom": 45
+      },
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "update.confirm.png",
+          "sourceSha256": "23bf78b7b59004f1865aeef157287f391e771d25f583552bbb3a6dd186af44b2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 700,
+            "top": 472,
+            "right": 873,
+            "bottom": 530
+          },
+          "sha256": "9981dfb036e192366d0526c401558d007fa366fc8bcfd19d569e25dc24350767",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
     }
   ],
   "actions": [
@@ -157,6 +544,221 @@
       "excludedAssetIds": [
         "dock.selection-confirm"
       ]
+    },
+    {
+      "id": "login.enter",
+      "sourceAssetId": "login.enter",
+      "postconditionAssetId": "login.server",
+      "maximumObservationAge": "00:00:12",
+      "postconditionTimeout": "00:00:30",
+      "excludedAssetIds": [
+        "update.header",
+        "dock.selection-confirm",
+        "login.success"
+      ],
+      "requiredAssetIds": [
+        "login.logo"
+      ],
+      "alternativePostconditionAssetIds": [
+        "loading.download",
+        "main.dock"
+      ]
+    },
+    {
+      "id": "login.start",
+      "sourceAssetId": "login.start",
+      "postconditionAssetId": "main.dock",
+      "maximumObservationAge": "00:00:12",
+      "postconditionTimeout": "00:00:30",
+      "excludedAssetIds": [
+        "login.enter",
+        "login.success",
+        "update.header",
+        "dock.selection-confirm"
+      ],
+      "requiredAssetIds": [
+        "login.logo",
+        "login.server"
+      ],
+      "alternativePostconditionAssetIds": [
+        "loading.download"
+      ]
+    },
+    {
+      "id": "update.download",
+      "sourceAssetId": "update.confirm",
+      "postconditionAssetId": "loading.download",
+      "maximumObservationAge": "00:00:12",
+      "postconditionTimeout": "00:00:30",
+      "excludedAssetIds": [
+        "login.enter",
+        "login.server",
+        "dock.selection-confirm"
+      ],
+      "requiredAssetIds": [
+        "update.header",
+        "update.download"
+      ],
+      "alternativePostconditionAssetIds": []
+    },
+    {
+      "id": "ready.dock-close",
+      "sourceAssetId": "dock.header",
+      "postconditionAssetId": "main.dock",
+      "maximumObservationAge": "00:00:12",
+      "postconditionTimeout": "00:00:20",
+      "excludedAssetIds": [
+        "dock.selection-confirm",
+        "update.header",
+        "login.enter",
+        "login.server"
+      ]
     }
-  ]
+  ],
+  "readiness": {
+    "rules": [
+      {
+        "id": "main",
+        "state": "Ready",
+        "requiredAssetIds": [
+          "main.dock",
+          "main.depot",
+          "main.battle",
+          "main.clear-center",
+          "main.clear-left"
+        ],
+        "absentAssetIds": [
+          "dock.header",
+          "dock.selection-confirm",
+          "login.enter",
+          "login.server",
+          "login.success",
+          "loading.download",
+          "update.header",
+          "update.download",
+          "update.confirm"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "login",
+        "state": "AwaitingInput",
+        "requiredAssetIds": [
+          "login.enter",
+          "login.logo"
+        ],
+        "absentAssetIds": [
+          "login.server",
+          "login.success",
+          "update.header",
+          "main.dock",
+          "dock.header"
+        ],
+        "actionId": "login.enter"
+      },
+      {
+        "id": "server",
+        "state": "AwaitingInput",
+        "requiredAssetIds": [
+          "login.start",
+          "login.server",
+          "login.logo"
+        ],
+        "absentAssetIds": [
+          "login.enter",
+          "login.success",
+          "update.header",
+          "main.dock",
+          "dock.header"
+        ],
+        "actionId": "login.start"
+      },
+      {
+        "id": "login-transition",
+        "state": "Transition",
+        "requiredAssetIds": [
+          "login.success",
+          "login.logo"
+        ],
+        "absentAssetIds": [
+          "login.enter",
+          "main.dock",
+          "dock.header",
+          "update.header"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "download",
+        "state": "Loading",
+        "requiredAssetIds": [
+          "loading.download"
+        ],
+        "absentAssetIds": [
+          "update.header",
+          "update.download",
+          "update.confirm",
+          "main.dock",
+          "dock.header",
+          "login.enter",
+          "login.server"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "download-confirm",
+        "state": "AwaitingInput",
+        "requiredAssetIds": [
+          "update.header",
+          "update.download",
+          "update.confirm"
+        ],
+        "absentAssetIds": [
+          "loading.download",
+          "main.dock",
+          "dock.header",
+          "login.enter",
+          "login.server"
+        ],
+        "actionId": "update.download"
+      },
+      {
+        "id": "dock",
+        "state": "AwaitingInput",
+        "requiredAssetIds": [
+          "dock.header"
+        ],
+        "absentAssetIds": [
+          "dock.selection-confirm",
+          "main.dock",
+          "update.header",
+          "login.enter",
+          "login.server"
+        ],
+        "actionId": "ready.dock-close"
+      },
+      {
+        "id": "selection",
+        "state": "RequiresUserAction",
+        "requiredAssetIds": [
+          "dock.selection-confirm"
+        ],
+        "absentAssetIds": [
+          "main.dock"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "unverified-update",
+        "state": "RequiresUserAction",
+        "requiredAssetIds": [
+          "update.header"
+        ],
+        "absentAssetIds": [
+          "update.download"
+        ],
+        "actionId": null
+      }
+    ]
+  }
 }
