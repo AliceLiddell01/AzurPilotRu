@@ -12,6 +12,18 @@ public sealed class GameUiActionRunnerTests
     private static readonly AndroidEndpoint Endpoint = new("test-host", 16419);
     private static readonly GameUiAction Action = new("open", "source", "post", TimeSpan.FromSeconds(12), TimeSpan.FromSeconds(2));
 
+    [Fact(DisplayName = "Игровой runner требует явные часы")]
+    public void TimeProviderIsNotOptional()
+    {
+        var parameter = Assert.Single(
+            typeof(GameUiActionRunner)
+                .GetConstructors()
+                .SelectMany(static constructor => constructor.GetParameters()),
+            static parameter => parameter.ParameterType == typeof(TimeProvider));
+
+        Assert.False(parameter.IsOptional);
+    }
+
     [Fact]
     public async Task SuccessRequiresOneTapAndIndependentPostcondition()
     {

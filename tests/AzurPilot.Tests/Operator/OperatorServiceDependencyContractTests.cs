@@ -17,4 +17,16 @@ public sealed class OperatorServiceDependencyContractTests
 
         Assert.False(parameter.IsOptional);
     }
+
+    [Fact(DisplayName = "Операторский сервис требует общий TimeProvider")]
+    public void TimeProviderIsNotOptional()
+    {
+        var parameter = Assert.Single(
+            typeof(AzurPilotOperatorService)
+                .GetConstructors()
+                .SelectMany(static constructor => constructor.GetParameters()),
+            static parameter => parameter.ParameterType == typeof(TimeProvider));
+
+        Assert.False(parameter.IsOptional);
+    }
 }

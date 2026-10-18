@@ -5,9 +5,9 @@ using AzurPilot.Core.MuMu;
 namespace AzurPilot.Core.Game;
 
 /// <summary>Одно действие: свежее распознавание → проверка ввода → нажатие → отдельное наблюдение эффекта с ограничением времени.</summary>
-public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider? clock = null)
+public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
 {
-    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    private readonly TimeProvider _clock = clock ?? throw new ArgumentNullException(nameof(clock));
 
     /// <summary>Выполняет переход под арендой вызывающего операторского сервиса.</summary>
     public async Task<GameActionOutcome> RunAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,

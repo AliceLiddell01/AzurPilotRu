@@ -745,6 +745,7 @@ public sealed partial class AzurPilotOperatorServiceTests
             gameLifecycle,
             activeScreenshotHost,
             configuration,
+            TimeProvider.System,
             gameUi: new AzurPilot.Windows.Game.GameUiWindowsHost(activeScreenshotHost, androidHost));
 
         return new OperatorFixture(muMuHost, runner, observingScreenshotHost, service);

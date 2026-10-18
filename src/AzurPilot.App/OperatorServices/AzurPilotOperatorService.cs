@@ -149,8 +149,9 @@ public sealed partial class AzurPilotOperatorService
     private readonly AzurLaneGameLifecycleService _gameLifecycle;
     private readonly IAndroidScreenshotHost _screenshots;
     private readonly AzurPilotConfigurationSnapshot _configuration;
-    private readonly AzurPilotLogViewerSession? _logViewer;
+    private readonly TimeProvider _timeProvider;
     private readonly Core.Game.IGameUiHost _gameUi;
+    private readonly AzurPilotLogViewerSession? _logViewer;
 
     /// <summary>Создаёт сценарии оператора поверх singleton-сервисов одного хоста приложения.</summary>
     public AzurPilotOperatorService(
@@ -163,6 +164,7 @@ public sealed partial class AzurPilotOperatorService
         AzurLaneGameLifecycleService gameLifecycle,
         IAndroidScreenshotHost screenshots,
         AzurPilotConfigurationSnapshot configuration,
+        TimeProvider timeProvider,
         Core.Game.IGameUiHost gameUi,
         AzurPilotLogViewerSession? logViewer = null)
     {
@@ -175,6 +177,7 @@ public sealed partial class AzurPilotOperatorService
         ArgumentNullException.ThrowIfNull(gameLifecycle);
         ArgumentNullException.ThrowIfNull(screenshots);
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(gameUi);
 
         _diagnostics = diagnostics;
@@ -186,6 +189,7 @@ public sealed partial class AzurPilotOperatorService
         _gameLifecycle = gameLifecycle;
         _screenshots = screenshots;
         _configuration = configuration;
+        _timeProvider = timeProvider;
         _gameUi = gameUi;
         _logViewer = logViewer;
     }

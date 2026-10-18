@@ -40,7 +40,7 @@ public sealed partial class AzurPilotOperatorService
                 return ApplicationResult<GameDockRoundtrip>.Failure(target.FailureInfo!);
             }
 
-            GameUiActionRunner runner = new(_gameUi);
+            GameUiActionRunner runner = new(_gameUi, _timeProvider);
             GameActionOutcome open = await runner.RunAsync(instanceId, target.Value!.Endpoint,
                 GameAssetCatalog.Default.GetAction("dock.open"), progress, cancellationToken).ConfigureAwait(false);
             if (!open.ChangeProven)

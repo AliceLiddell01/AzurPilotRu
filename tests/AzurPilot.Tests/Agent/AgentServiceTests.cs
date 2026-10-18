@@ -375,7 +375,7 @@ public sealed partial class AzurPilotOperatorServiceTests
             NativeBoundaryFailureMapper.MapIncompatibility, fixture.MuMuHost, lifecycle,
             android.Host, android.Readiness, android.GameState);
         return new(diagnostics, fixture.MuMuHost, lifecycle, android.Host, android.Readiness,
-            android.GameState, android.Lifecycle, fixture.ScreenshotHost, configuration,
+            android.GameState, android.Lifecycle, fixture.ScreenshotHost, configuration, TimeProvider.System,
             new AzurPilot.Windows.Game.GameUiWindowsHost(fixture.ScreenshotHost,
                 new AzurPilot.Windows.Android.AndroidWindowsHost(fixture.Runner)));
     }
