@@ -41,6 +41,16 @@ class SkillContractTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.write(f"name: {value}\ndescription: Описание.")
                 self.assertIn("name", " ".join(self.errors()))
+        for value in ("a--b", "-name", "name-", "a" * 65, "under_score"):
+            with self.subTest(matching_directory=value):
+                folder = self.root / ".agents/skills" / value
+                folder.mkdir()
+                manifest = folder / "SKILL.md"
+                manifest.write_text(
+                    f"---\nname: {value}\ndescription: Описание.\n---\n# Процедура\n",
+                    encoding="utf-8",
+                )
+                self.assertIn("name", " ".join(validate_skill(manifest, self.root)))
 
     def test_description_empty_type_and_limit(self):
         for value in ('""', '"   "', "null", "true", "[описание]", "{a: b}", "x" * 1025, ">-", "|-"):
