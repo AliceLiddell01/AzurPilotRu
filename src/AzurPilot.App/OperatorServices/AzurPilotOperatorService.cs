@@ -232,10 +232,11 @@ public sealed partial class AzurPilotOperatorService
 
     /// <summary>Подготовка transport под арендой окружения.</summary>
     public Task<ApplicationResult<AndroidTransportPreparationOutcome>> PrepareAndroidAsync(
-        MuMuInstanceId instanceId, CancellationToken cancellationToken, IProgress<AndroidReadinessStage>? progress = null)
+        MuMuInstanceId instanceId, CancellationToken cancellationToken, IProgress<AndroidReadinessStage>? progress = null,
+        AndroidMutationProgress? mutationProgress = null)
     {
         return WithMutationLeaseAsync(instanceId,
-                () => PrepareAndroidCoreAsync(instanceId, cancellationToken, progress), cancellationToken);
+                () => PrepareAndroidCoreAsync(instanceId, cancellationToken, progress, mutationProgress), cancellationToken);
     }
 
     /// <summary>Подготовка окружения и postflight под одной арендой, без повторного захвата во вложенных шагах.</summary>

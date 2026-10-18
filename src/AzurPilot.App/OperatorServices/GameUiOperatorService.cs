@@ -1,4 +1,5 @@
 using AzurPilot.Core.Failures;
+using AzurPilot.Core.Android.Orchestration;
 using AzurPilot.Core.Game;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Windows;
@@ -7,7 +8,8 @@ using AzurPilot.Windows.Game;
 namespace AzurPilot.App.OperatorServices;
 
 /// <summary>Ограниченный итог безопасного открытия Dock и подтверждённого возврата.</summary>
-public sealed record GameDockRoundtrip(GameActionOutcome Open, GameActionOutcome? Close);
+public sealed record GameDockRoundtrip(GameActionOutcome Open, GameActionOutcome? Close,
+    AndroidTransportPreparationOutcome? AndroidPreparation = null);
 
 public sealed partial class AzurPilotOperatorService
 {
@@ -42,7 +44,8 @@ public sealed partial class AzurPilotOperatorService
 
     /// <summary>Целый обратимый сценарий под общей межпроцессной арендой exact identity.</summary>
     public Task<ApplicationResult<GameDockRoundtrip>> RunGameDockRoundtripAsync(MuMuInstanceId instanceId,
-        GameActionProgress progress, CancellationToken cancellationToken)
+        GameActionProgress progress, CancellationToken cancellationToken,
+        AndroidMutationProgress? androidMutationProgress = null)
     {
         return WithMutationLeaseAsync(instanceId, async () =>
         {
@@ -52,6 +55,15 @@ public sealed partial class AzurPilotOperatorService
                 return ApplicationResult<GameDockRoundtrip>.Failure(target.FailureInfo!);
             }
 
+            // Аренда уже удерживается. Подготовка и UI используют один разрешённый точный endpoint;
+            // последующие проверки свежего кадра и viewport остаются обязательными перед каждым tap.
+            ApplicationResult<AndroidTransportPreparationOutcome> prepared = await _androidReadiness.PrepareTransportAsync(
+                target.Value!.Endpoint, cancellationToken, mutationProgress: androidMutationProgress).ConfigureAwait(false);
+            if (prepared.IsFailure)
+            {
+                return ApplicationResult<GameDockRoundtrip>.Failure(prepared.FailureInfo!);
+            }
+
             try
             {
                 GameUiActionRunner runner = new(_gameUi, _timeProvider);
@@ -59,12 +71,12 @@ public sealed partial class AzurPilotOperatorService
                     GameAssetCatalog.Default.GetAction("dock.open"), progress, cancellationToken).ConfigureAwait(false);
                 if (!open.ChangeProven)
                 {
-                    return ApplicationResult<GameDockRoundtrip>.Success(new(open, null));
+                    return ApplicationResult<GameDockRoundtrip>.Success(new(open, null, prepared.Value));
                 }
 
                 GameActionOutcome close = await runner.RunAsync(instanceId, target.Value.Endpoint,
                     GameAssetCatalog.Default.GetAction("dock.close"), progress, cancellationToken).ConfigureAwait(false);
-                return ApplicationResult<GameDockRoundtrip>.Success(new(open, close));
+                return ApplicationResult<GameDockRoundtrip>.Success(new(open, close, prepared.Value));
             }
             catch (AzurPilotNativeBoundaryException exception)
             {

@@ -38,6 +38,13 @@ internal static class AndroidScreenshotFailures
             details["exit_code"] = outcome.ExitCode.ToString(CultureInfo.InvariantCulture);
             details["encoded_png_bytes"] = outcome.StandardOutputBytes.Length.ToString(CultureInfo.InvariantCulture);
             details["stdout_bytes_read"] = outcome.StandardOutputBytesRead.ToString(CultureInfo.InvariantCulture);
+            if (reason == "command_failed")
+            {
+                // Тот же fail-closed parser распознаёт только доказанный отказ точного target.
+                // Unknown не устанавливает причину сбоя захвата; сырой stderr не публикуется.
+                details["transport_state"] = AdbResponseParser.ParseTransport(outcome, endpoint).State
+                    .ToString().ToLowerInvariant();
+            }
         }
 
         if (exception is not null)

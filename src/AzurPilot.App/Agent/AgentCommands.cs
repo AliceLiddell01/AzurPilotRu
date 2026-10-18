@@ -22,6 +22,8 @@ internal static class AgentCommands
         new("mumu-restart", true, true, "Перезапустить exact MuMu с проверкой postcondition.", (c, t) => c.MuMuAsync(MuMuLifecycleOperation.Restart, t)),
         new("android-observe", false, true, "Read-only Android readiness без ADB connect.",
             (c, t) => Task.FromResult(AgentContext.Result(c.Service.ObserveAndroid(c.Target!.Value)))),
+        new("android-prepare", true, true, "Подготовить только Android transport exact target без запуска MuMu или игры.",
+            (c, t) => c.PrepareTransportAsync(t)),
         new("environment-prepare", true, true, "Обеспечить готовность MuMu и Android без запуска игры.", (c, t) => c.PrepareAsync(t)),
         new("game-observe", false, true, "Наблюдать tri-state факты Azur Lane Global/EN.",
             (c, t) => Task.FromResult(AgentContext.Result(c.Service.ObserveAzurLane(c.Target!.Value)))),
