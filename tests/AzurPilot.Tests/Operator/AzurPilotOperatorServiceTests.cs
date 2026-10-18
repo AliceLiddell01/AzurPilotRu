@@ -701,7 +701,7 @@ public sealed partial class AzurPilotOperatorServiceTests
             MuMuLifecycleTimings.Default,
             NullLogger<MuMuLifecycleService>.Instance);
         FakeWindowsProcessRunner runner = new();
-        AndroidWindowsHost androidHost = new(runner);
+        AndroidWindowsHost androidHost = new(runner, timeProvider);
         AndroidReadinessService readiness = new(
             androidHost,
             AndroidLifecycleTimings.Default,
@@ -745,7 +745,7 @@ public sealed partial class AzurPilotOperatorServiceTests
             gameLifecycle,
             activeScreenshotHost,
             configuration,
-            TimeProvider.System,
+            timeProvider,
             gameUi: new AzurPilot.Windows.Game.GameUiWindowsHost(activeScreenshotHost, androidHost));
 
         return new OperatorFixture(muMuHost, runner, observingScreenshotHost, service);

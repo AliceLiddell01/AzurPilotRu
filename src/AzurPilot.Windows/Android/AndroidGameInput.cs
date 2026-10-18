@@ -42,7 +42,7 @@ public sealed partial class AndroidWindowsHost
         ArgumentNullException.ThrowIfNull(tap);
         AndroidEndpoint endpoint = tap.Frame.Endpoint;
         GameInputPoint point = tap.Point;
-        TimeSpan age = TimeProvider.System.GetElapsedTime(tap.Frame.CaptureStartedTimestamp);
+        TimeSpan age = _timeProvider.GetElapsedTime(tap.Frame.CaptureStartedTimestamp);
         if (!tap.TryConsume() || string.IsNullOrWhiteSpace(endpoint.Host) || !tap.SafeBounds.Contains(point)
             || age < TimeSpan.Zero || age > tap.MaximumObservationAge
             || point.X < 0 || point.X >= tap.Frame.Width || point.Y < 0 || point.Y >= tap.Frame.Height)

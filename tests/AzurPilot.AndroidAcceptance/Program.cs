@@ -170,7 +170,7 @@ MuMuLifecycleService muMuLifecycle = new(
     MuMuLifecycleTimings.Default,
     loggerFactory.CreateLogger<MuMuLifecycleService>());
 
-AndroidWindowsHost androidHost = new(adbProcessRunner);
+AndroidWindowsHost androidHost = new(adbProcessRunner, TimeProvider.System);
 
 AndroidLifecycleTimings timings = AndroidLifecycleTimings.Default;
 

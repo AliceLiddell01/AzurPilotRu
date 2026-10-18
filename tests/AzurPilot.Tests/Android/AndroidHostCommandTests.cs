@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using AzurPilot.Core.Android;
 using AzurPilot.Core.Failures;
+using AzurPilot.Core.Game;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Tests.MuMuWindows;
 using AzurPilot.Windows;
@@ -37,6 +38,27 @@ public sealed class AndroidHostCommandTests
     private const string LauncherActivity = "com.manjuu.azurlane.PrePermissionActivity";
 
     private const string SecondLauncherActivity = "com.manjuu.azurlane.OtherActivity";
+
+    [Fact(DisplayName = "Tap проверяет свежесть кадра по внедрённым часам")]
+    public async Task TapUsesInjectedTimeProviderForFrameAge()
+    {
+        OffsetStopwatchTimeProvider timeProvider = new();
+        HostFixture fixture = new(timeProvider);
+        _ = fixture.Discover();
+        fixture.Runner.EnqueueOutcome(0, string.Empty);
+        GameFrameProvenance frame = new(
+            Guid.NewGuid(), MuMuInstanceId.FromIndex("3"), Endpoint,
+            timeProvider.GetUtcNow(), timeProvider.GetTimestamp(), 200, 100);
+        GameTap tap = new(frame, "test", new(10, 20, 100, 80), new(50, 40), TimeSpan.FromSeconds(12));
+
+        ApplicationResult<AndroidCommandOutcome> result = await fixture.Host.TapGameAsync(
+            tap, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.ToString());
+        Assert.Equal(2, fixture.Runner.Requests.Count);
+        Assert.Equal(AdbCommandBuilder.BuildTapArguments(Endpoint, new(50, 40)),
+            fixture.Runner.Requests[1].Request.Arguments);
+    }
 
     // --- Обнаружение bundled ADB ---
 
@@ -578,7 +600,7 @@ public sealed class AndroidHostCommandTests
     /// <summary>Установка-фикстура и host на подменяемой границе запуска процесса.</summary>
     private sealed class HostFixture
     {
-        internal HostFixture()
+        internal HostFixture(TimeProvider? timeProvider = null)
         {
             InstallRoot = AndroidTestPaths.Create("host-install");
             Installation = new MuMuInstallation(
@@ -586,7 +608,7 @@ public sealed class AndroidHostCommandTests
                 InstallRoot,
                 MuMuInstallationLayout.GetControlExecutablePath(InstallRoot));
             Runner = new FakeWindowsProcessRunner();
-            Host = new AndroidWindowsHost(Runner);
+            Host = new AndroidWindowsHost(Runner, timeProvider ?? TimeProvider.System);
         }
 
         /// <summary>Абсолютный путь корня фиктивной установки, собранный в runtime.</summary>
@@ -612,5 +634,11 @@ public sealed class AndroidHostCommandTests
             Assert.True(result.IsSuccess);
             return result.Value!;
         }
+    }
+
+    private sealed class OffsetStopwatchTimeProvider : TimeProvider
+    {
+        public override long GetTimestamp()
+            => global::System.Diagnostics.Stopwatch.GetTimestamp() + global::System.Diagnostics.Stopwatch.Frequency * 60;
     }
 }

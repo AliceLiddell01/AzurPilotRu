@@ -13,7 +13,7 @@ public sealed class AndroidGameInputAdapterTests
     public async Task PermitUsesBundledExactTargetOnceAndCannotBeReplayed()
     {
         FakeWindowsProcessRunner runner = new();
-        AndroidWindowsHost host = new(runner);
+        AndroidWindowsHost host = new(runner, TimeProvider.System);
         runner.EnqueueOutcome(0, "Android Debug Bridge version 1.0.41\nVersion 35.0.2-test\n");
         Assert.True(host.DiscoverAdbExecutable(AndroidTestContext.Installation).IsSuccess);
         GameFrameProvenance frame = GameUiRecognizerTests.ProvenanceForSize(3840, 2160);
@@ -35,7 +35,7 @@ public sealed class AndroidGameInputAdapterTests
     public async Task InvalidPermitNeverStartsAdb(string scenario)
     {
         FakeWindowsProcessRunner runner = new();
-        AndroidWindowsHost host = new(runner);
+        AndroidWindowsHost host = new(runner, TimeProvider.System);
         GameFrameProvenance frame = GameUiRecognizerTests.ProvenanceForSize(3840, 2160);
         frame = scenario switch
         {

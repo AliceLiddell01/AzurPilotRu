@@ -377,7 +377,7 @@ public sealed partial class AzurPilotOperatorServiceTests
         return new(diagnostics, fixture.MuMuHost, lifecycle, android.Host, android.Readiness,
             android.GameState, android.Lifecycle, fixture.ScreenshotHost, configuration, TimeProvider.System,
             new AzurPilot.Windows.Game.GameUiWindowsHost(fixture.ScreenshotHost,
-                new AzurPilot.Windows.Android.AndroidWindowsHost(fixture.Runner)));
+                new AzurPilot.Windows.Android.AndroidWindowsHost(fixture.Runner, TimeProvider.System)));
     }
 
     [Fact]
