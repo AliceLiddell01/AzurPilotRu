@@ -595,6 +595,10 @@ public static class AzurPilotHost
         _ = builder.Services.AddSingleton<IAndroidScreenshotHost>(
             static services => services.GetRequiredService<AndroidWindowsHost>());
 
+        _ = builder.Services.AddSingleton<IAndroidGameInputHost>(
+            static services => services.GetRequiredService<AndroidWindowsHost>());
+        _ = builder.Services.AddSingleton<Core.Game.IGameUiHost, Windows.Game.GameUiWindowsHost>();
+
         _ = builder.Services.AddSingleton(AndroidLifecycleTimings.Default);
         _ = builder.Services.AddSingleton<AndroidGameMutationGate>();
         _ = builder.Services.AddSingleton<AndroidReadinessService>();

@@ -136,6 +136,9 @@ public static class AzurPilotExitCode
     /// <summary>Превышен предел машинного ответа.</summary>
     public const int AgentOutputLimitExceeded = 34;
 
+    /// <summary>Игровой ввод отклонён либо postcondition не доказан.</summary>
+    public const int GameUiActionRejected = 35;
+
     /// <summary>Возвращает код выхода для application-level отказа.</summary>
     /// <param name="failure">Ожидаемый отказ application boundary.</param>
     /// <returns>Код выхода процесса, соответствующий коду отказа.</returns>
@@ -151,6 +154,7 @@ public static class AzurPilotExitCode
             ApplicationFailure.MutationCoordinationUnavailable => MutationCoordinationUnavailable,
             ApplicationFailure.AgentDeadlineExceeded => AgentDeadlineExceeded,
             ApplicationFailure.AgentOutputLimitExceeded => AgentOutputLimitExceeded,
+            ApplicationFailure.GameUiActionRejected => GameUiActionRejected,
             ApplicationFailure.ConfigurationInvalid => ConfigurationInvalid,
             ApplicationFailure.ConfigurationSchemaUnsupported => ConfigurationSchemaUnsupported,
             ApplicationFailure.NativeUnavailable => NativeUnavailable,

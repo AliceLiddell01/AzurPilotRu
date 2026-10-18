@@ -41,7 +41,7 @@ namespace AzurPilot.Windows.Android;
 /// конкретный код общим <see cref="ApplicationFailure.InternalError"/>.
 /// </para>
 /// </remarks>
-public sealed class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost
+public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost, IAndroidGameInputHost
 {
     private readonly IWindowsProcessRunner _processRunner;
     private readonly AndroidEndpointResolver _endpointResolver;
@@ -156,6 +156,8 @@ public sealed class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost
                 NativeBoundaryFailureMapper.Map(exception));
         }
 
+        DateTimeOffset captureStartedAtUtc = DateTimeOffset.UtcNow;
+        long captureStartedTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
         ApplicationResult<WindowsProcessOutcome> command = await client.RunBinaryAsync(
             AdbCommandBuilder.BuildScreenshotArguments(endpoint),
             maximumPngBytes,
@@ -204,7 +206,11 @@ public sealed class AndroidWindowsHost : IAndroidHost, IAndroidScreenshotHost
                     outcome.Duration,
                     outcome.StandardOutputBytes.Length,
                     outcome.ExitCode,
-                    info));
+                    info)
+                {
+                    CaptureStartedAtUtc = captureStartedAtUtc,
+                    CaptureStartedTimestamp = captureStartedTimestamp,
+                });
             frame = null;
             return ApplicationResult<CapturedAndroidScreenshot>.Success(screenshot);
         }

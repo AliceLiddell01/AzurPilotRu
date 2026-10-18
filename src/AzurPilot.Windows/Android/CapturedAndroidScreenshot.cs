@@ -18,7 +18,13 @@ public sealed record AndroidScreenshotCaptureInfo(
     TimeSpan CommandDuration,
     int EncodedPngByteCount,
     int ProcessExitCode,
-    NativeFrameInfo FrameInfo);
+    NativeFrameInfo FrameInfo)
+{
+    /// <summary>Начало capture: свежесть не продлевается временем передачи и decode PNG.</summary>
+    public DateTimeOffset CaptureStartedAtUtc { get; init; }
+    /// <summary>Monotonic момент начала capture в текущем процессе.</summary>
+    public long CaptureStartedTimestamp { get; init; }
+}
 
 /// <summary>Владелец native frame успешного capture; encoded PNG не хранится.</summary>
 public sealed class CapturedAndroidScreenshot : IDisposable

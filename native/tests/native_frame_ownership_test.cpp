@@ -341,6 +341,27 @@ void test_region_scan_ownership() {
     check(snapshot_matches(baseline), "Однотонный тестовый кадр освобождён без активных владельцев");
 }
 
+void test_match_ownership() {
+    const auto baseline = azurpilot::native::detail::frame_ownership_snapshot_for_test();
+    std::vector<std::uint8_t> png;
+    if (!read_fixture("rgb_regions_3x2.png", png)) return;
+    cv::Mat pixels(2160, 3840, CV_8UC3, cv::Scalar(17, 89, 203));
+    auto* frame = new AzurPilotNativeFrameOpaque(std::move(pixels), 3840u, 2160u, 11520u, 24883200u);
+    const auto owned = azurpilot::native::detail::frame_ownership_snapshot_for_test();
+    const auto* pointer = frame->rgb.data;
+    const AzurPilotNativeRegion roi{10, 20, 90, 80};
+    bool valid = true;
+    for (int iteration = 0; iteration < 100; ++iteration) {
+        AzurPilotNativeMatchResult result{};
+        const auto status = azurpilot_native_frame_match(frame, &roi, png.data(), static_cast<uint32_t>(png.size()),
+            12, 8, AZURPILOT_NATIVE_MATCH_LUMA, &result);
+        valid = valid && status == AZURPILOT_NATIVE_OK && snapshot_matches(owned) && frame->rgb.data == pointer;
+    }
+    check(valid, "100 match на одном 4K RGB8 не оставляют временных владельцев/буферов и не меняют frame pointer");
+    delete frame;
+    check(snapshot_matches(baseline), "Освобождение 4K после match возвращает live frame/RGB counters к исходному уровню");
+}
+
 }  // namespace
 
 int main() {
@@ -349,6 +370,7 @@ int main() {
     test_rejected_inputs();
     test_argument_and_repeated_ownership();
     test_region_scan_ownership();
+    test_match_ownership();
 
     const auto final_snapshot = azurpilot::native::detail::frame_ownership_snapshot_for_test();
     check(final_snapshot.live_frames == 0u && final_snapshot.live_rgb_bytes == 0u,

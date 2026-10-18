@@ -25,6 +25,25 @@ namespace AzurPilot.Windows.Android;
 /// </remarks>
 public static class AdbCommandBuilder
 {
+    /// <summary>Сведения о системе координат Android input.</summary>
+    public static IReadOnlyList<string> BuildInputViewportArguments(AndroidEndpoint endpoint)
+    {
+        return [TargetArgument, endpoint.ToString(), ShellSubcommand, DumpSubcommand, "input"];
+    }
+
+    /// <summary>Физические границы окна игры для проверки letterboxing.</summary>
+    public static IReadOnlyList<string> BuildGameWindowArguments(AndroidEndpoint endpoint)
+    {
+        return [TargetArgument, endpoint.ToString(), ShellSubcommand, DumpSubcommand, WindowServiceName, "windows"];
+    }
+
+    /// <summary>Одна адресованная операция input tap на default display, подтверждённом viewport proof.</summary>
+    public static IReadOnlyList<string> BuildTapArguments(AndroidEndpoint endpoint, Core.Game.GameInputPoint point)
+    {
+        return [TargetArgument, endpoint.ToString(), ShellSubcommand, "input", "-d", "0", "tap",
+            point.X.ToString(System.Globalization.CultureInfo.InvariantCulture), point.Y.ToString(System.Globalization.CultureInfo.InvariantCulture)];
+    }
+
     /// <summary>Подкоманда подключения к точному endpoint-у.</summary>
     public const string ConnectSubcommand = "connect";
 

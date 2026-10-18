@@ -95,7 +95,7 @@ public sealed record AzurPilotOperatorAndroidPreparationOutcome(
 /// времени жизни кадра.
 /// </para>
 /// </remarks>
-public sealed class AzurPilotOperatorService
+public sealed partial class AzurPilotOperatorService
 {
     // Устанавливается только composition root изолированного интерактивного запуска.
     // Отказ до аренды также исключает записи в пользовательский runtime-каталог.
@@ -150,6 +150,7 @@ public sealed class AzurPilotOperatorService
     private readonly IAndroidScreenshotHost _screenshots;
     private readonly AzurPilotConfigurationSnapshot _configuration;
     private readonly AzurPilotLogViewerSession? _logViewer;
+    private readonly Core.Game.IGameUiHost? _gameUi;
 
     /// <summary>Создаёт сценарии оператора поверх singleton-сервисов одного хоста приложения.</summary>
     public AzurPilotOperatorService(
@@ -162,7 +163,8 @@ public sealed class AzurPilotOperatorService
         AzurLaneGameLifecycleService gameLifecycle,
         IAndroidScreenshotHost screenshots,
         AzurPilotConfigurationSnapshot configuration,
-        AzurPilotLogViewerSession? logViewer = null)
+        AzurPilotLogViewerSession? logViewer = null,
+        Core.Game.IGameUiHost? gameUi = null)
     {
         ArgumentNullException.ThrowIfNull(diagnostics);
         ArgumentNullException.ThrowIfNull(muMuHost);
@@ -184,6 +186,7 @@ public sealed class AzurPilotOperatorService
         _screenshots = screenshots;
         _configuration = configuration;
         _logViewer = logViewer;
+        _gameUi = gameUi;
     }
 
     /// <summary>Неизменяемая конфигурация текущего хоста приложения.</summary>

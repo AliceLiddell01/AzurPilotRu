@@ -13,7 +13,7 @@ using AzurPilot.Windows;
 //
 // Режим --abi-mismatch загружает DLL с несовместимой версией ABI. Её экспорт функции декодирования
 // возвращает INVALID_PNG, поэтому ожидаемый отказ по версии доказывает проверку до вызова этой функции.
-// Режим --abi-v3-missing-release загружает DLL ABI v3 без обязательной функции освобождения и
+// Режим --abi-v3-missing-release загружает DLL текущего ABI без обязательной функции освобождения и
 // проверяет, что несовместимость обнаруживается до вызова декодирования.
 // Режим --abi-v3-missing-roi проверяет обязательный ROI экспорт до создания native frame.
 // Режим --disposed-frame проверяет отказ GetInfo/ScanRegion после Dispose в процессе без native DLL.
@@ -130,6 +130,20 @@ if (args.Length == 1 && string.Equals(args[0], "--abi-v3-missing-roi", StringCom
     return RunMissingRoiProbe();
 }
 
+if (args.Length == 1 && string.Equals(args[0], "--abi-missing-match", StringComparison.Ordinal))
+{
+    try
+    {
+        using NativeFrame frame = AzurPilotNativeBridge.DecodePng([]);
+        return 1;
+    }
+    catch (NativeAbiMismatchException exception) when (exception.Message.Contains("azurpilot_native_frame_match", StringComparison.Ordinal))
+    {
+        Console.WriteLine("Проба: match export отклонён до декодирования: " + exception.Message);
+        return ReportMappedFailure(exception);
+    }
+}
+
 if (args.Length == 1 && string.Equals(args[0], "--disposed-frame", StringComparison.Ordinal))
 {
     return RunDisposedFrameProbe();
@@ -176,7 +190,7 @@ Console.Error.WriteLine(
     $"Проба: отсутствие native библиотеки «{AzurPilotNativeBridge.LibraryName}» не привело к исключению.");
 return 1;
 
-// Проверяет, что DLL ABI v3 без обязательной функции освобождения отвергается до декодирования.
+// Проверяет, что DLL текущего ABI без обязательной функции освобождения отвергается до декодирования.
 static int RunMissingReleaseProbe()
 {
     try
@@ -197,7 +211,7 @@ static int RunMissingReleaseProbe()
         }
 
         Console.WriteLine(
-            "Проба: ABI v3 без обязательной функции освобождения отклонён до декодирования: "
+            "Проба: текущий ABI без обязательной функции освобождения отклонён до декодирования: "
             + exception.Message);
         return ReportMappedFailure(exception);
     }
@@ -228,7 +242,7 @@ static int RunMissingRoiProbe()
             return 1;
         }
 
-        Console.WriteLine("Проба: ABI v3 без обязательного ROI экспорта отклонён до декодирования: " + exception.Message);
+        Console.WriteLine("Проба: текущий ABI без обязательного ROI экспорта отклонён до декодирования: " + exception.Message);
         return ReportMappedFailure(exception);
     }
     catch (Exception exception)

@@ -59,9 +59,11 @@ Product CLI/REPL/agent CLI не получают команды `build`, `repair
 - lifecycle Azur Lane Global/EN;
 - read-only screenshot capture, geometry и native region statistics;
 - интерактивный TUI и неинтерактивный Agent CLI поверх общих operator services.
+- игровая геометрия, native распознавание известных ассетов и безопасный tap с postcondition
+  через Agent CLI; контракт — `game-ui.md`.
 
-Не реализованы и не должны имитироваться placeholder-кодом: input, распознавание UI/содержимого,
-OCR/ONNX/GPU, UI readiness игры, REPL. Screenshot diagnostic boundaries описаны
+Не реализованы и не должны имитироваться placeholder-кодом: OCR/ONNX/GPU, общая UI readiness игры,
+REPL. Screenshot diagnostic boundaries описаны
 в `screenshot-diagnostics.md`.
 
 Подробности конкретной capability читай у её context owner и в `docs/architecture/`.

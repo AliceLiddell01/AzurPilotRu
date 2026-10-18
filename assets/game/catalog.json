@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "client": "Global/EN",
+  "assets": [
+    {
+      "id": "main.dock",
+      "purpose": "Открыть Dock без выбора корабля или изменения состава.",
+      "search": {
+        "left": 168,
+        "top": 650,
+        "right": 330,
+        "bottom": 713
+      },
+      "safeTapOffset": {
+        "left": 30,
+        "top": 8,
+        "right": 120,
+        "bottom": 34
+      },
+      "variants": [
+        {
+          "id": "global-en-white",
+          "file": "main.dock.png",
+          "sourceSha256": "25e71d2bfb447836fa749cbc56554f8bf500dcdb3a6a6e9111545ccc7000ef83",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 178,
+            "top": 662,
+            "right": 320,
+            "bottom": 702
+          },
+          "sha256": "4d669630e2599618a9be277876ddf2321350b4573426099e1c16dbf435685a16",
+          "mode": "Luma",
+          "minimumScore": 0.9,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 24
+        }
+      ]
+    },
+    {
+      "id": "main.depot",
+      "purpose": "Независимый признак главного меню; ввод не разрешён.",
+      "search": {
+        "left": 326,
+        "top": 650,
+        "right": 484,
+        "bottom": 713
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en-white",
+          "file": "main.depot.png",
+          "sourceSha256": "25e71d2bfb447836fa749cbc56554f8bf500dcdb3a6a6e9111545ccc7000ef83",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 336,
+            "top": 662,
+            "right": 474,
+            "bottom": 702
+          },
+          "sha256": "95d265f1cc610bb93490e98ad4517eb6dde3b9e9c05ccb9bd393db168ca08c9e",
+          "mode": "Luma",
+          "minimumScore": 0.9,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 24
+        }
+      ]
+    },
+    {
+      "id": "dock.header",
+      "purpose": "Заголовок Dock и безопасная стрелка возврата.",
+      "search": {
+        "left": 0,
+        "top": 0,
+        "right": 270,
+        "bottom": 85
+      },
+      "safeTapOffset": {
+        "left": 20,
+        "top": 25,
+        "right": 85,
+        "bottom": 60
+      },
+      "variants": [
+        {
+          "id": "global-en-white",
+          "file": "dock.header.png",
+          "sourceSha256": "fe0d854d16f0f9a9ff05dc94e80b0b3ec106b5591ac8ec59fd9b83679600fe6e",
+          "sourceWidth": 1280,
+          "sourceHeight": 720,
+          "crop": {
+            "left": 2,
+            "top": 0,
+            "right": 240,
+            "bottom": 64
+          },
+          "sha256": "2cd4d1592c20b41f316014390a0b87ddf7d8243731352a027ca5e5f222b2257d",
+          "mode": "Rgb",
+          "minimumScore": 0.9,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 24
+        }
+      ]
+    },
+    {
+      "id": "dock.selection-confirm",
+      "purpose": "Исключающий признак режима выбора кораблей; ввод запрещён.",
+      "search": {
+        "left": 925,
+        "top": 630,
+        "right": 1125,
+        "bottom": 710
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en-selection",
+          "file": "dock.selection-confirm.png",
+          "sourceSha256": "02d7a9022a058d2ec10307897c241ac164213cacf5d78e70e3a6dd979e5691c2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 940,
+            "top": 644,
+            "right": 1105,
+            "bottom": 696
+          },
+          "sha256": "fd2459e4dfd43ba5292bff57d8de1fe92bad547fbb70b69ccc06b0c9f93f2b3d",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 16
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "dock.open",
+      "sourceAssetId": "main.dock",
+      "postconditionAssetId": "dock.header",
+      "maximumObservationAge": "00:00:12",
+      "postconditionTimeout": "00:00:20",
+      "excludedAssetIds": [
+        "dock.selection-confirm"
+      ]
+    },
+    {
+      "id": "dock.close",
+      "sourceAssetId": "dock.header",
+      "postconditionAssetId": "main.dock",
+      "maximumObservationAge": "00:00:12",
+      "postconditionTimeout": "00:00:20",
+      "excludedAssetIds": [
+        "dock.selection-confirm"
+      ]
+    }
+  ]
+}

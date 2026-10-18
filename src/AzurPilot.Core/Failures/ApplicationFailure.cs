@@ -90,6 +90,9 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <summary>Код отказа: native-анализ области кадра не вернул допустимую статистику.</summary>
     public const string NativeFrameAnalysisFailed = "native_frame_analysis_failed";
 
+    /// <summary>Игровой ввод отклонён либо его результат не доказан.</summary>
+    public const string GameUiActionRejected = "game_ui_action_rejected";
+
     /// <summary>Код отказа: операция отменена запросом отмены.</summary>
     public const string OperationCancelled = "operation_cancelled";
 
@@ -175,6 +178,7 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
             AndroidScreenshotCaptureFailed,
             DiagnosticRegionUnsupported,
             NativeFrameAnalysisFailed,
+            GameUiActionRejected,
             OperationCancelled,
             InternalError,
             MuMuInstallationNotFound,

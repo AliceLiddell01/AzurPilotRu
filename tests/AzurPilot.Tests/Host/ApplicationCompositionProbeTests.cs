@@ -205,7 +205,7 @@ public sealed class ApplicationCompositionProbeTests
         Assert.Equal(
             PinnedVersions.OpenCv.ToString(),
             StructuredLogRecord.Read(verified.State, OpencvVersionProperty));
-        Assert.Equal("core, imgcodecs", StructuredLogRecord.Read(verified.State, CapabilitiesProperty));
+        Assert.Equal("core, imgcodecs, imgproc", StructuredLogRecord.Read(verified.State, CapabilitiesProperty));
     }
 
     [Fact(DisplayName = "Диагностика сообщает bounded сведения о конфигурации, а не её документ")]

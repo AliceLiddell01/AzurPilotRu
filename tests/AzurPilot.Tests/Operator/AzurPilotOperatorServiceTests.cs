@@ -744,7 +744,8 @@ public sealed partial class AzurPilotOperatorServiceTests
             gameState,
             gameLifecycle,
             activeScreenshotHost,
-            configuration);
+            configuration,
+            gameUi: new AzurPilot.Windows.Game.GameUiWindowsHost(activeScreenshotHost, androidHost));
 
         return new OperatorFixture(muMuHost, runner, observingScreenshotHost, service);
     }
@@ -807,6 +808,7 @@ public sealed partial class AzurPilotOperatorServiceTests
 
     private sealed class ObservingScreenshotHost(AndroidWindowsHost inner) : IAndroidScreenshotHost
     {
+        internal Action? OnCapture { get; set; }
         public int CaptureCount { get; private set; }
 
         public MuMuInstanceId? LastInstanceId { get; private set; }
@@ -821,6 +823,7 @@ public sealed partial class AzurPilotOperatorServiceTests
             CancellationToken cancellationToken)
         {
             CaptureCount++;
+            OnCapture?.Invoke();
             LastInstanceId = instanceId;
             LastEndpoint = endpoint;
             ApplicationResult<CapturedAndroidScreenshot> result = await inner.CaptureScreenshotAsync(

@@ -22,10 +22,16 @@ AzurPilot.App.exe agent android-observe --target mumu:1
 AzurPilot.App.exe agent environment-prepare --target mumu:1 --timeout-ms 180000
 AzurPilot.App.exe agent game-start --target mumu:1
 AzurPilot.App.exe agent screenshot-scan --target mumu:1
+AzurPilot.App.exe agent game-ui-observe --target mumu:1
+AzurPilot.App.exe agent game-input-observe --target mumu:1
+AzurPilot.App.exe agent game-dock-roundtrip --target mumu:1
 AzurPilot.App.exe agent settings
 ```
 
 Identity в примере условная: сначала выберите существующий exact target через inventory/resolve.
+Игровые наблюдения и безопасный переход Dock требуют уже открытой игры; контракт и ограничения —
+[game-ui](../architecture/game-ui.md). Операция roundtrip сообщает отдельные результаты открытия
+и возвращения; частичный эффект сохраняется при отказе и отмене.
 Подготовка окружения сама обеспечивает MuMu и Android readiness; запуск игры включает эту подготовку.
 Вызывающему агенту не требуется заранее выполнять цепочку низкоуровневых диагностических команд.
 Остальные lifecycle и read-only операции перечисляются discovery.

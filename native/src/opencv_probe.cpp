@@ -17,6 +17,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/core/version.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include <process.h>
 
@@ -110,7 +111,14 @@ ProbeResult run_opencv_probe() noexcept {
         }
         capabilities |= AZURPILOT_NATIVE_CAPABILITY_IMGCODECS;
 
-        // Оба модуля реально исполнились в этом вызове: флаг — факт, а не константа.
+        cv::Mat scores;
+        cv::matchTemplate(plane, plane, scores, cv::TM_CCOEFF_NORMED);
+        if (scores.rows != 1 || scores.cols != 1 || std::fabs(scores.at<float>(0, 0) - 1.0f) > 1e-5f) {
+            return ProbeResult{ProbeStatus::InternalFailure, 0u, 0u};
+        }
+        capabilities |= AZURPILOT_NATIVE_CAPABILITY_IMGPROC;
+
+        // Все объявленные модули реально исполнились в этом вызове.
         return ProbeResult{ProbeStatus::Ok, AZURPILOT_NATIVE_BUILD_FLAG_OPENCV_EXECUTED, capabilities};
     } catch (const cv::Exception&) {
         // Ожидаемый отказ OpenCV: наружу уходит код AZURPILOT_NATIVE_ERROR_OPENCV_FAILURE.

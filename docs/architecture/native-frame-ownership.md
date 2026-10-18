@@ -9,7 +9,7 @@ Frame boundary декодирует PNG в native-owned RGB8 и вычисляе
 [`screenshot diagnostics`](screenshot-diagnostics.md). Нижний уровень сам не обращается к ADB/MuMu и не
 распознаёт содержимое.
 
-Единственный нормативный контракт C ABI, его версия и числовые пределы определены в [`native/include/azurpilot_native_abi.h`](../../native/include/azurpilot_native_abi.h). ABI v3 сохраняет decode, metadata и release API и добавляет `azurpilot_native_frame_scan_region` для POD-области и RGB-статистики, а также `azurpilot_native_max_png_bytes` для чтения нормативного PNG byte budget. До создания кадра managed сторона проверяет версию и наличие обязательных release/ROI экспортов в той же DLL через `LibraryImport`; null-probe подтверждает, что недостающий или несовместимый экспорт обнаруживается до передачи владения ресурсом.
+Единственный нормативный контракт C ABI, его версия и числовые пределы определены в [`native/include/azurpilot_native_abi.h`](../../native/include/azurpilot_native_abi.h). Существующие decode, metadata, release, RGB region scan и PNG budget API дополнены bounded template match. До создания кадра managed сторона проверяет версию и обязательные release/ROI/match exports в той же DLL через `LibraryImport`; null-probe обнаруживает неполный API до передачи владения ресурсом. Игровая семантика match принадлежит [game-ui](game-ui.md).
 
 ## Декодирование и поддерживаемое подмножество PNG
 
