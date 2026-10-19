@@ -35,8 +35,8 @@ mutation и освобождать её аренду: учитывай productio
 Контракт и состав отчёта — [Agent CLI Debug Mode](../../../../docs/reference/agent-cli.md#debug-mode).
 Для приёмки PR:
 
-- Все вызовы прогона, включая preflight, cleanup и отрицательные сценарии, получают один и тот же
-  `--debug-report pr-<n>-<slug>`; рабочий каталог — проверяемый checkout. До записи —
+- Все вызовы прогона, кроме `agent discover` (он не принимает аргумент), включая preflight, cleanup и
+  отрицательные сценарии, получают один и тот же `--debug-report pr-<n>-<slug>`; рабочий каталог — проверяемый checkout. До записи —
   `git check-ignore -v .codex/local/reports/<session>/x`, после — `git status` без новых файлов.
 - После каждого вызова прочитай stderr-строку `AzurPilot.App.Agent.Debug` и `manifest.json`:
   `state=completed`, `diagnostics.status`, `incompleteReasons`, `run.correlationId` = correlationId

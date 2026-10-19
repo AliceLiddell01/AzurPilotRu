@@ -235,7 +235,7 @@ stdout остаётся тем же единственным envelope.
 
 ### Лимиты и полнота
 
-Точные значения публикуют `manifest.settings` и discovery; их владелец —
+Точные значения публикует `manifest.settings`; их владелец —
 [`AgentDebugRun`](../../src/AzurPilot.App/Agent/AgentDebugRun.cs) и
 [`AgentDebugFrames`](../../src/AzurPilot.App/Agent/AgentDebugFrames.cs). Ограничены: число и объём
 событий trace, число и общий объём JPEG одного прогона, ограниченная очередь фоновой записи, минимальное

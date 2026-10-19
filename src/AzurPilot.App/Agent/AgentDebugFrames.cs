@@ -391,7 +391,15 @@ internal sealed class AgentDebugFrames : IAndroidScreenshotObserver, IDisposable
         {
             await foreach (AgentDebugFrameRecord record in _queue.Reader.ReadAllAsync(_stop.Token).ConfigureAwait(false))
             {
-                await WriteFrameAsync(record).ConfigureAwait(false);
+                try
+                {
+                    await WriteFrameAsync(record).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException))
+                {
+                    // Отказ одного кадра не должен останавливать запись следующих и прерывать завершение отчёта.
+                    Fail(record, "writer_failed:" + exception.GetType().Name);
+                }
             }
         }
         catch (OperationCanceledException) when (_stop.IsCancellationRequested)
@@ -415,7 +423,7 @@ internal sealed class AgentDebugFrames : IAndroidScreenshotObserver, IDisposable
             {
                 annotations = AgentDebugAnnotations.Build(record);
             }
-            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+            catch (Exception exception) when (exception is not OutOfMemoryException)
             {
                 annotations = [];
                 limit = "annotation_failed:" + exception.GetType().Name;
