@@ -44,7 +44,11 @@ Identity в примере условная: сначала выберите с�
 означает `Ready`. Потребитель обязан проверить `data.state`. Технический отказ или необходимость
 ручного решения сохраняют failure. `game-ui-ready-ensure` включает существующую подготовку и запуск
 игры, затем известный flow; успех требует именно `data.ui.state=Ready`. Обе операции повторно
-проверяют exact identity/endpoint и foreground/viewport. Список допустимых состояний/переходов,
+проверяют exact identity/endpoint и foreground/viewport. Срок ensure задаёт только `--timeout-ms`:
+при его истечении возвращается `AgentDeadlineExceeded`, а `data.lifecycle` и сведения о мутациях
+сохраняются. `data.lifecycle` и `data.ui.phases` — фазы на одной монотонной шкале операции
+(`enteredAtMs`, `exitedAtMs`, `elapsedMs`, `endReason`, `status=Observed|NotObserved`); `work` содержит
+счётчики и длительности захвата, ADB-команды, распознавания, viewport, ввода и пауз. Список допустимых состояний/переходов,
 стабильные признаки меню, независимые guards перекрытий и ограничения — [game-ui](../architecture/game-ui.md#готовность-главного-ui).
 
 `android-prepare` подготавливает только transport выбранного target через существующий readiness owner.

@@ -20,28 +20,30 @@ public sealed class GameUiReadinessTests
         GameUiReadinessOutcome result = await host.Run(false, progress);
         Assert.Equal(GameUiReadinessState.Ready, result.State);
         Assert.Null(result.Failure);
-        Assert.InRange(result.StableFrames, 3, 5);
+        Assert.True(result.StableFrames >= 3);
         Assert.Equal(result.Observations, result.Evidence.Select(e => e.FrameId).Distinct().Count());
+        Assert.All(result.Evidence, e => Assert.True(e.ViewportProven));
         Assert.Equal(result.Observations, host.Viewports);
-        Assert.True(result.Elapsed >= TimeSpan.FromSeconds(1.5));
-        Assert.NotEqual(result.FirstReadyFrame!.FrameId, result.LastObservation!.Frame.FrameId);
+        Assert.True(host.Clock.GetElapsedTime(result.FirstReadyFrame!.CaptureStartedTimestamp,
+            result.LastObservation!.Frame.CaptureStartedTimestamp) >= TimeSpan.FromSeconds(1.5));
         Assert.Equal(0, result.TapAttempts);
         Assert.False(progress.MutationAttempted);
     }
 
     [Theory]
-    [InlineData("login", 2)]
-    [InlineData("download-confirm", 1)]
-    [InlineData("dock", 1)]
-    public async Task EnsureUsesBoundedKnownTransitionsThenIndependentReady(string initial, int taps)
+    [InlineData("login", new[] { "login.enter", "login.start" })]
+    [InlineData("download-confirm", new[] { "update.download" })]
+    [InlineData("dock", new[] { "dock.close" })]
+    public async Task EnsureUsesBoundedKnownTransitionsThenIndependentReady(string initial, string[] expectedActions)
     {
-        using ReadyHost host = new(initial) { AdvanceOnTap = true };
+        using ReadyHost host = new(initial);
         GameActionProgress progress = new();
         GameUiReadinessOutcome result = await host.Run(true, progress);
         Assert.Equal(GameUiReadinessState.Ready, result.State);
         Assert.Null(result.Failure);
-        Assert.Equal(taps, host.Taps);
-        Assert.Equal(taps, result.TapAttempts);
+        Assert.Equal(expectedActions, result.Actions.Select(a => a.ActionId));
+        Assert.Equal(expectedActions.Length, host.Taps);
+        Assert.Equal(expectedActions.Length, result.TapAttempts);
         Assert.True(progress.ChangeProven);
         Assert.All(result.Actions, a => Assert.True(a.ChangeProven));
         Assert.DoesNotContain(result.Actions, a => a.After!.Frame.FrameId == result.LastObservation!.Frame.FrameId);
@@ -59,6 +61,7 @@ public sealed class GameUiReadinessTests
     [InlineData("main-overlay", GameUiReadinessState.Unknown)]
     [InlineData("main-unknown-overlay", GameUiReadinessState.RequiresUserAction)]
     [InlineData("main-sidebar-overlay", GameUiReadinessState.RequiresUserAction)]
+    [InlineData("login-and-server", GameUiReadinessState.Unknown)]
     public async Task ReadOnlyDistinguishesStatesWithoutMutation(string initial, GameUiReadinessState expected)
     {
         using ReadyHost host = new(initial);
@@ -95,7 +98,7 @@ public sealed class GameUiReadinessTests
     [InlineData(GameMatchStatus.GeometryRejected)]
     public async Task UnknownNegativeGuardNeverAuthorizesConfirm(GameMatchStatus status)
     {
-        using ReadyHost host = new("download-confirm") { Guard = status };
+        using ReadyHost host = new("download-confirm") { GuardAssetId = "dock.selection-confirm", Guard = status };
         GameUiReadinessOutcome result = await host.Run(true, new());
         Assert.NotEqual(GameUiReadinessState.Ready, result.State);
         Assert.Equal(0, host.Taps);
@@ -103,25 +106,68 @@ public sealed class GameUiReadinessTests
     }
 
     [Theory]
-    [InlineData(false, "loading_no_visual_activity")]
-    [InlineData(true, "readiness_deadline")]
-    public async Task PassiveLoadingIsBoundedAndNeverUsesTap(bool activity, string reason)
+    [InlineData("stalled", "loading_no_progress")]
+    [InlineData("noise", "loading_no_progress")]
+    [InlineData("endless", "readiness_maximum_duration")]
+    public async Task PassiveLoadingIsBoundedByProgressAndNeverUsesTap(string progress, string reason)
     {
-        using ReadyHost host = new("download") { Activity = activity };
+        using ReadyHost host = new("download") { Progress = progress };
+        _ = host.Timed.Remove("download");
         GameUiReadinessOutcome result = await host.Run(true, new());
         Assert.Equal(GameUiReadinessState.Loading, result.State);
         Assert.Equal(reason, result.Reason);
         Assert.InRange(result.Evidence.Count, 1, 16);
-        Assert.InRange(result.Observations, 2, 160);
         Assert.Equal(0, result.TapAttempts);
         Assert.Empty(result.Actions);
         Assert.Equal(0, host.Taps);
+        if (progress != "endless")
+        {
+            // Ни цифры, ни шум ниже шага не продлевают ожидание без роста заполнения полосы.
+            Assert.InRange(result.Elapsed.TotalSeconds, 40, 45);
+        }
+    }
+
+    [Theory]
+    [InlineData("slow")]
+    [InlineData("reset")]
+    public async Task SlowOrStagedProgressKeepsWaitingUntilIndependentReady(string progress)
+    {
+        using ReadyHost host = new("download") { Progress = progress, Timed = { ["download"] = (TimeSpan.FromSeconds(100), "main") } };
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal(GameUiReadinessState.Ready, result.State);
+        Assert.True(result.Elapsed > TimeSpan.FromSeconds(100));
+        Assert.Equal(0, host.Taps);
+    }
+
+    [Fact]
+    public async Task PassiveFramesSkipViewportButEveryReadyCandidateProvesIt()
+    {
+        using ReadyHost host = new("download") { Progress = "slow", Timed = { ["download"] = (TimeSpan.FromSeconds(10), "main") } };
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal(GameUiReadinessState.Ready, result.State);
+        Assert.Contains(result.Evidence, e => e.State == GameUiReadinessState.Loading && !e.ViewportProven);
+        Assert.All(result.Evidence.Where(e => e.State == GameUiReadinessState.Ready), e => Assert.True(e.ViewportProven));
+        Assert.Equal(result.Evidence.Count(e => e.State == GameUiReadinessState.Ready), host.Viewports);
+    }
+
+    [Theory]
+    [InlineData(2000, 0)]
+    [InlineData(100, 1)]
+    public async Task SlowCaptureIsNotFollowedByExtraPause(int captureMilliseconds, int minimumWaits)
+    {
+        using ReadyHost host = new("main") { CaptureCost = TimeSpan.FromMilliseconds(captureMilliseconds) };
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal(GameUiReadinessState.Ready, result.State);
+        Assert.Equal(minimumWaits == 0 ? 0 : result.Work!.Waits, result.Waits);
+        Assert.True(result.Waits >= minimumWaits);
+        IReadOnlyList<long> captures = [.. result.Evidence.Select(e => e.CaptureTimestamp)];
+        Assert.All(captures.Zip(captures.Skip(1)), p => Assert.True(host.Clock.GetElapsedTime(p.First, p.Second) >= TimeSpan.FromMilliseconds(500)));
     }
 
     [Fact]
     public async Task IntermittentMainAndUnknownNeverAccumulateReadyFrames()
     {
-        using ReadyHost host = new("main") { Fault = "unstable" };
+        using ReadyHost host = new("main") { Flicker = "main-unknown-overlay" };
         GameUiReadinessOutcome result = await host.Run(false, new());
         Assert.NotEqual(GameUiReadinessState.Ready, result.State);
         Assert.Equal(0, result.StableFrames);
@@ -131,7 +177,7 @@ public sealed class GameUiReadinessTests
     [Fact]
     public async Task RevisitedActionStopsBeforeSecondTap()
     {
-        using ReadyHost host = new("login") { AdvanceOnTap = true, Fault = "cycle" };
+        using ReadyHost host = new("login") { Timed = { ["server"] = (TimeSpan.FromSeconds(1), "login") } };
         GameActionProgress progress = new();
         GameUiReadinessOutcome result = await host.Run(true, progress);
         Assert.Equal("action_cycle_prevented", result.Reason);
@@ -141,20 +187,27 @@ public sealed class GameUiReadinessTests
         Assert.True(progress.ChangeProven);
     }
 
-    [Fact]
-    public async Task ConfirmRechecksPurposeAfterClassificationBeforeInput()
+    [Theory]
+    [InlineData("login", "login.enter")]
+    [InlineData("server", "login.start")]
+    [InlineData("download-confirm", "update.download")]
+    [InlineData("dock", "dock.close")]
+    public async Task ActionUsesClassifiedFrameWithFreshViewportInsteadOfDuplicateCapture(string initial, string actionId)
     {
-        using ReadyHost host = new("download-confirm") { Fault = "purpose-changed" };
+        using ReadyHost host = new(initial);
         GameUiReadinessOutcome result = await host.Run(true, new());
-        Assert.Equal("required_asset_unproven", Assert.Single(result.Actions).Failure!.Details!["reason"]);
-        Assert.Equal(0, host.Taps);
-        Assert.Equal(0, result.TapAttempts);
+        GameActionOutcome action = result.Actions[0];
+        Assert.Equal(actionId, action.ActionId);
+        Assert.Equal(0, action.SourceObservations);
+        Assert.Contains(result.Evidence, e => e.FrameId == action.Before!.Frame.FrameId && !e.ViewportProven);
+        Assert.Equal(action.Before!.Frame.FrameId, host.FirstViewportFrame);
+        Assert.True(action.ChangeProven);
     }
 
     [Fact]
     public async Task MissingGuardIsUnknownAndNeverMeansAbsent()
     {
-        using ReadyHost host = new("download-confirm") { Fault = "guard-missing" };
+        using ReadyHost host = new("download-confirm") { GuardAssetId = "dock.selection-confirm", MissingGuard = true };
         GameUiReadinessOutcome result = await host.Run(true, new());
         Assert.Equal(GameUiReadinessState.Unknown, result.State);
         Assert.Equal(0, host.Taps);
@@ -172,12 +225,7 @@ public sealed class GameUiReadinessTests
     [InlineData("overlay.sidebar-open", GameMatchStatus.GeometryRejected)]
     public async Task OverlayGuardUncertaintyNeverProvesReadyOrTaps(string asset, GameMatchStatus? status)
     {
-        using ReadyHost host = new("main")
-        {
-            GuardAssetId = asset,
-            Guard = status,
-            Fault = status is null ? "guard-missing" : ""
-        };
+        using ReadyHost host = new("main") { GuardAssetId = asset, Guard = status, MissingGuard = status is null };
         GameUiReadinessOutcome result = await host.Run(true, new());
         Assert.NotEqual(GameUiReadinessState.Ready, result.State);
         Assert.NotNull(result.Failure);
@@ -194,12 +242,7 @@ public sealed class GameUiReadinessTests
     [InlineData("main.battle", GameMatchStatus.Absent)]
     public async Task StableMainRequiresEveryIndependentAnchor(string asset, GameMatchStatus? status)
     {
-        using ReadyHost host = new("main")
-        {
-            GuardAssetId = asset,
-            Guard = status,
-            Fault = status is null ? "guard-missing" : ""
-        };
+        using ReadyHost host = new("main") { GuardAssetId = asset, Guard = status, MissingGuard = status is null };
         GameUiReadinessOutcome result = await host.Run(false, new());
         Assert.Equal(GameUiReadinessState.Unknown, result.State);
         Assert.Equal(0, result.StableFrames);
@@ -207,46 +250,132 @@ public sealed class GameUiReadinessTests
     }
 
     [Theory]
-    [InlineData("login", "login.enter")]
-    [InlineData("server", "login.start")]
-    [InlineData("dock", "ready.dock-close")]
-    public async Task DialogAppearingAfterClassificationBlocksFreshActionWithoutTap(string state, string action)
+    [InlineData("login-dialog")]
+    [InlineData("server-dialog")]
+    [InlineData("dock-dialog")]
+    public async Task DialogOverActionScreenNeverAuthorizesTap(string initial)
     {
-        using ReadyHost host = new(state) { Fault = "dialog-before-action" };
+        using ReadyHost host = new(initial);
         GameUiReadinessOutcome result = await host.Run(true, new());
-        Assert.Equal(action, Assert.Single(result.Actions).ActionId);
-        Assert.Equal("excluded_asset_present_or_unproven", result.Actions[0].Failure!.Details!["reason"]);
+        Assert.NotEqual(GameUiReadinessState.Ready, result.State);
+        Assert.Empty(result.Actions);
         Assert.Equal(0, host.Taps);
-        Assert.Equal(0, result.TapAttempts);
+    }
+
+    [Theory]
+    [InlineData("login")]
+    [InlineData("server")]
+    [InlineData("dock")]
+    public async Task DialogAppearingAfterTapFailsPostconditionWithoutSecondTap(string initial)
+    {
+        using ReadyHost host = new(initial) { DialogAfterTap = true };
+        GameActionProgress progress = new();
+        GameUiReadinessOutcome result = await host.Run(true, progress);
+        Assert.Equal("excluded_asset_present_or_unproven", Assert.Single(result.Actions).Failure!.Details!["reason"]);
+        Assert.Equal(1, host.Taps);
+        Assert.True(progress.MutationAttempted);
+        Assert.False(progress.ChangeProven);
+    }
+
+    [Fact]
+    public async Task StartUsesStaticAnchorAndSeparateTapAreaOnlyOnServerStage()
+    {
+        using ReadyHost host = new("server");
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal(GameUiReadinessState.Ready, result.State);
+        GameTap tap = Assert.Single(host.TapPermits);
+        GameUiAction start = GameAssetCatalog.Default.GetAction("login.start");
+        GamePixelRect area = new GameGeometry(3840, 2160).MapInside(start.TapArea!.Value);
+        Assert.Equal("login.criware", tap.AssetId);
+        Assert.Equal(area, tap.SafeBounds);
+        Assert.True(area.Contains(tap.Point));
+        GamePixelRect anchor = result.Actions[0].Before!.Find("login.criware")!.Bounds!.Value;
+        Assert.False(anchor.Contains(tap.Point));
+    }
+
+    [Fact]
+    public void CatalogActionsHaveExactlyOneInputRegionAndStartAvoidsVisibleContext()
+    {
+        GameAssetCatalog catalog = GameAssetCatalog.Default;
+        foreach (GameUiAction action in catalog.Actions)
+        {
+            Assert.True(action.TapArea is null ^ catalog.GetAsset(action.SourceAssetId).SafeTapOffset is null, action.Id);
+        }
+
+        GameUiAction start = catalog.GetAction("login.start");
+        Assert.Equal("login.criware", start.SourceAssetId);
+        Assert.Contains("login.server", start.RequiredAssetIds!);
+        Assert.Contains("login.enter", start.ExcludedAssetIds!);
+        Assert.All(start.RequiredAssetIds!.Append(start.SourceAssetId),
+            id => Assert.False(GameGeometry.Intersects(start.TapArea!.Value, catalog.GetAsset(id).Search), id));
+        Assert.DoesNotContain(catalog.Assets, a => a.Id == "login.start");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(GameMatchStatus.Absent)]
+    [InlineData(GameMatchStatus.Ambiguous)]
+    public async Task StaticAnchorVisibleOnLoginScreenNeverAuthorizesStart(GameMatchStatus? enter)
+    {
+        // CRIWARE виден и на экране LOG IN: без доказанной стадии SERVER и отсутствия LOG IN нет tap по отдельной области.
+        using ReadyHost host = new("login") { GuardAssetId = "login.enter", Guard = enter, MissingGuard = enter is null };
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.NotEqual(GameUiReadinessState.Ready, result.State);
+        Assert.Empty(result.Actions);
+        Assert.Equal(0, host.Taps);
+    }
+
+    [Fact]
+    public async Task LoginAndServerTogetherNeverAuthorizeEitherTap()
+    {
+        using ReadyHost host = new("login-and-server");
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal(GameUiReadinessState.Unknown, result.State);
+        Assert.Empty(result.Actions);
+        Assert.Equal(0, host.Taps);
     }
 
     [Fact]
     public async Task ColdInitialUnknownWaitsForFreshKnownUiWithoutGuessingOrTap()
     {
-        using ReadyHost host = new("main") { InitialUnknownFrames = 40 };
+        using ReadyHost host = new("main") { InitialUnknown = TimeSpan.FromSeconds(60) };
         GameUiReadinessOutcome result = await host.Run(true, new(), allowInitialTransition: true);
         Assert.Equal(GameUiReadinessState.Ready, result.State);
-        Assert.True(result.Elapsed > TimeSpan.FromSeconds(20));
-        Assert.True(result.Observations > 40);
+        Assert.True(result.Elapsed > TimeSpan.FromSeconds(60));
         Assert.Equal(0, host.Taps);
         Assert.True(result.StableFrames >= 3);
     }
 
     [Fact]
+    public async Task InitialUnknownIsBoundedSeparatelyFromCallerDeadline()
+    {
+        using ReadyHost host = new("main") { InitialUnknown = TimeSpan.FromMinutes(10) };
+        GameUiReadinessOutcome result = await host.Run(true, new(), allowInitialTransition: true);
+        Assert.Equal(GameUiReadinessState.Unknown, result.State);
+        Assert.Equal("initial_transition_unproven", result.Reason);
+        Assert.InRange(result.Elapsed.TotalSeconds, 120, 125);
+        Assert.Equal(0, host.Taps);
+    }
+
+    [Fact]
     public async Task InitialUnknownBudgetDoesNotExtendUnknownAfterKnownState()
     {
-        using ReadyHost host = new("main") { Fault = "unknown-after-known" };
+        using ReadyHost host = new("main") { Timed = { ["main"] = (TimeSpan.FromSeconds(1), "unknown") } };
         GameUiReadinessOutcome result = await host.Run(true, new(), allowInitialTransition: true);
         Assert.Equal(GameUiReadinessState.Unknown, result.State);
         Assert.Equal("state_unproven_or_no_progress", result.Reason);
-        Assert.InRange(result.Elapsed.TotalSeconds, 12, 15);
+        Assert.InRange(result.Elapsed.TotalSeconds, 12, 16);
         Assert.Equal(0, host.Taps);
     }
 
     [Fact]
     public async Task LoginToastAfterTapIsExpectedTransitionAndNeverProvesReady()
     {
-        using ReadyHost host = new("login") { AdvanceOnTap = true, Fault = "login-toast" };
+        using ReadyHost host = new("login")
+        {
+            OnTap = { ["login"] = "login-transition" },
+            Timed = { ["login-transition"] = (TimeSpan.FromSeconds(3), "server") },
+        };
         GameUiReadinessOutcome result = await host.Run(true, new());
         Assert.Equal(GameUiReadinessState.Ready, result.State);
         Assert.Equal(2, host.Taps);
@@ -258,38 +387,9 @@ public sealed class GameUiReadinessTests
     }
 
     [Fact]
-    public async Task BlinkingStartWaitsForFreshUniqueWithoutBlindInput()
+    public async Task CancelBeforeStartTapKeepsZeroTapAttempts()
     {
-        using ReadyHost host = new("server") { AdvanceOnTap = true, Fault = "blink-start" };
-        GameUiReadinessOutcome result = await host.Run(true, new());
-        Assert.Equal(GameUiReadinessState.Ready, result.State);
-        GameActionOutcome action = Assert.Single(result.Actions);
-        Assert.Equal(4, action.SourceObservations);
-        Assert.Equal(GameMatchStatus.Unique, action.Before!.Find("login.start")!.Status);
-        Assert.True(action.ChangeProven);
-        Assert.Equal(1, result.TapAttempts);
-        Assert.Equal(1, host.Taps);
-    }
-
-    [Theory]
-    [InlineData("blink-timeout")]
-    [InlineData("blink-guard")]
-    public async Task BlinkingStartNeverWaitsThroughUnknownGuardOrSendsUnprovenInput(string fault)
-    {
-        using ReadyHost host = new("server") { AdvanceOnTap = true, Fault = fault };
-        GameUiReadinessOutcome result = await host.Run(true, new());
-        Assert.NotEqual(GameUiReadinessState.Ready, result.State);
-        Assert.Equal(0, host.Taps);
-        GameActionOutcome action = Assert.Single(result.Actions);
-        Assert.False(action.MutationAttempted);
-        Assert.Equal(fault == "blink-guard" ? "excluded_asset_present_or_unproven" : "source_appearance_timeout",
-            action.Failure!.Details!["reason"]);
-    }
-
-    [Fact]
-    public async Task CancelDuringBlinkWaitKeepsZeroTapAttempts()
-    {
-        using ReadyHost host = new("server") { Fault = "blink-cancel" };
+        using ReadyHost host = new("server") { Fault = "cancel-viewport" };
         GameActionProgress progress = new();
         GameUiReadinessOutcome result = await host.Run(true, progress);
         Assert.Equal(ApplicationFailure.OperationCancelled, result.Failure!.Code);
@@ -306,7 +406,7 @@ public sealed class GameUiReadinessTests
     [InlineData("post-transport")]
     public async Task UnprovenEffectPreservesAttemptAndNeverRetries(string fault)
     {
-        using ReadyHost host = new("login") { Fault = fault, AdvanceOnTap = true };
+        using ReadyHost host = new("login") { Fault = fault };
         GameActionProgress progress = new();
         GameUiReadinessOutcome result = await host.Run(true, progress);
         Assert.NotEqual(GameUiReadinessState.Ready, result.State);
@@ -315,6 +415,29 @@ public sealed class GameUiReadinessTests
         Assert.False(progress.ChangeProven);
         Assert.Equal(1, result.TapAttempts);
         Assert.Equal(1, host.Taps);
+    }
+
+    [Fact]
+    public async Task PhasesUseOneMonotonicTimelineAndMarkMissingStates()
+    {
+        using ReadyHost host = new("login");
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal(GameUiReadinessState.Ready, result.State);
+        GameUiPhase[] observed = [.. result.Phases.Where(p => p.Status == GameUiPhaseStatus.Observed)];
+        Assert.Equal(["state:login", "action:login.enter", "state:server", "action:login.start", "state:main"],
+            observed.Select(p => p.Id));
+        Assert.All(observed.Zip(observed.Skip(1)), p => Assert.True(p.First.ExitedAtMs <= p.Second.EnteredAtMs));
+        Assert.All(observed, p => Assert.True(p.EnteredAtMs <= p.ExitedAtMs && p.ElapsedMs >= 0));
+        Assert.Equal("stable_main_ui", observed[^1].EndReason);
+        Assert.Equal("change_proven", observed[1].EndReason);
+        Assert.Equal(result.Work!.Captures, observed.Sum(p => p.Work!.Captures));
+        Assert.Equal(result.Work.ViewportChecks, observed.Sum(p => p.Work!.ViewportChecks));
+        Assert.Equal(2, observed.Sum(p => p.Work!.Taps));
+        Assert.Equal(2, observed.Where(p => p.Id.StartsWith("action:", StringComparison.Ordinal)).Sum(p => p.Work!.Taps));
+        Assert.Contains(result.Phases, p => p.Id == "state:download" && p.Status == GameUiPhaseStatus.NotObserved
+            && p.ElapsedMs is null && p.Work is null);
+        Assert.Contains(result.Phases, p => p.Id == "action:update.download" && p.Status == GameUiPhaseStatus.NotObserved);
+        Assert.Equal(result.Phases.Count, result.Phases.Select(p => p.Id).Distinct().Count());
     }
 
     [Theory]
@@ -330,11 +453,8 @@ public sealed class GameUiReadinessTests
     [InlineData(2160, "unverified-update", "unverified-update")]
     public void NativeFixturesClassifySupportedStatesAndRejectMainUnderOverlay(int height, string fixture, string? expected)
     {
-        using NativeFrame frame = AzurPilotNativeBridge.DecodePng(File.ReadAllBytes(Path.Combine(
-            PinnedVersions.RepositoryRoot, "tests", "fixtures", "game", $"{fixture}-{height}.png")));
+        GameUiObservation observed = ObserveFixture(height, fixture);
         GameUiReadinessPolicy policy = GameAssetCatalog.Default.Readiness;
-        GameUiObservation observed = new GameUiRecognizer(GameAssetCatalog.Default).Observe(frame,
-            GameUiRecognizerTests.Provenance(frame), policy.AssetIds);
         Assert.Equal(expected, policy.Classify(observed)?.Id);
         if (fixture.Contains("overlay", StringComparison.Ordinal))
         {
@@ -358,6 +478,26 @@ public sealed class GameUiReadinessTests
     [InlineData(1080)]
     [InlineData(1440)]
     [InlineData(2160)]
+    public void StaticLoginAnchorIsSharedButOnlyServerStageSelectsStart(int height)
+    {
+        GameUiReadinessPolicy policy = GameAssetCatalog.Default.Readiness;
+        GameUiObservation login = ObserveFixture(height, "login");
+        GameUiObservation server = ObserveFixture(height, "server");
+        Assert.Equal(GameMatchStatus.Unique, login.Find("login.criware")!.Status);
+        Assert.Equal(GameMatchStatus.Unique, server.Find("login.criware")!.Status);
+        Assert.Equal("login.enter", policy.Classify(login)!.ActionId);
+        Assert.Equal("login.start", policy.Classify(server)!.ActionId);
+        foreach (string negative in new[] { "main", "download", "download-confirm", "dock" })
+        {
+            Assert.Equal(GameMatchStatus.Absent, ObserveFixture(height, negative).Find("login.criware")!.Status);
+        }
+    }
+
+    [Theory]
+    [InlineData(720)]
+    [InlineData(1080)]
+    [InlineData(1440)]
+    [InlineData(2160)]
     public void EveryDataDrivenFixtureHasSameMeaningAtSyntheticScales(int height)
     {
         foreach ((string fixture, string? expected) in new (string, string?)[]
@@ -373,12 +513,15 @@ public sealed class GameUiReadinessTests
         }
     }
 
+    // Синтетический фон меняется только вне вставленных crops: это доказывает независимость от фона вне
+    // шаблонов, но не устойчивость к изменению пикселей внутри шаблона. Overlay fixtures не воспроизводят
+    // затемнение настоящего UI и проверяют только guards каталога.
     [Theory]
     [InlineData(720)]
     [InlineData(1080)]
     [InlineData(1440)]
     [InlineData(2160)]
-    public void StableMainIgnoresChangingBackgroundAndRejectsOverlays(int height)
+    public void MainAnchorsIgnoreBackgroundOutsideCropsAndOverlayGuardsBlockReady(int height)
     {
         foreach (string fixture in new[] { "main", "main-background-light", "main-background-dark" })
         {
@@ -388,6 +531,14 @@ public sealed class GameUiReadinessTests
         NativeFixturesClassifySupportedStatesAndRejectMainUnderOverlay(height, "main-overlay", null);
         NativeFixturesClassifySupportedStatesAndRejectMainUnderOverlay(height, "main-unknown-overlay", "blocked-dialog");
         NativeFixturesClassifySupportedStatesAndRejectMainUnderOverlay(height, "main-sidebar-overlay", "blocked-sidebar");
+    }
+
+    private static GameUiObservation ObserveFixture(int height, string fixture)
+    {
+        using NativeFrame frame = AzurPilotNativeBridge.DecodePng(File.ReadAllBytes(Path.Combine(
+            PinnedVersions.RepositoryRoot, "tests", "fixtures", "game", $"{fixture}-{height}.png")));
+        return new GameUiRecognizer(GameAssetCatalog.Default).Observe(frame,
+            GameUiRecognizerTests.Provenance(frame), GameAssetCatalog.Default.Readiness.AssetIds);
     }
 
     internal sealed class ReadyClock : TimeProvider
@@ -430,21 +581,75 @@ public sealed class GameUiReadinessTests
         }
     }
 
-    internal sealed class ReadyHost(string initial) : IGameUiHost, IDisposable
+    /// <summary>
+    /// Событийная модель экрана: состояние меняется только нажатием, течением времени на экране
+    /// или явным мерцанием UI. Номер захвата не определяет переходы.
+    /// </summary>
+    internal sealed class ReadyHost : IGameUiHost, IDisposable
     {
+        private static readonly Dictionary<string, string[]> Screens = new(StringComparer.Ordinal)
+        {
+            ["main"] = ["main.dock", "main.depot", "main.battle"],
+            ["main-overlay"] = ["main.dock", "main.depot", "main.battle", "overlay.dialog-close", "update.header", "update.download", "update.confirm"],
+            ["main-unknown-overlay"] = ["main.dock", "main.depot", "main.battle", "overlay.dialog-close"],
+            ["main-sidebar-overlay"] = ["main.dock", "main.depot", "main.battle", "overlay.sidebar-open"],
+            ["login"] = ["login.enter", "login.logo", "login.criware"],
+            ["server"] = ["login.server", "login.logo", "login.criware"],
+            ["login-and-server"] = ["login.enter", "login.server", "login.logo", "login.criware"],
+            ["login-transition"] = ["login.success", "login.server", "login.logo", "login.criware"],
+            ["login-dialog"] = ["login.enter", "login.logo", "login.criware", "overlay.dialog-close"],
+            ["server-dialog"] = ["login.server", "login.logo", "login.criware", "overlay.dialog-close"],
+            ["dock-dialog"] = ["dock.header", "overlay.dialog-close"],
+            ["download-confirm"] = ["update.header", "update.download", "update.confirm"],
+            ["unverified-update"] = ["update.header", "update.confirm"],
+            ["download"] = ["loading.download"],
+            ["dock"] = ["dock.header"],
+            ["selection"] = ["dock.header", "dock.selection-confirm"],
+            ["unknown"] = [],
+        };
+
+        private readonly CancellationTokenSource _cancel = new();
+        private readonly long _started;
+        private string _screen;
+        private long _entered;
+        private GameFrameProvenance? _previous;
+
+        internal ReadyHost(string initial)
+        {
+            _started = Clock.Now;
+            _screen = initial;
+            _entered = Clock.Now;
+        }
+
         internal ReadyClock Clock { get; } = new();
-        internal bool AdvanceOnTap { get; init; }
-        internal bool Activity { get; init; }
+        /// <summary>Сколько монотонного времени занимает один захват.</summary>
+        internal TimeSpan CaptureCost { get; init; } = TimeSpan.FromSeconds(2);
+        /// <summary>Переход экрана после tap.</summary>
+        internal Dictionary<string, string> OnTap { get; } = new(StringComparer.Ordinal)
+        {
+            ["login"] = "server",
+            ["server"] = "main",
+            ["download-confirm"] = "download",
+            ["dock"] = "main",
+        };
+        /// <summary>Переход после пребывания на экране не меньше заданного времени.</summary>
+        internal Dictionary<string, (TimeSpan After, string Next)> Timed { get; } = new(StringComparer.Ordinal)
+        {
+            ["download"] = (TimeSpan.FromSeconds(10), "main"),
+        };
+        internal TimeSpan InitialUnknown { get; init; }
+        internal string? Flicker { get; init; }
+        internal string Progress { get; init; } = "slow";
+        internal bool DialogAfterTap { get; init; }
         internal string Fault { get; init; } = "";
         internal GameMatchStatus? Guard { get; init; }
+        internal bool MissingGuard { get; init; }
         internal string GuardAssetId { get; init; } = "dock.selection-confirm";
         internal int Captures { get; private set; }
         internal int Viewports { get; private set; }
-        internal int Taps { get; private set; }
-        internal int InitialUnknownFrames { get; init; }
-        private Guid _firstId;
-        private long _firstTime;
-        private readonly CancellationTokenSource _cancel = new();
+        internal int Taps => TapPermits.Count;
+        internal List<GameTap> TapPermits { get; } = [];
+        internal Guid? FirstViewportFrame { get; private set; }
         public void Dispose() => _cancel.Dispose();
         internal MuMuInstanceId Target { get; } = MuMuInstanceId.FromIndex("7");
         internal AndroidEndpoint Endpoint { get; } = AndroidTestContext.Endpoint;
@@ -457,6 +662,44 @@ public sealed class GameUiReadinessTests
                 GameAssetCatalog.Default.GetAction, Clock).RunAsync(Target, Endpoint, ensure, progress, linked.Token, allowInitialTransition);
         }
 
+        private void Move(string screen)
+        {
+            _screen = screen;
+            _entered = Clock.Now;
+        }
+
+        private string Current()
+        {
+            if (Timed.TryGetValue(_screen, out (TimeSpan After, string Next) timed) && timed.Next is not null
+                && Clock.GetElapsedTime(_entered) >= timed.After)
+            {
+                Move(timed.Next);
+            }
+
+            TimeSpan sinceStart = Clock.GetElapsedTime(_started);
+            if (sinceStart < InitialUnknown)
+            {
+                _entered = Clock.Now;
+                return "unknown";
+            }
+
+            return Flicker is not null && (long)sinceStart.TotalSeconds / 2 % 2 == 1 ? Flicker : _screen;
+        }
+
+        private double Level(TimeSpan onScreen)
+        {
+            double seconds = onScreen.TotalSeconds;
+            return Progress switch
+            {
+                "stalled" => 20,
+                "noise" => 20 + ((long)seconds / 2 % 2 * 0.04),
+                "endless" => 20 + seconds,
+                // Медленный рост меньше шага между соседними кадрами, но заметный накопительно.
+                "reset" => 20 + (seconds % 30 * 0.02),
+                _ => 20 + (seconds * 0.02),
+            };
+        }
+
         public Task<ApplicationResult<GameUiObservation>> ObserveAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,
             IReadOnlyList<string> assets, CancellationToken cancellationToken)
         {
@@ -464,98 +707,57 @@ public sealed class GameUiReadinessTests
             Assert.Equal(Endpoint, endpoint);
             OnCapture?.Invoke();
             Captures++;
-            if (Fault == "blink-cancel" && Captures == 3)
-            {
-                _cancel.Cancel();
-                cancellationToken.ThrowIfCancellationRequested();
-            }
-
-            Clock.Now += TimeSpan.TicksPerMillisecond;
+            string screen = Current();
+            long timestamp = Clock.Now;
+            TimeSpan onScreen = Clock.GetElapsedTime(_entered);
+            Clock.Now += CaptureCost.Ticks;
             if (Fault == "transport" || (Fault == "post-transport" && Taps > 0))
             {
                 return Task.FromResult(ApplicationResult<GameUiObservation>.Failure(GameUiActionRunner.Failure("transport_lost")));
             }
 
-            string state = AdvanceOnTap && Fault is not ("no-change" or "tap-failure") && Taps > 0
-                ? initial == "login" && Taps == 1 ? "server"
-                    : initial == "download-confirm" && Captures == 3 ? "download" : "main" : initial;
-            if (Fault == "unstable" && Captures % 2 == 0)
-            {
-                state = "main-unknown-overlay";
-            }
-
-            if (Fault == "cycle" && Taps > 0 && Captures >= 4)
-            {
-                state = "login";
-            }
-
-            if (Captures <= InitialUnknownFrames || (Fault == "unknown-after-known" && Captures > 1))
-            {
-                state = "unknown";
-            }
-
-            if (Fault == "login-toast" && Taps == 1 && Captures <= 5)
-            {
-                state = "login-transition";
-            }
-
-            string[] present = state switch
-            {
-                "main" => ["main.dock", "main.depot", "main.battle"],
-                "main-overlay" => ["main.dock", "main.depot", "main.battle", "overlay.dialog-close", "update.header", "update.download", "update.confirm"],
-                "main-unknown-overlay" => ["main.dock", "main.depot", "main.battle", "overlay.dialog-close"],
-                "main-sidebar-overlay" => ["main.dock", "main.depot", "main.battle", "overlay.sidebar-open"],
-                "login" => ["login.enter", "login.logo", "login.start"],
-                "server" => ["login.server", "login.logo", "login.start"],
-                "login-transition" => ["login.success", "login.server", "login.logo", "login.start"],
-                "download-confirm" => ["update.header", "update.download", "update.confirm"],
-                "unverified-update" => ["update.header", "update.confirm"],
-                "download" => ["loading.download"],
-                "dock" => ["dock.header"],
-                "selection" => ["dock.header", "dock.selection-confirm"],
-                _ => [],
-            };
-            Guid id = Guid.NewGuid();
-            long timestamp = Clock.Now;
-            if (Captures == 1) { _firstId = id; _firstTime = timestamp; }
-
-            if (Fault == "replayed-id" && Captures > 1)
-            {
-                id = _firstId;
-            }
-
-            if (Fault == "replayed-time" && Captures > 1)
-            {
-                timestamp = _firstTime;
-            }
-
-            if (Fault == "stale")
-            {
-                timestamp -= TimeSpan.FromSeconds(13).Ticks;
-            }
-
-            GameFrameProvenance frame = new(id, Fault == "wrong-target" ? MuMuInstanceId.FromIndex("8") : Target,
+            bool later = Clock.GetElapsedTime(_started) > CaptureCost;
+            GameFrameProvenance frame = new(Guid.NewGuid(), Fault == "wrong-target" ? MuMuInstanceId.FromIndex("8") : Target,
                 Fault == "wrong-endpoint" ? new("other-host", 20312) : Endpoint,
-                Clock.GetUtcNow().AddSeconds(Fault == "future" ? 1 : 0), timestamp,
-                Fault == "geometry" ? 1000 : Fault == "resized" && Captures > 1 ? 1280 : 3840,
-                Fault == "resized" && Captures > 1 ? 720 : 2160);
-            GameUiObservation observation = new(frame, [.. assets.Where(id => Fault != "guard-missing" || id != GuardAssetId)
+                DateTimeOffset.UnixEpoch.AddTicks(timestamp).AddSeconds(Fault == "future" ? 13 : 0),
+                Fault == "stale" ? timestamp - TimeSpan.FromSeconds(13).Ticks : timestamp,
+                Fault == "geometry" ? 1000 : Fault == "resized" && later ? 1280 : 3840,
+                Fault == "resized" && later ? 720 : 2160);
+            if (_previous is not null && Fault == "replayed-id")
+            {
+                frame = frame with { FrameId = _previous.FrameId };
+            }
+
+            if (_previous is not null && Fault == "replayed-time")
+            {
+                frame = frame with { CaptureStartedTimestamp = _previous.CaptureStartedTimestamp };
+            }
+
+            _previous ??= frame;
+            string[] present = Screens[screen];
+            GameUiObservation observation = new(frame, [.. assets.Where(id => !MissingGuard || id != GuardAssetId)
                 .Select(id => new GameUiMatch(id, "test",
-                Fault == "native" ? GameMatchStatus.TechnicalFailure : id == GuardAssetId && Guard is not null
-                    ? Guard.Value : Fault == "purpose-changed" && Captures > 1 && id == "update.download" ? GameMatchStatus.Absent
-                        : Fault == "blink-guard" && Captures > 1 && id == "update.header" ? GameMatchStatus.Ambiguous
-                        : Captures > 1 && id == "login.start" && (Fault is "blink-timeout" or "blink-guard" or "blink-cancel"
-                            || (Fault == "blink-start" && Captures <= 4)) ? GameMatchStatus.Absent
-                         : Fault == "dialog-before-action" && Captures > 1 && id == "overlay.dialog-close" ? GameMatchStatus.Unique
-                         : present.Contains(id, StringComparer.Ordinal) ? GameMatchStatus.Unique : GameMatchStatus.Absent,
-                new(10, 10, 100, 80), new(20, 20, 80, 60), 1, 0, 0, "test"))])
-            { VisualActivity = Activity ? Captures * 0.1 : 1 };
+                    Fault == "native" ? GameMatchStatus.TechnicalFailure
+                    : id == GuardAssetId && Guard is not null ? Guard.Value
+                    : DialogAfterTap && Taps > 0 && id == "overlay.dialog-close" ? GameMatchStatus.Unique
+                    : present.Contains(id, StringComparer.Ordinal) ? GameMatchStatus.Unique : GameMatchStatus.Absent,
+                    new(10, 10, 100, 80), new(20, 20, 80, 60), 1, 0, 0, "test"))])
+            {
+                ProgressLevel = present.Contains("loading.download", StringComparer.Ordinal) ? Level(onScreen) : null,
+            };
             return Task.FromResult(ApplicationResult<GameUiObservation>.Success(observation));
         }
 
         public Task<ApplicationResult<bool>> ValidateInputAsync(GameFrameProvenance frame, CancellationToken cancellationToken)
         {
             Viewports++;
+            FirstViewportFrame ??= frame.FrameId;
+            if (Fault == "cancel-viewport")
+            {
+                _cancel.Cancel();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             return Task.FromResult(ApplicationResult<bool>.Success(Fault != "viewport"));
         }
 
@@ -563,11 +765,16 @@ public sealed class GameUiReadinessTests
         {
             Assert.True(tap.TryConsume());
             Assert.False(tap.TryConsume());
-            Taps++;
+            TapPermits.Add(tap);
             if (Fault == "cancel-tap")
             {
                 _cancel.Cancel();
                 cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            if (Fault is not ("no-change" or "tap-failure") && OnTap.TryGetValue(_screen, out string? next))
+            {
+                Move(next);
             }
 
             return Task.FromResult(ApplicationResult<AndroidCommandOutcome>.Success(new(Fault == "tap-failure" ? 1 : 0, "")));

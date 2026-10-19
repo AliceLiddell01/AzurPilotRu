@@ -156,10 +156,12 @@ def prepare(source_paths: list[Path], root: Path):
     # Это доказательство масштабирования/ROI, а не работы нативного UI в другом разрешении.
     states_path = root / "tests/fixtures/game/states.json"
     known = {a["id"] for a in catalog["assets"]}
-    states = json.loads(states_path.read_text(encoding="utf-8")) if states_path.exists() else {
-        "main": [a["id"] for a in catalog["assets"] if a["id"].startswith("main.")],
-        "dock": [a for a in ("dock.header",) if a in known],
-        "selection": [a for a in ("dock.header", "dock.selection-confirm") if a in known]}
+    try:
+        states = json.loads(states_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("Отсутствует или повреждён состав синтетических состояний states.json") from error
+    if not isinstance(states, dict):
+        raise ValueError("Недопустимый состав или фон синтетического состояния")
     prepared_states = {}
     for name, value in states.items():
         ids = value.get("assets") if isinstance(value, dict) else value

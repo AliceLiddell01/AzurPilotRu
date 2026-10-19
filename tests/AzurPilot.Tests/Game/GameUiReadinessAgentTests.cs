@@ -49,7 +49,7 @@ public sealed partial class AzurPilotOperatorServiceTests
     [Fact]
     public async Task ReadyEnsureColdStartUsesExistingLifecycleAndRetainsPreparation()
     {
-        using GameUiReadinessTests.ReadyHost ui = new("login") { AdvanceOnTap = true, InitialUnknownFrames = 40 };
+        using GameUiReadinessTests.ReadyHost ui = new("login") { InitialUnknown = TimeSpan.FromSeconds(60) };
         OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
         AndroidTestContext android = new();
         var service = CreateAgentService(fixture, android, gameUi: ui, clock: ui.Clock);
@@ -61,12 +61,25 @@ public sealed partial class AzurPilotOperatorServiceTests
         Assert.Equal(0, result.ExitCode);
         Assert.Equal("changed", result.Effect);
         Assert.Equal(2, ui.Taps);
-        Assert.True(ui.Captures > 40);
         Assert.Equal(MuMuLifecycleMutation.Start, Assert.Single(fixture.MuMuHost.MutationRequests).Mutation);
         _ = Assert.Single(android.Host.MutationRequests);
         using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref result));
         Assert.Equal("Ready", json.RootElement.GetProperty("data").GetProperty("ui").GetProperty("state").GetString());
-        Assert.True(json.RootElement.GetProperty("data").GetProperty("preparation").GetProperty("muMuStartRequested").GetBoolean());
+        JsonElement data = json.RootElement.GetProperty("data");
+        Assert.True(data.GetProperty("preparation").GetProperty("muMuStartRequested").GetBoolean());
+        // Фазы lifecycle и UI лежат на одной шкале операции; начальная заставка не выдумывается как Loading.
+        JsonElement[] lifecycle = [.. data.GetProperty("lifecycle").EnumerateArray()];
+        Assert.Equal(["lifecycle:lease", "lifecycle:mumu", "lifecycle:android", "lifecycle:game"],
+            lifecycle.Select(p => p.GetProperty("id").GetString()));
+        Assert.Equal("started", lifecycle[1].GetProperty("endReason").GetString());
+        Assert.All(lifecycle, p => Assert.Equal("Observed", p.GetProperty("status").GetString()));
+        JsonElement[] phases = [.. data.GetProperty("ui").GetProperty("phases").EnumerateArray()];
+        Assert.Equal("state:unknown", phases[0].GetProperty("id").GetString());
+        Assert.True(phases[0].GetProperty("elapsedMs").GetDouble() >= 60_000);
+        Assert.True(phases[0].GetProperty("enteredAtMs").GetDouble() >= lifecycle[^1].GetProperty("exitedAtMs").GetDouble());
+        Assert.Contains(phases, p => p.GetProperty("id").GetString() == "state:download"
+            && p.GetProperty("status").GetString() == "NotObserved" && p.GetProperty("elapsedMs").ValueKind == JsonValueKind.Null);
+        Assert.Equal(2, data.GetProperty("ui").GetProperty("work").GetProperty("taps").GetInt32());
     }
 
     [Theory]
@@ -128,7 +141,7 @@ public sealed partial class AzurPilotOperatorServiceTests
     [InlineData("post-transport", "mayHaveChanged")]
     public async Task ReadyAgentReportsUnprovenUiEffectAndExactTapCount(string fault, string effect)
     {
-        using GameUiReadinessTests.ReadyHost ui = new("login") { AdvanceOnTap = true, Fault = fault };
+        using GameUiReadinessTests.ReadyHost ui = new("login") { Fault = fault };
         OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
         AndroidTestContext android = new();
         var service = CreateAgentService(fixture, android, gameUi: ui, clock: ui.Clock);

@@ -43,6 +43,8 @@ class PrepareGameAssetsTests(unittest.TestCase):
             recipes[0], file="dock.header.png", sha256="0" * 64)])])
         self.provenance = dict(depot=recipes[1], technology=recipes[2])
         self.write_recipes()
+        (self.root / "tests/fixtures/game/states.json").write_text(json.dumps(
+            {"main": [], "dock": ["dock.header"], "selection": ["dock.header"]}), encoding="utf-8")
         # Старый комплект намеренно отличается от результата генерации.
         for relative in ["assets/game/dock.header.png", "tests/fixtures/game/dock-720.png",
                          "tests/fixtures/game/depot-720.png", "tests/fixtures/game/technology-720.png"]:
@@ -68,6 +70,10 @@ class PrepareGameAssetsTests(unittest.TestCase):
         for index in (1, 2):
             with self.subTest(negative=index):
                 self.assert_rejected_unchanged([p for i, p in enumerate(self.sources) if i != index], "SHA256")
+
+    def test_missing_states_composition_preserves_entire_set(self):
+        (self.root / "tests/fixtures/game/states.json").unlink()
+        self.assert_rejected_unchanged(self.sources, "states.json")
 
     def test_data_driven_states_reject_unknown_asset_without_publication(self):
         states = self.root / "tests/fixtures/game/states.json"

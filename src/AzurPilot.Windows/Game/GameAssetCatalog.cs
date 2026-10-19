@@ -12,9 +12,12 @@ public sealed record GameAssetVariant(string Id, string File, string SourceSha25
     GameRect Crop, string Sha256, NativeTemplateMode Mode, double MinimumScore, double MinimumMargin,
     double MaximumMeanAbsoluteError);
 
-/// <summary>Единственный владелец ROI, безопасной области и способов распознавания ассета.</summary>
+/// <summary>
+/// Единственный владелец ROI, безопасной области и способов распознавания ассета. ProgressRegion —
+/// логическая полоса прогресса, измеряемая только при Unique этого ассета.
+/// </summary>
 public sealed record GameAsset(string Id, string Purpose, GameRect Search, GameRect? SafeTapOffset,
-    IReadOnlyList<GameAssetVariant> Variants);
+    IReadOnlyList<GameAssetVariant> Variants, GameRect? ProgressRegion = null);
 
 /// <summary>Небольшой неизменяемый каталог встроенных игровых ресурсов Global/EN.</summary>
 public sealed class GameAssetCatalog
@@ -39,9 +42,14 @@ public sealed class GameAssetCatalog
     /// <summary>Единый профиль UI readiness, принадлежащий тому же каталогу.</summary>
     public GameUiReadinessPolicy Readiness { get; }
 
+    // Бюджет кеша закодированных шаблонов и нативных сопоставлений одного кадра: каждый кадр readiness
+    // ищет не больше всех ассетов каталога. Правила и фазы телеметрии ограничены тем же бюджетом.
+    private const int MaximumAssets = 16;
+
     private GameAssetCatalog(Manifest manifest)
     {
-        if (manifest.SchemaVersion != 1 || manifest.Client != "Global/EN" || manifest.Assets.Count is < 1 or > 16)
+        if (manifest.SchemaVersion != 1 || manifest.Client != "Global/EN" || manifest.Assets.Count is < 1 or > MaximumAssets
+            || manifest.Assets.Count(a => a.ProgressRegion is not null) > 1)
         {
             throw new InvalidDataException("Неподдерживаемый каталог игровых ассетов.");
         }
@@ -50,6 +58,11 @@ public sealed class GameAssetCatalog
         foreach (GameAsset asset in manifest.Assets)
         {
             GameGeometry.Validate(asset.Search);
+            if (asset.ProgressRegion is GameRect progress)
+            {
+                GameGeometry.Validate(progress);
+            }
+
             if (asset.Variants.Count is < 1 or > 4)
             {
                 throw new InvalidDataException("Недопустимое число вариантов.");
@@ -104,32 +117,35 @@ public sealed class GameAssetCatalog
             }, StringComparer.Ordinal);
         foreach (GameUiAction action in _actions.Values)
         {
-            if (action.RequiredAssetIds!.Count > 4 || action.AlternativePostconditionAssetIds!.Count > 3
-                || action.RequiredAssetIds.Concat(action.AlternativePostconditionAssetIds).Any(id => !_assets.ContainsKey(id))
-                || action.AlternativePostconditionAssetIds.Contains(action.SourceAssetId, StringComparer.Ordinal))
+            // Списки признаков ограничены каталогом: каждый признак встречается в действии одной ролью и один раз.
+            string[] posts = [action.PostconditionAssetId, .. action.AlternativePostconditionAssetIds!];
+            string[] roles = [action.SourceAssetId, .. posts, .. action.ExcludedAssetIds!, .. action.RequiredAssetIds!];
+            if (roles.Any(id => !_assets.ContainsKey(id)) || roles.Distinct(StringComparer.Ordinal).Count() != roles.Length)
             {
-                throw new InvalidDataException("Непригодные дополнительные признаки перехода.");
+                throw new InvalidDataException("Признаки игрового перехода должны быть известны и не повторяться.");
             }
 
-            if (action.SourceAppearanceTimeout < TimeSpan.Zero || action.SourceAppearanceTimeout > GameUiActionRunner.MaximumSourceAppearanceTimeout
-                || (action.SourceAppearanceTimeout > TimeSpan.Zero && action.RequiredAssetIds.Count < 2))
-            {
-                throw new InvalidDataException("Ожидание пульсирующего признака требует отдельного контекста и ограниченного времени.");
-            }
-
-            // Два общих overlay guards добавляются к прежним четырём; общий каталог остаётся <= 16.
-            if (action.ExcludedAssetIds!.Count > 6 || action.ExcludedAssetIds.Any(id => !_assets.ContainsKey(id)
-                || id == action.SourceAssetId || id == action.PostconditionAssetId))
-            {
-                throw new InvalidDataException("Недопустимый исключающий признак игрового перехода.");
-            }
-
-            if (!_assets.ContainsKey(action.PostconditionAssetId) || !_assets.TryGetValue(action.SourceAssetId, out GameAsset? source)
-                || source.SafeTapOffset is null || action.SourceAssetId == action.PostconditionAssetId
+            if (!_assets.TryGetValue(action.SourceAssetId, out GameAsset? source)
                 || action.MaximumObservationAge <= TimeSpan.Zero || action.MaximumObservationAge > TimeSpan.FromSeconds(15)
                 || action.PostconditionTimeout <= TimeSpan.Zero || action.PostconditionTimeout > TimeSpan.FromSeconds(30))
             {
                 throw new InvalidDataException("Непригодный игровой переход.");
+            }
+
+            // Ровно одна область ввода: внутри распознанного источника либо отдельная логическая область,
+            // которая не перекрывает ROI источника и обязательных признаков, видимых в момент ввода.
+            if (action.TapArea is GameRect area)
+            {
+                GameGeometry.Validate(area);
+                if (source.SafeTapOffset is not null || new[] { action.SourceAssetId }.Concat(action.RequiredAssetIds!)
+                    .Any(id => GameGeometry.Intersects(area, _assets[id].Search)))
+                {
+                    throw new InvalidDataException("Отдельная область ввода конфликтует с распознаваемыми признаками.");
+                }
+            }
+            else if (source.SafeTapOffset is null)
+            {
+                throw new InvalidDataException("Игровой переход не имеет безопасной области ввода.");
             }
         }
 
@@ -138,7 +154,7 @@ public sealed class GameAssetCatalog
             RequiredAssetIds = Array.AsReadOnly(r.RequiredAssetIds.ToArray()),
             AbsentAssetIds = Array.AsReadOnly(r.AbsentAssetIds.ToArray()),
         }).ToArray()));
-        if (Readiness.Rules.Count is < 1 or > 12 || Readiness.Rules.Count(r => r.State == GameUiReadinessState.Ready) != 1
+        if (Readiness.Rules.Count is < 1 or > MaximumAssets || Readiness.Rules.Count(r => r.State == GameUiReadinessState.Ready) != 1
             || Readiness.Rules.Select(r => r.Id).Distinct(StringComparer.Ordinal).Count() != Readiness.Rules.Count
             || Readiness.Rules.Any(r => !Enum.IsDefined(r.State) || r.RequiredAssetIds.Count == 0
                 || r.RequiredAssetIds.Intersect(r.AbsentAssetIds, StringComparer.Ordinal).Any()

@@ -11,6 +11,57 @@ namespace AzurPilot.App.OperatorServices;
 /// <summary>Lifecycle и UI — разные доказательства одной операции.</summary>
 public sealed record GameUiEnsureOutcome(AzurLaneGameLifecycleOutcome? Game, GameUiReadinessOutcome? Ui);
 
+/// <summary>
+/// Фазы lifecycle внутри ensure на той же монотонной шкале, что и фазы UI. Сохраняется вызывающим и при отказе.
+/// </summary>
+public sealed class GameUiEnsureTimeline(TimeProvider clock)
+{
+    private static readonly string[] Known = ["lifecycle:lease", "lifecycle:mumu", "lifecycle:android", "lifecycle:game"];
+    private readonly List<(string Id, long Entered, long? Exited, string? Reason)> _phases = [];
+
+    internal long Origin { get; } = clock.GetTimestamp();
+
+    /// <summary>Наблюдавшиеся фазы lifecycle и невстреченные с NotObserved.</summary>
+    public IReadOnlyList<GameUiPhase> Phases
+    {
+        get
+        {
+            List<GameUiPhase> result = [.. _phases.Select(p => new GameUiPhase(p.Id, GameUiPhaseStatus.Observed,
+                Milliseconds(p.Entered), p.Exited is long exited ? Milliseconds(exited) : null,
+                p.Exited is long end ? Math.Round(clock.GetElapsedTime(p.Entered, end).TotalMilliseconds, 1) : null,
+                1, p.Reason, null))];
+            result.AddRange(Known.Where(id => _phases.All(p => p.Id != id)).Select(GameUiPhase.NotObserved));
+            return result;
+        }
+    }
+
+    internal void Enter(string id)
+    {
+        long now = clock.GetTimestamp();
+        Exit(now, null);
+        _phases.Add((id, now, null, null));
+    }
+
+    internal void Exit(string reason)
+    {
+        Exit(clock.GetTimestamp(), reason);
+    }
+
+    private void Exit(long now, string? reason)
+    {
+        int last = _phases.Count - 1;
+        if (last >= 0 && _phases[last].Exited is null)
+        {
+            _phases[last] = _phases[last] with { Exited = now, Reason = reason ?? "completed" };
+        }
+    }
+
+    private double Milliseconds(long timestamp)
+    {
+        return Math.Round(clock.GetElapsedTime(Origin, timestamp).TotalMilliseconds, 1);
+    }
+}
+
 public sealed partial class AzurPilotOperatorService
 {
     /// <summary>Только наблюдение; не подключает transport, не запускает окружение и не нажимает.</summary>
@@ -34,24 +85,54 @@ public sealed partial class AzurPilotOperatorService
         }
     }
 
-    /// <summary>Один bounded flow и одна межпроцессная аренда: MuMu → Android → процесс → UI.</summary>
+    /// <summary>
+    /// Один bounded flow и одна межпроцессная аренда: MuMu → Android → процесс → UI. Общий срок задаёт
+    /// token вызывающего (Agent CLI deadline); собственного более короткого срока здесь нет.
+    /// </summary>
     public Task<ApplicationResult<GameUiEnsureOutcome>> EnsureGameUiReadyAsync(MuMuInstanceId instanceId,
         GameActionProgress uiMutation, AndroidMutationProgress gameMutation, AndroidMutationProgress androidMutation,
-        Action<AzurPilotOperatorAndroidPreparationOutcome>? preparation, CancellationToken cancellationToken)
+        Action<AzurPilotOperatorAndroidPreparationOutcome>? preparation, CancellationToken cancellationToken,
+        GameUiEnsureTimeline? timeline = null)
     {
+        timeline ??= CreateGameUiTimeline();
+        timeline.Enter("lifecycle:lease");
         return WithMutationLeaseAsync(instanceId, async () =>
         {
-            using CancellationTokenSource deadline = new(TimeSpan.FromMinutes(3), _timeProvider);
-            using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
-            CancellationToken token = linked.Token;
-            ApplicationResult<AzurLaneGameLifecycleOutcome> started = await StartAzurLaneCoreAsync(instanceId, token,
-                onPreparationCompleted: preparation, mutationProgress: gameMutation,
+            AzurPilotOperatorAndroidPreparationOutcome? prepared = null;
+            bool androidEntered = false;
+            ApplicationResult<AzurLaneGameLifecycleOutcome> started = await StartAzurLaneCoreAsync(instanceId, cancellationToken,
+                progress: new SynchronousProgress<AzurPilotOperatorAndroidPreparationStage>(stage =>
+                {
+                    if (stage == AzurPilotOperatorAndroidPreparationStage.ResolveMuMu)
+                    {
+                        timeline.Enter("lifecycle:mumu");
+                    }
+                    else if (stage == AzurPilotOperatorAndroidPreparationStage.PrepareAndroid && !androidEntered)
+                    {
+                        androidEntered = true;
+                        timeline.Exit(prepared?.MuMuStartOutcome is not null ? "started" : "already_running");
+                        timeline.Enter("lifecycle:android");
+                    }
+                }),
+                onGameStarting: () =>
+                {
+                    timeline.Exit(prepared?.AndroidPreparation?.ConnectAttempted == true ? "connected" : "already_ready");
+                    timeline.Enter("lifecycle:game");
+                },
+                onPreparationCompleted: outcome =>
+                {
+                    prepared = outcome;
+                    preparation?.Invoke(outcome);
+                },
+                mutationProgress: gameMutation,
                 preparationMutationProgress: androidMutation).ConfigureAwait(false);
             if (started.IsFailure)
             {
+                timeline.Exit(started.FailureInfo!.Code);
                 return ApplicationResult<GameUiEnsureOutcome>.Failure(started.FailureInfo!);
             }
 
+            timeline.Exit(started.Value!.InitialState == AzurLaneGameState.Stopped ? "started" : "already_running");
             ApplicationResult<ResolvedAndroidTarget> target = ResolveAndroidTarget(instanceId);
             if (target.IsFailure)
             {
@@ -61,8 +142,9 @@ public sealed partial class AzurPilotOperatorService
             try
             {
                 GameUiReadinessOutcome ready = await Readiness(instanceId, target.Value!.Endpoint)
-                    .RunAsync(instanceId, target.Value.Endpoint, true, uiMutation, token,
-                        allowInitialTransition: started.Value!.InitialState == AzurLaneGameState.Stopped).ConfigureAwait(false);
+                    .RunAsync(instanceId, target.Value.Endpoint, true, uiMutation, cancellationToken,
+                        allowInitialTransition: started.Value.InitialState == AzurLaneGameState.Stopped,
+                        origin: timeline.Origin).ConfigureAwait(false);
                 return ApplicationResult<GameUiEnsureOutcome>.Success(new(started.Value, ready));
             }
             catch (AzurPilotNativeBoundaryException exception)
@@ -70,6 +152,12 @@ public sealed partial class AzurPilotOperatorService
                 return ApplicationResult<GameUiEnsureOutcome>.Failure(NativeBoundaryFailureMapper.Map(exception));
             }
         }, cancellationToken);
+    }
+
+    /// <summary>Шкала фаз ensure на часах этого сервиса.</summary>
+    public GameUiEnsureTimeline CreateGameUiTimeline()
+    {
+        return new(_timeProvider);
     }
 
     private GameUiReadinessService Readiness(MuMuInstanceId instanceId, AndroidEndpoint endpoint)

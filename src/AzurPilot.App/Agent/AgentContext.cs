@@ -13,6 +13,7 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
     private readonly AndroidMutationProgress _gameMutation = new();
     private readonly AndroidMutationProgress _androidMutation = new();
     private readonly Core.Game.GameActionProgress _uiMutation = new();
+    private GameUiEnsureTimeline? _timeline;
     private string _effect = "none";
     internal string Effect
     {
@@ -153,6 +154,7 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
             stage = Stage,
             preparation = Preparation,
             completed = Completed?.Data,
+            lifecycle = _timeline?.Phases,
             mutation = new { androidPreparation = _androidMutation, game = _gameMutation, gameUi = _uiMutation },
             postcondition = (object?)null,
         }, failure, Effect);
@@ -189,12 +191,14 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
                 : new(observed.Value, observed.Value!.Failure);
         }
 
+        _timeline = Service.CreateGameUiTimeline();
         ApplicationResult<GameUiEnsureOutcome> result = await Service.EnsureGameUiReadyAsync(Target!.Value,
-            _uiMutation, _gameMutation, _androidMutation, RecordPreparation, token).ConfigureAwait(false);
+            _uiMutation, _gameMutation, _androidMutation, RecordPreparation, token, _timeline).ConfigureAwait(false);
         GameUiEnsureOutcome? outcome = result.IsSuccess ? result.Value : null;
         return new(new
         {
             preparation = Preparation,
+            lifecycle = _timeline.Phases,
             game = outcome?.Game,
             ui = outcome?.Ui,
             mutation = new { android = _androidMutation, game = _gameMutation, gameUi = _uiMutation }

@@ -28,11 +28,16 @@ public sealed record GameUiMatch(string AssetId, string? VariantId, GameMatchSta
     GamePixelRect? Bounds, GamePixelRect? SafeTapBounds, double Score, double RunnerUpScore,
     double MeanAbsoluteError, string Reason);
 
+/// <summary>Стоимость одного наблюдения на стороне host; захват включает ADB-команду и декодирование PNG.</summary>
+public sealed record GameObservationCost(TimeSpan Capture, TimeSpan CaptureCommand, TimeSpan Match);
+
 /// <summary>Один кадр и результаты поиска в нём.</summary>
 public sealed record GameUiObservation(GameFrameProvenance Frame, IReadOnlyList<GameUiMatch> Matches)
 {
-    /// <summary>Ограниченная метрика активности нижней полосы загрузки; не доказывает завершение загрузки.</summary>
-    public double? VisualActivity { get; init; }
+    /// <summary>Уровень заполнения полосы прогресса из каталога; рост показывает продвижение, но не завершение загрузки.</summary>
+    public double? ProgressLevel { get; init; }
+    /// <summary>Измеренная host стоимость захвата и распознавания, если она известна.</summary>
+    public GameObservationCost? Cost { get; init; }
     /// <summary>Требует единственного результата запрошенного ассета.</summary>
     public GameUiMatch? Find(string id)
     {
@@ -40,11 +45,14 @@ public sealed record GameUiObservation(GameFrameProvenance Frame, IReadOnlyList<
     }
 }
 
-/// <summary>Разрешённый переход между независимо наблюдаемыми признаками.</summary>
+/// <summary>
+/// Разрешённый переход между независимо наблюдаемыми признаками. TapArea — отдельная логическая область
+/// ввода при распознанном якоре; без неё ввод разрешён только внутри распознанного источника.
+/// </summary>
 public sealed record GameUiAction(string Id, string SourceAssetId, string PostconditionAssetId,
     TimeSpan MaximumObservationAge, TimeSpan PostconditionTimeout, IReadOnlyList<string>? ExcludedAssetIds = null,
     IReadOnlyList<string>? RequiredAssetIds = null, IReadOnlyList<string>? AlternativePostconditionAssetIds = null,
-    TimeSpan SourceAppearanceTimeout = default);
+    GameRect? TapArea = null);
 
 /// <summary>Однократное разрешение нажатия, создаваемое Core после проверки распознавания, области игры и свежести кадра.</summary>
 public sealed class GameTap

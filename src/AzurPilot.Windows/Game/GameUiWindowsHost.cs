@@ -7,34 +7,47 @@ using AzurPilot.Windows.Android;
 namespace AzurPilot.Windows.Game;
 
 /// <summary>Использует существующий механизм захвата и владения кадром и тот же адаптер Android.</summary>
-public sealed class GameUiWindowsHost(IAndroidScreenshotHost screenshots, IAndroidGameInputHost input) : IGameUiHost
+public sealed class GameUiWindowsHost(IAndroidScreenshotHost screenshots, IAndroidGameInputHost input,
+    TimeProvider? timeProvider = null) : IGameUiHost
 {
+    private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
+
     /// <inheritdoc />
     public async Task<ApplicationResult<GameUiObservation>> ObserveAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,
         IReadOnlyList<string> assets, CancellationToken cancellationToken)
     {
         try
         {
+            long captureStarted = _clock.GetTimestamp();
             ApplicationResult<CapturedAndroidScreenshot> result = await screenshots.CaptureScreenshotAsync(
                 instanceId, endpoint, cancellationToken).ConfigureAwait(false);
+            TimeSpan captureDuration = _clock.GetElapsedTime(captureStarted);
             if (result.IsFailure)
             {
                 return ApplicationResult<GameUiObservation>.Failure(result.FailureInfo!);
             }
 
             using CapturedAndroidScreenshot capture = result.Value!;
+            long matchStarted = _clock.GetTimestamp();
             GameFrameProvenance provenance = new(Guid.NewGuid(), capture.Info.InstanceId, capture.Info.Endpoint,
                 capture.Info.CaptureStartedAtUtc, capture.Info.CaptureStartedTimestamp,
                 checked((int)capture.Info.FrameInfo.Width), checked((int)capture.Info.FrameInfo.Height));
-            GameUiObservation observation = new GameUiRecognizer(GameAssetCatalog.Default).Observe(capture.Frame, provenance, assets);
-            if (observation.Find("loading.download")?.Status == GameMatchStatus.Unique)
+            GameAssetCatalog catalog = GameAssetCatalog.Default;
+            GameUiObservation observation = new GameUiRecognizer(catalog).Observe(capture.Frame, provenance, assets);
+            // ROI полосы принадлежит каталогу; измеряется только у однозначно распознанного владельца полосы.
+            GameAsset? progressOwner = catalog.Assets.SingleOrDefault(a => a.ProgressRegion is not null
+                && observation.Find(a.Id)?.Status == GameMatchStatus.Unique);
+            if (progressOwner?.ProgressRegion is GameRect region)
             {
-                GamePixelRect band = new GameGeometry(provenance.Width, provenance.Height).Map(new(185, 671, 1100, 705));
+                GamePixelRect band = new GameGeometry(provenance.Width, provenance.Height).MapInside(region);
                 RegionRgbStatistics metric = capture.Frame.ScanRegion(new(band.Left, band.Top, band.Right, band.Bottom));
-                observation = observation with { VisualActivity = Math.Round((metric.MeanRed + metric.MeanGreen + metric.MeanBlue) / 3, 3) };
+                observation = observation with { ProgressLevel = Math.Round((metric.MeanRed + metric.MeanGreen + metric.MeanBlue) / 3, 3) };
             }
 
-            return ApplicationResult<GameUiObservation>.Success(observation);
+            return ApplicationResult<GameUiObservation>.Success(observation with
+            {
+                Cost = new(captureDuration, capture.Info.CommandDuration, _clock.GetElapsedTime(matchStarted)),
+            });
         }
         catch (AzurPilotNativeBoundaryException exception)
         {

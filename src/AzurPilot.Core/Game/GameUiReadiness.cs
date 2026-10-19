@@ -34,6 +34,22 @@ public sealed record GameUiReadinessPolicy(IReadOnlyList<GameUiStateRule> Rules)
     public IReadOnlyList<string> AssetIds => [.. Rules.SelectMany(r => r.RequiredAssetIds.Concat(r.AbsentAssetIds))
         .Distinct(StringComparer.Ordinal)];
 
+    /// <summary>Идентификаторы фаз телеметрии: каждое правило, неизвестный экран и каждый разрешённый переход.</summary>
+    public IReadOnlyList<string> PhaseIds => [.. Rules.Select(r => StatePhase(r.Id)).Append(StatePhase(UnknownStateId))
+        .Concat(Rules.Where(r => r.ActionId is not null).Select(r => ActionPhase(r.ActionId!))).Distinct(StringComparer.Ordinal)];
+
+    internal const string UnknownStateId = "unknown";
+
+    internal static string StatePhase(string ruleId)
+    {
+        return "state:" + ruleId;
+    }
+
+    internal static string ActionPhase(string actionId)
+    {
+        return "action:" + actionId;
+    }
+
     /// <summary>Правило Ready — только кандидат до проверки viewport и устойчивости.</summary>
     public GameUiStateRule? Classify(GameUiObservation observation)
     {
@@ -48,50 +64,78 @@ public sealed record GameUiReadinessPolicy(IReadOnlyList<GameUiStateRule> Rules)
     }
 }
 
-/// <summary>Ограниченная история без пикселей и сведений аккаунта.</summary>
+/// <summary>Ограниченная история без пикселей и сведений аккаунта; ViewportProven отмечает кадры с отдельной проверкой viewport.</summary>
 public sealed record GameUiReadinessEvidence(string StateId, GameUiReadinessState State, Guid FrameId,
-    long CaptureTimestamp, TimeSpan Elapsed, bool ViewportProven, double? VisualActivity);
+    long CaptureTimestamp, TimeSpan Elapsed, bool ViewportProven, double? ProgressLevel);
 
 /// <summary>Итог наблюдения/обеспечения; даже Ready относится только к указанным свежим кадрам.</summary>
 public sealed record GameUiReadinessOutcome(GameUiReadinessState State, string Reason,
     GameUiObservation? LastObservation, GameFrameProvenance? FirstReadyFrame, int StableFrames,
     int Observations, int Waits, int TapAttempts, TimeSpan Elapsed,
-    IReadOnlyList<GameUiReadinessEvidence> Evidence, IReadOnlyList<GameActionOutcome> Actions, ApplicationFailure? Failure);
+    IReadOnlyList<GameUiReadinessEvidence> Evidence, IReadOnlyList<GameActionOutcome> Actions, ApplicationFailure? Failure)
+{
+    /// <summary>Фазы UI на шкале операции; невстреченные отмечены NotObserved.</summary>
+    public IReadOnlyList<GameUiPhase> Phases { get; init; } = [];
+    /// <summary>Суммарная собственная работа бота в UI-части.</summary>
+    public GameUiWork? Work { get; init; }
+}
 
-/// <summary>Bounded state-driven flow под арендой operator boundary; read-only режим никогда не вводит данные.</summary>
+/// <summary>
+/// Bounded state-driven flow под арендой operator boundary; read-only режим никогда не вводит данные.
+/// Общий срок операции принадлежит token вызывающего; собственные пределы сервиса ограничивают
+/// бездействие, начальный неизвестный экран и вызов без внешнего deadline.
+/// </summary>
 public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPolicy policy,
     Func<string, GameUiAction> getAction, TimeProvider clock)
 {
     private static readonly TimeSpan MaximumAge = TimeSpan.FromSeconds(12);
     private static readonly TimeSpan Stability = TimeSpan.FromSeconds(1.5);
-    private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(500);
+    // Минимальный интервал между началами захватов: медленный захват не дополняется лишней паузой.
+    private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan StateInactivity = TimeSpan.FromSeconds(12);
+    private static readonly TimeSpan LoadingInactivity = TimeSpan.FromSeconds(40);
+    private static readonly TimeSpan InitialTransition = TimeSpan.FromSeconds(120);
+    // Верхняя граница Agent CLI deadline; защищает вызывающего без собственного deadline и не обрывает агентский раньше.
+    private static readonly TimeSpan MaximumDuration = TimeSpan.FromMinutes(5);
+    // Рост заполнения полосы прогресса меньше шага считается шумом и не продлевает ожидание.
+    private const double ProgressStep = 0.05;
+    // Read-only доказательство Ready требует трёх устойчивых кадров; лишние кадры не ожидаются бесконечно.
+    private const int ReadOnlyFrames = 6;
+    private const int MaximumEvidence = 16;
 
-    /// <summary>Наблюдает или обеспечивает UI; общий token содержит deadline всей операции, включая lifecycle.</summary>
+    /// <summary>Наблюдает или обеспечивает UI; origin задаёт начало шкалы фаз всей операции.</summary>
     public async Task<GameUiReadinessOutcome> RunAsync(MuMuInstanceId target, AndroidEndpoint endpoint, bool ensure,
-        GameActionProgress mutation, CancellationToken cancellationToken, bool allowInitialTransition = false)
+        GameActionProgress mutation, CancellationToken cancellationToken, bool allowInitialTransition = false, long? origin = null)
     {
         long started = clock.GetTimestamp();
+        GameUiMeter meter = new(host, clock, origin ?? started);
         long stateStarted = started;
-        TimeSpan limit = TimeSpan.FromSeconds(ensure ? 120 : 15);
         List<GameUiReadinessEvidence> evidence = [];
         List<GameActionOutcome> actions = [];
         HashSet<string> attemptedActions = new(StringComparer.Ordinal);
         HashSet<Guid> frames = [];
         GameUiObservation? last = null;
         GameFrameProvenance? firstReady = null;
-        int stable = 0, observations = 0, waits = 0;
+        int stable = 0, observations = 0;
         int initialTapAttempts = mutation.TapAttempts;
         long previousCapture = started - 1;
+        long? previousRequest = null;
         string previousState = "";
-        double? previousActivity = null;
+        double? progressBaseline = null;
         GameUiReadinessState state = GameUiReadinessState.Unknown;
         bool readyProven = false;
         bool supportedStateObserved = false;
         GameUiReadinessOutcome Result(string reason, ApplicationFailure? failure = null)
         {
+            meter.Exit(clock.GetTimestamp(), reason);
+            GameUiWork work = meter.Total;
             return new(state == GameUiReadinessState.Ready && !readyProven ? GameUiReadinessState.Transition : state,
-                reason, last, firstReady, stable, observations, waits, mutation.TapAttempts - initialTapAttempts, clock.GetElapsedTime(started),
-                [.. evidence], [.. actions], failure);
+                reason, last, firstReady, stable, observations, work.Waits, mutation.TapAttempts - initialTapAttempts, clock.GetElapsedTime(started),
+                [.. evidence], [.. actions], failure)
+            {
+                Phases = meter.Phases(policy.PhaseIds),
+                Work = work,
+            };
         }
 
         GameUiReadinessOutcome Rejected(string reason)
@@ -101,12 +145,24 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
 
         try
         {
-            while (clock.GetElapsedTime(started) < limit && observations < 160)
+            while (true)
             {
+                if (clock.GetElapsedTime(started) >= MaximumDuration)
+                {
+                    return Rejected("readiness_maximum_duration");
+                }
+
+                if (!ensure && observations >= ReadOnlyFrames)
+                {
+                    return Result("ready_unstable");
+                }
+
+                await meter.PaceAsync(previousRequest, FrameInterval, cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
                 long requestedAt = clock.GetTimestamp();
-                ApplicationResult<GameUiObservation> captured = await host.ObserveAsync(target, endpoint, policy.AssetIds,
-                    cancellationToken).ConfigureAwait(false);
+                previousRequest = requestedAt;
+                ApplicationResult<GameUiObservation> captured = await meter.ObserveAsync(target, endpoint, policy.AssetIds,
+                    cancellationToken, deferPhase: true).ConfigureAwait(false);
                 observations++;
                 if (captured.IsFailure)
                 {
@@ -138,39 +194,62 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                 GameUiStateRule? rule = policy.Classify(last);
                 supportedStateObserved |= rule is not null;
                 state = rule?.State ?? GameUiReadinessState.Unknown;
+                string stateId = rule?.Id ?? GameUiReadinessPolicy.UnknownStateId;
+                meter.Enter(GameUiReadinessPolicy.StatePhase(stateId), last.Frame.CaptureStartedTimestamp);
                 if (last.Matches.Any(m => m.Status == GameMatchStatus.TechnicalFailure))
                 {
                     state = GameUiReadinessState.TechnicalFailure;
                     return Rejected("recognition_failed");
                 }
 
-                // Foreground/viewport проверяются заново и для ожиданий, и для каждого кандидата Ready.
-                ApplicationResult<bool> mapped = await host.ValidateInputAsync(last.Frame, cancellationToken).ConfigureAwait(false);
-                if (mapped.IsFailure || !mapped.Value)
+                // Viewport доказывается для кадров, на которых основан итог: каждый кандидат Ready и
+                // результат read-only наблюдения. Перед вводом его отдельно проверяет действие;
+                // пассивное ожидание без ввода не использует кадр как доказательство.
+                bool viewportProven = false;
+                if (state == GameUiReadinessState.Ready || !ensure)
                 {
-                    state = GameUiReadinessState.Unknown;
-                    return Result("viewport_unproven", mapped.IsFailure ? mapped.FailureInfo
-                        : GameUiActionRunner.Failure("viewport_unproven", mutation.MutationAttempted));
+                    ApplicationResult<bool> mapped = await meter.ValidateAsync(last.Frame, cancellationToken).ConfigureAwait(false);
+                    if (mapped.IsFailure || !mapped.Value)
+                    {
+                        state = GameUiReadinessState.Unknown;
+                        return Result("viewport_unproven", mapped.IsFailure ? mapped.FailureInfo
+                            : GameUiActionRunner.Failure("viewport_unproven", mutation.MutationAttempted));
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (clock.GetElapsedTime(last.Frame.CaptureStartedTimestamp) > MaximumAge)
+                    {
+                        return Rejected("stale_viewport_proof");
+                    }
+
+                    viewportProven = true;
                 }
 
-                cancellationToken.ThrowIfCancellationRequested();
-                if (clock.GetElapsedTime(started) >= limit || clock.GetElapsedTime(last.Frame.CaptureStartedTimestamp) > MaximumAge)
+                bool progressed = false;
+                if (state == GameUiReadinessState.Loading && last.ProgressLevel is double level)
                 {
-                    return Rejected("deadline_or_stale_viewport");
+                    // Учитывается только накопленный рост заполнения; сброс полосы начинает новый этап без продления ожидания.
+                    progressed = progressBaseline is double baseline && level - baseline >= ProgressStep;
+                    if (progressBaseline is null || progressed || level < progressBaseline)
+                    {
+                        progressBaseline = level;
+                    }
                 }
 
-                string stateId = rule?.Id ?? "unknown";
-                if (previousState != stateId || (state == GameUiReadinessState.Loading && last.VisualActivity is double activity
-                    && previousActivity is double previous && Math.Abs(activity - previous) > 0.02))
+                if (previousState != stateId || progressed)
                 {
                     stateStarted = clock.GetTimestamp();
                 }
 
-                previousActivity = last.VisualActivity;
+                if (previousState != stateId && state != GameUiReadinessState.Loading)
+                {
+                    progressBaseline = null;
+                }
+
                 previousState = stateId;
                 evidence.Add(new(stateId, state, last.Frame.FrameId, last.Frame.CaptureStartedTimestamp,
-                    clock.GetElapsedTime(started), true, last.VisualActivity));
-                if (evidence.Count > 16)
+                    clock.GetElapsedTime(started), viewportProven, last.ProgressLevel));
+                if (evidence.Count > MaximumEvidence)
                 {
                     evidence.RemoveAt(0);
                 }
@@ -190,63 +269,64 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                         readyProven = true;
                         return Result("stable_main_ui");
                     }
+
+                    continue;
                 }
-                else
+
+                firstReady = null;
+                stable = 0;
+                if (state == GameUiReadinessState.RequiresUserAction)
                 {
-                    firstReady = null;
-                    stable = 0;
-                    if (state == GameUiReadinessState.RequiresUserAction)
-                    {
-                        return Rejected(stateId);
-                    }
-
-                    if (!ensure)
-                    {
-                        return Result(stateId);
-                    }
-
-                    if (state == GameUiReadinessState.AwaitingInput && rule?.ActionId is string actionId)
-                    {
-                        if (attemptedActions.Count >= 4 || !attemptedActions.Add(actionId))
-                        {
-                            return Rejected("action_cycle_prevented");
-                        }
-
-                        GameActionOutcome action = await new GameUiActionRunner(host, clock).RunAsync(target, endpoint,
-                            getAction(actionId), mutation, cancellationToken).ConfigureAwait(false);
-                        actions.Add(action);
-                        if (!action.ChangeProven)
-                        {
-                            state = GameUiReadinessState.Unknown;
-                            return Result("action_postcondition_unproven", action.Failure ?? GameUiActionRunner.Failure("action_postcondition_unproven", mutation.MutationAttempted));
-                        }
-
-                        // Postcondition действия не заменяет независимую проверку Ready.
-                        if (action.After is not null)
-                        {
-                            _ = frames.Add(action.After.Frame.FrameId);
-                            previousCapture = action.After.Frame.CaptureStartedTimestamp;
-                        }
-
-                        previousState = "";
-                        stateStarted = clock.GetTimestamp();
-                        continue;
-                    }
-
-                    TimeSpan inactivity = clock.GetElapsedTime(stateStarted);
-                    TimeSpan inactivityLimit = state == GameUiReadinessState.Unknown && allowInitialTransition && !supportedStateObserved
-                        ? limit : TimeSpan.FromSeconds(state == GameUiReadinessState.Loading ? 40 : 12);
-                    if (inactivity >= inactivityLimit)
-                    {
-                        return Rejected(state == GameUiReadinessState.Loading ? "loading_no_visual_activity" : "state_unproven_or_no_progress");
-                    }
+                    return Rejected(stateId);
                 }
 
-                waits++;
-                await Task.Delay(Interval, clock, cancellationToken).ConfigureAwait(false);
-            }
+                if (!ensure)
+                {
+                    return Result(stateId);
+                }
 
-            return Rejected("readiness_deadline");
+                if (state == GameUiReadinessState.AwaitingInput && rule?.ActionId is string actionId)
+                {
+                    // Каждый переход каталога выполняется не более одного раза за flow.
+                    if (!attemptedActions.Add(actionId))
+                    {
+                        return Rejected("action_cycle_prevented");
+                    }
+
+                    meter.Enter(GameUiReadinessPolicy.ActionPhase(actionId), clock.GetTimestamp());
+                    GameActionOutcome action = await new GameUiActionRunner(meter, host).RunAsync(target, endpoint,
+                        getAction(actionId), mutation, last, cancellationToken).ConfigureAwait(false);
+                    actions.Add(action);
+                    if (!action.ChangeProven)
+                    {
+                        state = GameUiReadinessState.Unknown;
+                        return Result("action_postcondition_unproven", action.Failure ?? GameUiActionRunner.Failure("action_postcondition_unproven", mutation.MutationAttempted));
+                    }
+
+                    meter.Exit(clock.GetTimestamp(), "change_proven");
+                    // Postcondition действия не заменяет независимую проверку Ready.
+                    if (action.After is not null)
+                    {
+                        _ = frames.Add(action.After.Frame.FrameId);
+                        previousCapture = action.After.Frame.CaptureStartedTimestamp;
+                    }
+
+                    previousState = "";
+                    previousRequest = null;
+                    stateStarted = clock.GetTimestamp();
+                    continue;
+                }
+
+                TimeSpan inactivity = clock.GetElapsedTime(stateStarted);
+                bool initial = state == GameUiReadinessState.Unknown && allowInitialTransition && !supportedStateObserved;
+                TimeSpan inactivityLimit = initial ? InitialTransition
+                    : state == GameUiReadinessState.Loading ? LoadingInactivity : StateInactivity;
+                if (inactivity >= inactivityLimit)
+                {
+                    return Rejected(initial ? "initial_transition_unproven"
+                        : state == GameUiReadinessState.Loading ? "loading_no_progress" : "state_unproven_or_no_progress");
+                }
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

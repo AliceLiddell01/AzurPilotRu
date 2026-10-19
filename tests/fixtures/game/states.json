@@ -14,17 +14,17 @@
   "login": [
     "login.logo",
     "login.enter",
-    "login.start"
+    "login.criware"
   ],
   "server": [
     "login.logo",
     "login.server",
-    "login.start"
+    "login.criware"
   ],
   "login-transition": [
     "login.logo",
     "login.server",
-    "login.start",
+    "login.criware",
     "login.success"
   ],
   "download": [

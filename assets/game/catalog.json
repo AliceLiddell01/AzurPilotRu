@@ -328,38 +328,33 @@
       ]
     },
     {
-      "id": "login.start",
-      "purpose": "PRESS TO START допускает ввод только вместе с SERVER и логотипом.",
+      "id": "login.criware",
+      "purpose": "Непрозрачная плашка CRIWARE экрана входа без фона; видна и на LOG IN, поэтому ввод разрешается только вместе с SERVER.",
       "search": {
-        "left": 1032,
-        "top": 517,
-        "right": 1275,
-        "bottom": 553
+        "left": 1212,
+        "top": 652,
+        "right": 1271,
+        "bottom": 711
       },
-      "safeTapOffset": {
-        "left": 35,
-        "top": 8,
-        "right": 200,
-        "bottom": 25
-      },
+      "safeTapOffset": null,
       "variants": [
         {
           "id": "global-en",
-          "file": "login.start.png",
+          "file": "login.criware.png",
           "sourceSha256": "5e3be6cded7ae81d7f9461f5eb9c339d7113e27862e3499ac4d60bdf78ded5a0",
           "sourceWidth": 3840,
           "sourceHeight": 2160,
           "crop": {
-            "left": 1035,
-            "top": 520,
-            "right": 1272,
-            "bottom": 550
+            "left": 1217,
+            "top": 657,
+            "right": 1266,
+            "bottom": 706
           },
-          "sha256": "7e6d44f6bc267bd8c4505ab2f5fe37a9a8e1b058e9bae939e981a47e3c5361ee",
+          "sha256": "57958e9753b54e1572f3c657b0147e1b56bbefb3753b4d7abf020bff2cb8d0a6",
           "mode": "Rgb",
-          "minimumScore": 0.9,
+          "minimumScore": 0.95,
           "minimumMargin": 0.06,
-          "maximumMeanAbsoluteError": 18
+          "maximumMeanAbsoluteError": 12
         }
       ]
     },
@@ -404,6 +399,12 @@
         "bottom": 695
       },
       "safeTapOffset": null,
+      "progressRegion": {
+        "left": 0,
+        "top": 700,
+        "right": 1280,
+        "bottom": 703
+      },
       "variants": [
         {
           "id": "global-en",
@@ -545,6 +546,9 @@
       "postconditionTimeout": "00:00:20",
       "excludedAssetIds": [
         "dock.selection-confirm",
+        "update.header",
+        "login.enter",
+        "login.server",
         "overlay.dialog-close",
         "overlay.sidebar-open"
       ]
@@ -572,7 +576,7 @@
     },
     {
       "id": "login.start",
-      "sourceAssetId": "login.start",
+      "sourceAssetId": "login.criware",
       "postconditionAssetId": "main.dock",
       "maximumObservationAge": "00:00:12",
       "postconditionTimeout": "00:00:30",
@@ -591,7 +595,12 @@
       "alternativePostconditionAssetIds": [
         "loading.download"
       ],
-      "sourceAppearanceTimeout": "00:00:10"
+      "tapArea": {
+        "left": 1078,
+        "top": 591,
+        "right": 1168,
+        "bottom": 635
+      }
     },
     {
       "id": "update.download",
@@ -610,21 +619,6 @@
         "update.download"
       ],
       "alternativePostconditionAssetIds": []
-    },
-    {
-      "id": "ready.dock-close",
-      "sourceAssetId": "dock.header",
-      "postconditionAssetId": "main.dock",
-      "maximumObservationAge": "00:00:12",
-      "postconditionTimeout": "00:00:20",
-      "excludedAssetIds": [
-        "dock.selection-confirm",
-        "update.header",
-        "login.enter",
-        "login.server",
-        "overlay.dialog-close",
-        "overlay.sidebar-open"
-      ]
     }
   ],
   "readiness": {
@@ -672,7 +666,7 @@
         "id": "server",
         "state": "AwaitingInput",
         "requiredAssetIds": [
-          "login.start",
+          "login.criware",
           "login.server",
           "login.logo"
         ],
@@ -747,7 +741,7 @@
           "login.enter",
           "login.server"
         ],
-        "actionId": "ready.dock-close"
+        "actionId": "dock.close"
       },
       {
         "id": "selection",
