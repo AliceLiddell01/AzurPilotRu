@@ -42,18 +42,27 @@ public static class AzurPilotHost
     internal static async Task<Agent.AgentPayload> RunAgentAsync(
         Func<AzurPilotOperatorService, CancellationToken, Task<Agent.AgentPayload>> runOperation,
         string? configurationPath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Agent.AgentDebugRun? debug = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ApplicationResult<AzurPilotConfigurationSnapshot> configuration = configurationPath is null
             ? AzurPilotConfigurationLoader.LoadRuntime() : AzurPilotConfigurationLoader.Load(configurationPath);
         if (configuration.IsFailure)
         {
+            debug?.Trace.Record("host", "configuration_rejected", new { failure = Agent.AgentJson.Failure(configuration.FailureInfo) });
             return new(null, configuration.FailureInfo);
         }
 
-        using IHost host = CreateBuilder(configuration).Build();
+        HostApplicationBuilder builder = CreateBuilder(configuration);
+        if (debug is not null)
+        {
+            ApplyAgentDebug(builder, debug);
+        }
+
+        using IHost host = builder.Build();
         await host.StartAsync(cancellationToken).ConfigureAwait(false);
+        debug?.Trace.Record("host", "host_started");
         try
         {
             // Discovery не строит host. Остальным командам не навязываем полный startup probe:
@@ -63,9 +72,33 @@ public static class AzurPilotHost
         }
         finally
         {
+            debug?.Trace.Record("host", "host_stopping");
             using CancellationTokenSource shutdown = new(TimeSpan.FromSeconds(5));
             await host.StopAsync(shutdown.Token).ConfigureAwait(false);
+            debug?.Trace.Record("host", "host_stopped");
         }
+    }
+
+    /// <summary>
+    /// Подключает наблюдателей явно запрошенного Debug Mode поверх тех же production-сервисов. Регистрации
+    /// добавляются после штатных и потому заменяют их только в этом хосте; без debug композиция не меняется.
+    /// </summary>
+    private static void ApplyAgentDebug(HostApplicationBuilder builder, Agent.AgentDebugRun debug)
+    {
+        _ = builder.Logging.AddProvider(new Agent.AgentDebugLoggerProvider(debug));
+        _ = builder.Logging.AddFilter<Agent.AgentDebugLoggerProvider>(null, LogLevel.Warning);
+        _ = builder.Logging.AddFilter<Agent.AgentDebugLoggerProvider>("AzurPilot", LogLevel.Debug);
+
+        _ = builder.Services.AddSingleton<IAndroidScreenshotObserver>(debug.Frames);
+        _ = builder.Services.AddSingleton<Core.Game.IGameUiTrace>(debug.GameUiTrace);
+        _ = builder.Services.AddSingleton<Core.Game.IGameUiHost>(services => new Agent.AgentDebugGameUiHost(
+            ActivatorUtilities.CreateInstance<Windows.Game.GameUiWindowsHost>(services), debug));
+        _ = builder.Services.AddSingleton<IWindowsProcessRunner>(services => new Agent.AgentDebugProcessRunner(
+            new WindowsProcessRunner(services.GetRequiredService<IProcessFailureProjection>()), debug, "mumu"));
+        _ = builder.Services.AddKeyedSingleton<IWindowsProcessRunner>(
+            AndroidProcessRunnerKey,
+            (services, _) => new Agent.AgentDebugProcessRunner(
+                new WindowsProcessRunner(services.GetRequiredService<AdbProcessFailureProjection>()), debug, "android"));
     }
 
     /// <summary>Ключ регистрации границы запуска процесса для Android-возможности.</summary>
@@ -588,7 +621,9 @@ public static class AzurPilotHost
         _ = builder.Services.AddSingleton<AndroidWindowsHost>(
             static services => new AndroidWindowsHost(
                 services.GetRequiredKeyedService<IWindowsProcessRunner>(AndroidProcessRunnerKey),
-                services.GetRequiredService<TimeProvider>()));
+                services.GetRequiredService<TimeProvider>(),
+                // Наблюдатель регистрируется только явным Debug Mode Agent CLI.
+                services.GetService<IAndroidScreenshotObserver>()));
         // Lifecycle и захват снимка экрана используют один и тот же host, ADB discovery cache и process
         // boundary. Отдельная реализация под новым интерфейсом могла бы незаметно завести второй ADB cache.
         _ = builder.Services.AddSingleton<IAndroidHost>(

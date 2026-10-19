@@ -33,6 +33,7 @@
 | `MutationCoordinationUnavailable` | Пользовательский каталог или файл аренды недоступен; mutation отклонена до выполнения | `IsRetryable=false`: сначала восстановить координацию |
 | `AgentDeadlineExceeded` | Кооперативный deadline Agent CLI истёк; завершение ожидания не означает откат изменений | `IsRetryable=false`: оценить effect и состояние target перед новым запросом |
 | `AgentOutputLimitExceeded` | Превышен предел JSON-ответа либо размера inventory до наблюдения отдельных targets | `IsRetryable=false`: повтор без изменения условий не устраняет превышение |
+| `DebugReportUnavailable` | Явно запрошенный `--debug-report` нельзя создать: текущий каталог не внутри checkout или каталог отчёта недоступен для записи; операция отклонена до загрузки runtime | `IsRetryable=false`: сначала исправить рабочий каталог или права |
 | `ConfigurationInvalid` | Существующий файл конфигурации не читается или не соответствует своей схеме; условия и поддерживаемые версии схем принадлежат [application-configuration.md](application-configuration.md) | не имеет смысла |
 | `ConfigurationSchemaUnsupported` | Версия схемы в файле не поддерживается этой сборкой | не имеет смысла |
 | `NativeUnavailable` | Native библиотека отсутствует или не загружается | имеет смысл после восстановления native runtime |

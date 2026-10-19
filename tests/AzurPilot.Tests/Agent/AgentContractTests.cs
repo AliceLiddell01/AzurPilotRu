@@ -74,7 +74,7 @@ public sealed class AgentContractTests
                 Assert.True(argumentTypes.TryGetProperty(type, out JsonElement definition),
                     $"Discovery не описывает тип аргумента {type}.");
                 Assert.True(definition.GetProperty("type").GetString() is "integer" or "string");
-                Assert.Equal(AgentRequest.MaximumArgumentLength, definition.GetProperty("maximumLength").GetInt32());
+                Assert.Equal(AgentArgumentTypes.All[type].MaximumLength, definition.GetProperty("maximumLength").GetInt32());
             }
         }
 
@@ -158,9 +158,10 @@ public sealed class AgentContractTests
     [InlineData(1, false)]
     public void ParserHonorsPublishedLengthBoundaryForOtherwiseValidValues(int excess, bool accepted)
     {
-        int length = AgentRequest.MaximumArgumentLength + excess;
         foreach (AgentArgument argument in AgentCommands.All.Single(c => c.Name == "resolve").Arguments)
         {
+            // Граница каждого аргумента — опубликованная в discovery длина его типа.
+            int length = AgentArgumentTypes.All[argument.Type].MaximumLength + excess;
             string prefix = argument.Name switch
             {
                 "--target" => MuMuInstanceValue.ProviderPrefix,
@@ -189,7 +190,27 @@ public sealed class AgentContractTests
         ["agent", "status", "--config", "relative.yaml"], ["agent", "discover", "--config", Path.GetTempPath()],
         ["agent", "resolve", "--endpoint", "127.0.0.1:1234"],
         ["agent", "status", "--timeout-ms", new string('1', 257)],
+        ["agent", "discover", "--debug-report", "pr-1"], ["agent", "status", "--debug-report"],
+        ["agent", "status", "--debug-report", "pr-1", "--debug-report", "pr-2"],
+        ["agent", "status", "--debug-report", "Pr-1"], ["agent", "status", "--debug-report", "-pr"],
+        ["agent", "status", "--debug-report", "pr-"], ["agent", "status", "--debug-report", "con"],
+        ["agent", "status", "--debug-report", "com1"], ["agent", "status", "--debug-report", "a/b"],
+        ["agent", "status", "--debug-report", ".."], ["agent", "status", "--debug-report", "pr_1"],
+        ["agent", "status", "--debug-report", new string('a', 65)],
     ];
+
+    [Fact]
+    public void DebugReportIsOptionalExplicitAndBoundedSession()
+    {
+        Assert.Null(AgentRequest.Parse(["agent", "status"]).Value!.DebugSession);
+        Assert.Equal("pr-25-debug", AgentRequest.Parse(["agent", "status", "--debug-report", "pr-25-debug"]).Value!.DebugSession);
+        Assert.Equal(new string('a', 64), AgentRequest.Parse(["agent", "status", "--debug-report", new string('a', 64)]).Value!.DebugSession);
+        Assert.True(AgentRequest.Parse(["agent", "game-dock-roundtrip", "--target", "mumu:7", "--timeout-ms", "1000",
+            "--config", Path.Combine(Path.GetTempPath(), "c.yaml"), "--debug-report", "pr-1"]).IsSuccess);
+        Assert.All(AgentCommands.All.Where(c => c.Name != "discover"),
+            c => Assert.Contains(c.Arguments, a => a.Name == AgentDebugRun.ArgumentName && a.Type == "debug-session" && !a.Required));
+        Assert.DoesNotContain(AgentCommands.All.Single(c => c.Name == "discover").Arguments, a => a.Name == AgentDebugRun.ArgumentName);
+    }
 
     [Theory]
     [InlineData(0)]

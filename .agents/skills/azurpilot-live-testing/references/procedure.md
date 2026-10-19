@@ -30,6 +30,27 @@ UTF-8 JSON без BOM/баннера/VT, отсутствие хвостовог
 mutation и освобождать её аренду: учитывай production probe/postflight/shutdown tail, не увеличивай
 лимиты без причины и не убивай чужие процессы. Принудительный выход не доказывает rollback или JSON.
 
+## Debug-отчёт PR-приёмки
+
+Контракт и состав отчёта — [Agent CLI Debug Mode](../../../../docs/reference/agent-cli.md#debug-mode).
+Для приёмки PR:
+
+- Все вызовы прогона, включая preflight, cleanup и отрицательные сценарии, получают один и тот же
+  `--debug-report pr-<n>-<slug>`; рабочий каталог — проверяемый checkout. До записи —
+  `git check-ignore -v .codex/local/reports/<session>/x`, после — `git status` без новых файлов.
+- После каждого вызова прочитай stderr-строку `AzurPilot.App.Agent.Debug` и `manifest.json`:
+  `state=completed`, `diagnostics.status`, `incompleteReasons`, `run.correlationId` = correlationId
+  envelope, `counters.captured` = `counters.rendered` + skipped/failed/dropped с причинами.
+  `incomplete` — ограничение evidence (PARTIAL для требования отчёта), а не исход команды.
+- Сверь фактические `frameId` envelope с `manifest.frames`, а события `tap_*`/`postcondition_frame`
+  в `trace.jsonl` — с ожидаемым flow. Просмотри JPEG кадров решений локально; их содержимое, UID,
+  чаты и скриншоты не копируются в PR, CI, сообщения и отчёты.
+- Измерь накладные расходы: тот же сценарий и стартовое состояние с флагом и без (не меньше чем по
+  одной выборке каждого; для игровых mutation — по правилам повторных performance-прогонов ниже).
+  Сравнивай wall-clock и производственные тайминги envelope; диагностическую работу бери из
+  `performance.json`. Прогон без флага не создаёт отчёт — проверь это по каталогу сессии.
+- Debug Mode не меняет авторизацию: разрешения на mutation, target и cleanup остаются прежними.
+
 ## Mutation и cleanup
 
 Перед действием сверь текущее разрешение пользователя, identity, отсутствие конкурирующего внешнего

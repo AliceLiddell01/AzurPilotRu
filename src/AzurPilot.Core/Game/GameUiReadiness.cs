@@ -86,7 +86,7 @@ public sealed record GameUiReadinessOutcome(GameUiReadinessState State, string R
 /// бездействие, начальный неизвестный экран и вызов без внешнего deadline.
 /// </summary>
 public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPolicy policy,
-    Func<string, GameUiAction> getAction, TimeProvider clock)
+    Func<string, GameUiAction> getAction, TimeProvider clock, IGameUiTrace? trace = null)
 {
     private static readonly TimeSpan MaximumAge = TimeSpan.FromSeconds(12);
     private static readonly TimeSpan Stability = TimeSpan.FromSeconds(1.5);
@@ -110,7 +110,7 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
         GameActionProgress mutation, CancellationToken cancellationToken, bool allowInitialTransition = false, long? origin = null)
     {
         long started = clock.GetTimestamp();
-        GameUiMeter meter = new(host, clock, origin ?? started);
+        GameUiMeter meter = new(host, clock, origin ?? started, trace);
         long stateStarted = started;
         List<GameUiReadinessEvidence> evidence = [];
         List<GameActionOutcome> actions = [];
@@ -138,6 +138,13 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
         GameUiReadinessOutcome Result(string reason, ApplicationFailure? failure = null)
         {
             meter.Exit(clock.GetTimestamp(), reason);
+            trace.Emit(() => new("readiness_completed", clock.GetTimestamp())
+            {
+                FrameId = last?.Frame.FrameId,
+                Reason = reason,
+                State = (state == GameUiReadinessState.Ready && !readyProven ? GameUiReadinessState.Transition : state).ToString(),
+                Value = stable,
+            });
             GameUiWork work = meter.Total;
             return new(state == GameUiReadinessState.Ready && !readyProven ? GameUiReadinessState.Transition : state,
                 reason, last, firstReady, stable, observations, work.Waits, mutation.TapAttempts - initialTapAttempts, clock.GetElapsedTime(started),
@@ -208,6 +215,15 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                 state = rule?.State ?? GameUiReadinessState.Unknown;
                 string stateId = rule?.Id ?? GameUiReadinessPolicy.UnknownStateId;
                 meter.Enter(GameUiReadinessPolicy.StatePhase(stateId), last.Frame.CaptureStartedTimestamp);
+                GameUiObservation classifiedFrame = last;
+                GameUiReadinessState classifiedState = state;
+                trace.Emit(() => new("frame_classified", clock.GetTimestamp())
+                {
+                    FrameId = classifiedFrame.Frame.FrameId,
+                    PhaseId = stateId,
+                    State = classifiedState.ToString(),
+                    Value = classifiedFrame.ProgressLevel,
+                });
                 if (last.Matches.Any(m => m.Status == GameMatchStatus.TechnicalFailure))
                 {
                     state = GameUiReadinessState.TechnicalFailure;
@@ -248,6 +264,13 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                     // Только новый максимум доли заполнения: снижение, сброс и возврат к прежнему значению не продлевают ожидание.
                     progressHighWater = level;
                     lastProgress = clock.GetTimestamp();
+                    Guid grownFrame = last.Frame.FrameId;
+                    trace.Emit(() => new("loading_progress", clock.GetTimestamp())
+                    {
+                        FrameId = grownFrame,
+                        Value = level,
+                        Reason = "new_high_water",
+                    });
                 }
 
                 if (previousState != stateId)
@@ -340,6 +363,14 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                             progressAuthorized = true;
                             progressHighWater = initialLevel;
                             lastProgress = null;
+                            Guid baselineFrame = action.After.Frame.FrameId;
+                            trace.Emit(() => new("loading_progress", clock.GetTimestamp())
+                            {
+                                FrameId = baselineFrame,
+                                ActionId = actionId,
+                                Value = initialLevel,
+                                Reason = "authorized_baseline",
+                            });
                         }
                     }
 

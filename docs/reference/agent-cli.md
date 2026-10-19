@@ -176,12 +176,83 @@ OCR, распознавание игрового экрана или UI readines
 данной команды, а не ретроспективная диагностика старых сбоев. Сырой stderr не публикуется;
 дополнительных ADB-команд и скрытого connect диагностика не выполняет.
 
-PNG-export и файловые артефакты этим интерфейсом не реализованы; discovery возвращает пустой набор
-artifact capabilities. Encoded PNG и native RGB frame не передаются в JSON/base64/stdout. Удалять
-артефакты после вызова не требуется: screenshot-файлы не создаются.
+PNG-export этим интерфейсом не реализован. Encoded PNG и native RGB frame не передаются в
+JSON/base64/stdout. Единственный файловый артефакт — явно запрошенный debug-отчёт (ниже); discovery
+описывает его в `artifacts`.
+
+## Debug Mode
+
+`--debug-report <session>` включает доказательную отладку одного вызова любой команды, кроме
+`discover`. Без аргумента композиция, stdout и файловая система не меняются: декораторы и наблюдатели
+регистрируются только в хосте этого вызова. Debug Mode не разрешает mutation — разрешение на
+MuMu/игру/ввод по-прежнему даёт только выбор mutation-команды и действующая процедура приёмки.
+
+```powershell
+AzurPilot.App.exe agent game-ui-observe --target mumu:1 --debug-report pr-25-debug-mode
+```
+
+`<session>` — тема или PR (`pr-<n>-<slug>`): 1..64 строчных ASCII-букв, цифр и дефисов без дефиса по
+краям и имён устройств Windows. Отчёт пишется в `.codex/local/reports/<session>/<run-id>/` ближайшего
+checkout выше рабочего каталога (поиск `.git`); каталог игнорируется Git. Если checkout не найден,
+каталог недоступен для записи или ведёт через reparse point, команда возвращает
+`debug_report_unavailable` до запуска runtime и без эффектов. Путь отчёта сообщается одной JSON-строкой
+stderr с `category=AzurPilot.App.Agent.Debug`, `debugReport`, `diagnostics` и `incompleteReasons`;
+stdout остаётся тем же единственным envelope.
+
+Каталог прогона (`<run-id>` = UTC-время, операция и префикс correlationId):
+
+| Файл | Содержание |
+| --- | --- |
+| `manifest.json` | identity прогона, аргументы (значение `--config` скрыто), target, итог envelope, checkout/build, лимиты, счётчики и список кадров с `frameId`, `sha256`, состоянием и отметками; `diagnostics.status` = `complete`/`incomplete` с причинами |
+| `trace.jsonl` | события по фактическому порядку записи: `seq`, монотонное `tMs`, `utc`, `kind`, `source`, связи `frame`/`frameId`/`actionId`/`phaseId` |
+| `performance.json` | время production-шагов (capture, ADB, decode, match, viewport, tap, wait, процессы) отдельно от диагностической работы (превью, trace, рендер и запись JPEG) |
+| `summary.md` | краткий русский обзор, таблица кадров, невстреченные фазы (`NOT_TESTED`) и ограничения |
+| `frames/*.jpg` | аннотированный JPEG для каждого успешного production capture |
+
+Сессия хранит `runs.jsonl` — индекс прогонов; параллельные вызовы получают разные каталоги и
+дописывают индекс под эксклюзивной блокировкой.
+
+### Кадры
+
+Превью создаётся native boundary из того же живого кадра непосредственно перед его освобождением:
+уменьшение `INTER_AREA` до логического размера [GameGeometry](../../src/AzurPilot.Core/Game/GameGeometry.cs),
+затем рисование на копии и кодирование JPEG без EXIF. Повторного захвата нет, исходный кадр не меняется,
+полный RGB-буфер в managed не копируется. Отказ capture без изображения не порождает JPEG, а
+учитывается в `captureFailures`. Кадр неподдерживаемой геометрии получает честный `skipped`.
+Распознавание и ввод используют исходный кадр полного разрешения; JPEG — иллюстрация решения.
+
+Кадр «запечатывается» с началом следующего capture или в конце прогона, поэтому ввод и postcondition,
+принятые по кадру позже, попадают на его же JPEG. На кадре: ROI ассетов действия (серый штрих),
+`Unique` (зелёная рамка), `Ambiguous` (оранжевый штрих со score/margin/mae), безопасная область ввода
+(циан), отметки tap и панели с состоянием, viewport и отсутствующими признаками. Рамки `Absent` не
+рисуются: лучший отвергнутый кандидат не является наблюдённым объектом. Маскирование не выполняется,
+поэтому отчёт не публикуется в PR, CI или сообщениях.
+
+Стадии ввода различаются событиями: `tap_planned` (кандидат), `tap_permitted` (guards и возраст кадра),
+`tap_attempted` (вызов адаптера), `tap_issued` (команда передана ADB), `tap_completed` (exit 0),
+`tap_not_issued` (адаптер отверг до ADB), `tap_result_unproven` (эффект неизвестен). Ни одна стадия не
+доказывает переход UI: это делает отдельный `postcondition_frame`.
+
+### Лимиты и полнота
+
+Точные значения публикуют `manifest.settings` и discovery; их владелец —
+[`AgentDebugRun`](../../src/AzurPilot.App/Agent/AgentDebugRun.cs) и
+[`AgentDebugFrames`](../../src/AzurPilot.App/Agent/AgentDebugFrames.cs). Ограничены: число и объём
+событий trace, число и общий объём JPEG одного прогона, ограниченная очередь фоновой записи, минимальное
+свободное место, объём и число файлов сессии, время ожидания записи при завершении. Превышение не
+останавливает команду и не меняет envelope: оно становится причиной `incomplete`
+(`frames_missing`, `frames_disabled`, `trace_incomplete`, `late_annotation_events`,
+`diagnostic_failures` и т. п.). Сбой собственного учёта debug изолирован от production-вызова и тоже
+делает отчёт неполным.
+
+Успешный envelope, `complete` и наличие JPEG не являются вердиктом приёмки: PASS/FAIL ставит
+[live-testing](../../.agents/skills/azurpilot-live-testing/SKILL.md). Хранение ручное; отчёты удаляются
+вместе с `.codex/local/`.
 
 Managed tests запускают настоящий EXE для JSON/negative startup paths и отдельные процессы с
 управляемым `IMuMuHost` для CLI↔CLI и взаимодействия общей границы сервиса TUI↔CLI. Screenshot-тест исполняет
 настоящую native DLL с управляемым PNG. Это Windows/runtime evidence без физической mutation MuMu.
-Real MuMu lifecycle acceptance и визуальная проверка TUI остаются отдельными доказательствами.
+Debug Mode покрыт fixture-цепочкой Main→Dock→Main через production capture, matcher и ввод с настоящей
+native DLL, а также процессным тестом EXE. Real MuMu lifecycle acceptance и визуальная проверка TUI
+остаются отдельными доказательствами.
 Визуальный [TUI Harness](../testing/tui-harness.md) не является частью Agent CLI.

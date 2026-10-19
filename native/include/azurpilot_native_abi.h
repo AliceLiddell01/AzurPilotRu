@@ -2,7 +2,7 @@
  * azurpilot_native_abi.h — замороженный C ABI между managed (C#) и native (C++) частями AzurPilot.
  *
  * НАЗНАЧЕНИЕ
- *   Единственный владелец формы C ABI версии 4. Managed сторона и native реализация обязаны
+ *   Единственный владелец формы C ABI версии 5. Managed сторона и native реализация обязаны
  *   совпадать побайтово: любое расхождение — ошибка совместимости, а не повод продолжать работу.
  *   Изменение формы (поля, порядок, типы, коды возврата, смысл битов) требует нового номера ABI
  *   и согласованного обновления обеих сторон; обратная совместимость формой не гарантируется.
@@ -44,8 +44,8 @@
 
 /* Версия ABI. Единственный нормативный владелец значения — этот заголовок.
  * Managed и native стороны проверяют совместимость границы до использования данных. */
-#define AZURPILOT_NATIVE_ABI_VERSION 4
-#define AZURPILOT_NATIVE_ABI_VERSION_STRING "4"
+#define AZURPILOT_NATIVE_ABI_VERSION 5
+#define AZURPILOT_NATIVE_ABI_VERSION_STRING "5"
 
 /* Бюджет одного bounded template search. Полный кадр не масштабируется. */
 #define AZURPILOT_NATIVE_MAX_TEMPLATE_PNG_BYTES UINT32_C(262144)
@@ -84,6 +84,32 @@
 #define AZURPILOT_NATIVE_MAX_FRAME_DIMENSION UINT32_C(8192)
 #define AZURPILOT_NATIVE_MAX_FRAME_PIXELS UINT32_C(16777216)
 #define AZURPILOT_NATIVE_MAX_RGB8_BYTES UINT32_C(50331648)
+
+/* Диагностическое превью (ABI v5). Превью — отдельный уменьшенный RGB8-кадр DLL, а не новый владелец
+ * исходного кадра; JPEG кодируется только из кадра не больше предела стороны превью, поэтому полный
+ * production-кадр этой границей не экспортируется. Аннотации рисуются на внутренней копии превью. */
+#define AZURPILOT_NATIVE_MAX_PREVIEW_DIMENSION UINT32_C(1920)
+#define AZURPILOT_NATIVE_MAX_ANNOTATIONS UINT32_C(512)
+#define AZURPILOT_NATIVE_ANNOTATION_TEXT_BYTES 64
+#define AZURPILOT_NATIVE_MAX_JPEG_BYTES UINT32_C(8388608)
+#define AZURPILOT_NATIVE_MIN_JPEG_QUALITY UINT32_C(50)
+#define AZURPILOT_NATIVE_MAX_JPEG_QUALITY UINT32_C(95)
+/* Предел координат аннотации по модулю: рисование вне превью отсекается OpenCV, но арифметика остаётся ограниченной. */
+#define AZURPILOT_NATIVE_MAX_ANNOTATION_COORDINATE INT32_C(16384)
+
+/* Виды аннотаций. RECT/FILLED_RECT: region — полуоткрытый прямоугольник превью.
+ * CIRCLE/FILLED_CIRCLE/CROSS: центр (left, top), радиус right (1..1024), bottom == 0.
+ * TEXT: начало базовой линии (left, top), масштаб шрифта right в процентах (25..300), bottom == 0;
+ * text — печатный ASCII 0x20..0x7E с завершающим NUL. У остальных видов text пуст. */
+#define AZURPILOT_NATIVE_ANNOTATION_RECT UINT32_C(1)
+#define AZURPILOT_NATIVE_ANNOTATION_FILLED_RECT UINT32_C(2)
+#define AZURPILOT_NATIVE_ANNOTATION_CIRCLE UINT32_C(3)
+#define AZURPILOT_NATIVE_ANNOTATION_FILLED_CIRCLE UINT32_C(4)
+#define AZURPILOT_NATIVE_ANNOTATION_CROSS UINT32_C(5)
+#define AZURPILOT_NATIVE_ANNOTATION_TEXT UINT32_C(6)
+/* Стиль линии: сплошная либо штриховая (только RECT). */
+#define AZURPILOT_NATIVE_ANNOTATION_SOLID UINT32_C(0)
+#define AZURPILOT_NATIVE_ANNOTATION_DASHED UINT32_C(1)
 
 /* Идентификатор формата поля pixel_format в AzurPilotNativeFrameInfo. */
 #define AZURPILOT_NATIVE_PIXEL_FORMAT_RGB8 UINT32_C(1)
@@ -178,6 +204,19 @@ typedef struct AzurPilotNativeRegionStatistics {
     double stddev_blue;
 } AzurPilotNativeRegionStatistics;
 
+/* Одна диагностическая аннотация превью; цвет задаётся в RGB. thickness 1..8 (для TEXT — толщина штриха).
+ * Размер 92, выравнивание 4; смещения kind 0, style 4, region 8, red 24, green 25, blue 26, thickness 27, text 28. */
+typedef struct AzurPilotNativeAnnotation {
+    uint32_t kind;
+    uint32_t style;
+    AzurPilotNativeRegion region;
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+    uint8_t thickness;
+    char text[AZURPILOT_NATIVE_ANNOTATION_TEXT_BYTES];
+} AzurPilotNativeAnnotation;
+
 #if defined(__cplusplus)
 static_assert(sizeof(AzurPilotNativeInfo) == 56,
               "AzurPilotNativeInfo: раскладка ABI изменена — это ломает managed/native совместимость");
@@ -205,6 +244,13 @@ static_assert(sizeof(AzurPilotNativeRegionStatistics) == 56 &&
                   offsetof(AzurPilotNativeRegionStatistics, stddev_green) == 40 &&
                   offsetof(AzurPilotNativeRegionStatistics, stddev_blue) == 48,
               "AzurPilotNativeRegionStatistics: требуется раскладка ABI v3 size=56 alignment=8");
+static_assert(sizeof(AzurPilotNativeAnnotation) == 92 && alignof(AzurPilotNativeAnnotation) == 4 &&
+                  offsetof(AzurPilotNativeAnnotation, style) == 4 &&
+                  offsetof(AzurPilotNativeAnnotation, region) == 8 &&
+                  offsetof(AzurPilotNativeAnnotation, red) == 24 &&
+                  offsetof(AzurPilotNativeAnnotation, thickness) == 27 &&
+                  offsetof(AzurPilotNativeAnnotation, text) == 28,
+              "AzurPilotNativeAnnotation: требуется раскладка ABI v5 size=92 alignment=4");
 #endif
 
 #if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
@@ -233,6 +279,10 @@ _Static_assert(sizeof(AzurPilotNativeRegionStatistics) == 56 &&
                    offsetof(AzurPilotNativeRegionStatistics, stddev_green) == 40 &&
                    offsetof(AzurPilotNativeRegionStatistics, stddev_blue) == 48,
                "AzurPilotNativeRegionStatistics: требуется раскладка ABI v3 size=56 alignment=8");
+_Static_assert(sizeof(AzurPilotNativeAnnotation) == 92 && _Alignof(AzurPilotNativeAnnotation) == 4 &&
+                   offsetof(AzurPilotNativeAnnotation, region) == 8 &&
+                   offsetof(AzurPilotNativeAnnotation, text) == 28,
+               "AzurPilotNativeAnnotation: требуется раскладка ABI v5 size=92 alignment=4");
 #endif
 
 #if defined(__cplusplus)
@@ -357,6 +407,32 @@ AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_scan_region(
     const AzurPilotNativeRegion* region,
     AzurPilotNativeRegionStatistics* out_statistics)
     AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Создаёт новый кадр RGB8 заданного размера уменьшением исходного кадра (INTER_AREA) для диагностики.
+ * Исходный кадр не изменяется и может быть освобождён независимо; превью освобождается тем же
+ * azurpilot_native_frame_release. Требуется 1 <= width <= исходной ширины, 1 <= height <= исходной высоты,
+ * обе стороны <= AZURPILOT_NATIVE_MAX_PREVIEW_DIMENSION и точное совпадение пропорций
+ * (width * source_height == height * source_width): нестандартная геометрия не подгоняется.
+ * При ненулевом out_preview он сначала устанавливается в NULL. NULL frame/out_preview и нарушение размеров —
+ * INVALID_ARGUMENT; недостоверный кадр — INTERNAL; ошибка OpenCV — OPENCV_FAILURE; нехватка памяти —
+ * OUT_OF_MEMORY. Вызывающая сторона удерживает живой исходный frame до возврата. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_create_preview(
+    AzurPilotNativeFrameHandle frame, uint32_t width, uint32_t height,
+    AzurPilotNativeFrameHandle* out_preview) AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Рисует аннотации на внутренней копии кадра и кодирует её в baseline JPEG без EXIF/ICC metadata.
+ * Кадр не изменяется. Кадр со стороной больше AZURPILOT_NATIVE_MAX_PREVIEW_DIMENSION — IMAGE_TOO_LARGE.
+ * quality — MIN..MAX_JPEG_QUALITY; annotation_count <= MAX_ANNOTATIONS; annotations может быть NULL
+ * только при нулевом count. Невалидные вид/стиль/толщина/координаты/текст — INVALID_ARGUMENT.
+ * written_size обязателен (NULL — INVALID_ARGUMENT) и обнуляется в начале. Если закодированный JPEG
+ * больше buffer_size (включая размер-запрос buffer == NULL, buffer_size == 0), возвращается
+ * BUFFER_TOO_SMALL, буфер не изменяется, *written_size получает требуемый размер. JPEG больше
+ * AZURPILOT_NATIVE_MAX_JPEG_BYTES — IMAGE_TOO_LARGE. При OK *written_size — длина JPEG в buffer.
+ * Порядок каналов входа — RGB, JPEG содержит те же цвета. Пиксели и handle через границу не выдаются. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_encode_jpeg(
+    AzurPilotNativeFrameHandle frame, uint32_t quality,
+    const AzurPilotNativeAnnotation* annotations, uint32_t annotation_count,
+    uint8_t* buffer, uint32_t buffer_size, uint32_t* written_size) AZURPILOT_NATIVE_NOEXCEPT;
 
 /* Освобождает дескриптор через механизм выделения памяти native DLL. NULL-дескриптор возвращает INVALID_ARGUMENT.
  * Произвольный устаревший или чужой дескриптор недействителен и не обязан безопасно обнаруживаться;

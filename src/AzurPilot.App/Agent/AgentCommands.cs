@@ -55,7 +55,20 @@ internal static class AgentCommands
             argumentTypes = AgentArgumentTypes.All,
             commands = All.Select(c => new { c.Name, c.Mutation, requiresResolvedTarget = c.Target, c.Description, c.Arguments }),
             effects = new[] { "none", "changed", "mayHaveChanged" },
-            artifacts = Array.Empty<string>(),
+            artifacts = new[]
+            {
+                new
+                {
+                    name = "debug-report",
+                    argument = AgentDebugRun.ArgumentName,
+                    formatVersion = AgentDebugRun.FormatVersion,
+                    location = AgentDebugRun.ReportsDirectory + "/<session>/<run>",
+                    sessionIndex = AgentDebugRun.SessionIndexFile,
+                    files = new[] { "manifest.json", "trace.jsonl", "performance.json", "summary.md", "frames/<sequence>_<frameId|capture>.jpg" },
+                    frame = new { format = "jpeg", width = AgentDebugFrames.PreviewWidth, height = AgentDebugFrames.PreviewHeight, quality = AgentDebugFrames.JpegQuality },
+                    stdout = "unchanged",
+                },
+            },
         };
     }
 }

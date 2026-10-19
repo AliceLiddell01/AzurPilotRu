@@ -118,6 +118,53 @@ public sealed class AgentProcessTests
         Assert.Equal("none", json.RootElement.GetProperty("effect").GetString());
     }
 
+    [Fact]
+    public async Task RealExecutableWritesDebugReportWithoutChangingStdout()
+    {
+        using AgentTestDirectory directory = new();
+        string configPath = Path.Combine(directory.Root, "config.yaml");
+        await File.WriteAllTextAsync(configPath, AzurPilotConfigurationYamlWriter.Write(AzurPilotConfigurationDefaults.Create()),
+            TestContext.Current.CancellationToken);
+
+        // Без checkout отчёт создать нельзя: команда отклоняется до runtime одним документом.
+        using Process outside = directory.StartApplication("agent", "settings", "--config", configPath, "--debug-report", "proc-test");
+        using (JsonDocument rejected = AssertEnvelope(await ReadAsync(outside), AzurPilotExitCode.DebugReportUnavailable))
+        {
+            Assert.Equal(ApplicationFailure.DebugReportUnavailable, rejected.RootElement.GetProperty("failure").GetProperty("code").GetString());
+            Assert.Equal("none", rejected.RootElement.GetProperty("effect").GetString());
+        }
+
+        _ = Directory.CreateDirectory(Path.Combine(directory.Root, ".git"));
+        using Process plain = directory.StartApplication("agent", "settings", "--config", configPath);
+        AgentProcessRun plainRun = await ReadAsync(plain);
+        using JsonDocument plainJson = AssertEnvelope(plainRun, 0);
+        Assert.False(Directory.Exists(Path.Combine(directory.Root, ".codex")));
+
+        using Process debug = directory.StartApplication("agent", "settings", "--config", configPath, "--debug-report", "proc-test");
+        AgentProcessRun debugRun = await ReadAsync(debug);
+        using JsonDocument debugJson = AssertEnvelope(debugRun, 0);
+        Assert.Equal(plainJson.RootElement.GetProperty("data").GetRawText(), debugJson.RootElement.GetProperty("data").GetRawText());
+
+        string reportLine = Assert.Single(debugRun.Error.Split('\n'), l => l.Contains("\"AzurPilot.App.Agent.Debug\"", StringComparison.Ordinal));
+        using JsonDocument report = JsonDocument.Parse(reportLine);
+        Assert.Equal("complete", report.RootElement.GetProperty("diagnostics").GetString());
+        string relative = report.RootElement.GetProperty("debugReport").GetString()!;
+        Assert.StartsWith(".codex/local/reports/proc-test/", relative, StringComparison.Ordinal);
+        string runDirectory = Path.Combine(directory.Root, relative.Replace('/', Path.DirectorySeparatorChar));
+        using JsonDocument manifest = JsonDocument.Parse(await File.ReadAllBytesAsync(Path.Combine(runDirectory, "manifest.json"),
+            TestContext.Current.CancellationToken));
+        Assert.Equal(debugJson.RootElement.GetProperty("correlationId").GetString(),
+            manifest.RootElement.GetProperty("run").GetProperty("correlationId").GetString());
+        string arguments = manifest.RootElement.GetProperty("run").GetProperty("arguments").GetRawText();
+        Assert.DoesNotContain(directory.Root.Replace("\\", "\\\\", StringComparison.Ordinal), arguments, StringComparison.OrdinalIgnoreCase);
+        string trace = await File.ReadAllTextAsync(Path.Combine(runDirectory, "trace.jsonl"), TestContext.Current.CancellationToken);
+        Assert.Contains("\"host_started\"", trace, StringComparison.Ordinal);
+        Assert.Contains("\"envelope_ready\"", trace, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(runDirectory, "summary.md")));
+        Assert.True(File.Exists(Path.Combine(runDirectory, "performance.json")));
+        Assert.True(File.Exists(Path.Combine(directory.Root, ".codex", "local", "reports", "proc-test", "runs.jsonl")));
+    }
+
     internal static JsonDocument AssertEnvelope(AgentProcessRun run, int exitCode)
     {
         Assert.Equal(exitCode, run.ExitCode);

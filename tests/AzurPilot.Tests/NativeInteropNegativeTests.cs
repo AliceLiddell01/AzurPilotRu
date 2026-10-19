@@ -36,6 +36,16 @@ public sealed class NativeInteropNegativeTests
         Assert.Contains("match export отклонён до декодирования", result.StandardOutput, StringComparison.Ordinal);
         Assert.Equal(ApplicationFailure.NativeIncompatible, result.FailureCode);
     }
+
+    [Fact(DisplayName = "Текущий ABI без preview отвергает превью до вызова отсутствующего экспорта")]
+    public void MissingPreviewExportIsRejectedBeforeCall()
+    {
+        NativeBoundaryProbeRunner.ProbeRun result = NativeBoundaryProbeRunner.Run(NativeBoundaryProbeRunner.ProbeMode.AbiMissingPreview);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Contains("preview export отклонён до вызова", result.StandardOutput, StringComparison.Ordinal);
+        Assert.Equal(ApplicationFailure.NativeIncompatible, result.FailureCode);
+    }
+
     private const string ProbeExpectedMarker = "Проба: получено ожидаемое исключение";
 
     [Fact(DisplayName = "Отсутствующая native библиотека обязана выбросить исключение, а не пропустить проверку")]

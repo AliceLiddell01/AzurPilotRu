@@ -4,8 +4,9 @@ description: >-
   Реальная смок- и live-приёмка AzurPilotRu через production AzurPilot.App.exe agent:
   discovery, runtime diagnostics, MuMu/Android/game lifecycle, screenshot, recognition и
   разрешённый безопасный input. Применяй к просьбам «проверь реальное управление Android
-  через agent CLI», runtime-приёмке и воспроизведению в фактической среде. Mutation требует
-  отдельной текущей авторизации exact identity и операции. Визуальный TUI проверяет tui-harness.
+  через agent CLI», runtime-приёмке и воспроизведению в фактической среде. Live-приёмка PR
+  выполняется с Debug Mode (`--debug-report`). Mutation требует отдельной текущей авторизации
+  exact identity и операции. Визуальный TUI проверяет tui-harness.
 ---
 
 # Приёмка через production Agent CLI
@@ -33,24 +34,28 @@ description: >-
    с пользователем** актуальность этого разрешения для конкретного действия. При его отсутствии
    не запускай mutation, укажи NOT_RUN/BLOCKED. TUI confirmation/modes и узкое Harness live-разрешение
    не авторизуют прямую Agent CLI-приёмку. Не обходи lease, timeouts или guards ради зелёного результата.
-5. Автоматизируй реальные вызовы, ограничения времени, проверку JSON/exit/status/effect,
+5. Live-приёмка PR вызывает **каждую** команду с `--debug-report pr-<n>-<slug>` (до номера PR —
+   тематическая сессия) и проверяет полноту отчёта по [процедуре](references/procedure.md#debug-отчёт-pr-приёмки).
+   Повседневные и диагностические вызовы вне PR-приёмки идут без флага. Debug Mode не расширяет
+   разрешения на mutation и не заменяет независимые postconditions.
+6. Автоматизируй реальные вызовы, ограничения времени, проверку JSON/exit/status/effect,
    независимые postconditions и разрешённый cleanup. Помощник только управляет, наблюдает и сравнивает:
    fake JSON emitter, mock MuMu/ADB, собственная orchestration и запись ожидаемого state запрещены
    как live evidence. Doubles допустимы отдельно в unit/contract tests.
-6. При первом отказе останови сценарий, сохрани bounded evidence и проверяй фактическое состояние.
+7. При первом отказе останови сценарий, сохрани bounded evidence и проверяй фактическое состояние.
    Отмена/deadline не означают rollback; `Unknown`, nullable facts и `mayHaveChanged` не равны `none`.
    Cleanup разрешён лишь для своего доказанного эффекта, на том же target и в согласованных границах.
    Не делай слепой повтор tap или compensating stop. Не исключай упавший сценарий из плана.
    Для игровых capabilities соблюдай раздел «Игровые capabilities» [процедуры](references/procedure.md):
    один production-триггер, телеметрия из envelope и итог «игра Stopped, MuMu Running».
-7. Сверь до/после и дай отдельный `PASS / FAIL / PARTIAL / NOT_RUN / BLOCKED` каждому обязательному
+8. Сверь до/после и дай отдельный `PASS / FAIL / PARTIAL / NOT_RUN / BLOCKED` каждому обязательному
    сценарию по [процедуре](references/procedure.md), отделив deterministic tests, CI и реальные
    Windows/MuMu/Android свидетельства. Общий PASS допустим только при PASS всех обязательных сценариев.
 
 ## Артефакты и другие владельцы
 
 Разовые помощники разработки/приёмки могут лежать в `.codex/local/scripts/<task>/`, отчёты —
-в `.codex/local/reports/<task>/`: до записи проверь `git check-ignore` и `git ls-files`, после —
+в `.codex/local/reports/<task>/` (туда же пишет Debug Mode): до записи проверь `git check-ignore` и `git ls-files`, после —
 `git status`. Соблюдай более узкие ограничения владельцев: игровые исходные изображения и их временные
 производные остаются в системном TEMP по [game-ui acceptance](../../../docs/testing/game-ui.md).
 Не повреждай runtime-конфиги, ассеты, снимки и чужие артефакты; удаляй только свои файлы/ресурсы.

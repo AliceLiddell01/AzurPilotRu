@@ -33,6 +33,26 @@ public sealed class GameGeometryTests
         _ = Assert.Throws<ArgumentOutOfRangeException>(() => new GameGeometry(width, height));
     }
 
+    [Theory]
+    [InlineData(720)]
+    [InlineData(1080)]
+    [InlineData(1440)]
+    [InlineData(2160)]
+    public void ToLogicalRoundsOutwardContainsMappedAreaAndRejectsOutside(int height)
+    {
+        GameGeometry geometry = new(height * 16 / 9, height);
+        GamePixelRect physical = geometry.Map(new(101, 203, 307, 409));
+        GameRect logical = geometry.ToLogical(physical);
+        Assert.True(logical.Left <= 101 && logical.Top <= 203 && logical.Right >= 307 && logical.Bottom >= 409);
+        Assert.Equal(new GameRect(0, 0, GameGeometry.LogicalWidth, GameGeometry.LogicalHeight),
+            geometry.ToLogical(new GamePixelRect(0, 0, geometry.Width, height)));
+        Assert.Equal(new GameInputPoint(GameGeometry.LogicalWidth - 1, GameGeometry.LogicalHeight - 1),
+            geometry.ToLogical(new GameInputPoint(geometry.Width - 1, height - 1)));
+        _ = Assert.Throws<ArgumentOutOfRangeException>(() => geometry.ToLogical(new GamePixelRect(0, 0, geometry.Width + 1, height)));
+        _ = Assert.Throws<ArgumentOutOfRangeException>(() => geometry.ToLogical(new GamePixelRect(5, 5, 5, 6)));
+        _ = Assert.Throws<ArgumentOutOfRangeException>(() => geometry.ToLogical(new GameInputPoint(geometry.Width, 0)));
+    }
+
     [Fact]
     public void InvalidBoundsAndInputPointAreRejected()
     {
