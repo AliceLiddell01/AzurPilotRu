@@ -29,6 +29,7 @@ public sealed record AndroidScreenshotCaptureInfo(
 /// <summary>Владелец native frame успешного capture; encoded PNG не хранится.</summary>
 public sealed class CapturedAndroidScreenshot : IDisposable
 {
+    private readonly Lock _gate = new();
     private IAndroidScreenshotObserver? _observer;
 
     internal CapturedAndroidScreenshot(NativeFrame frame, AndroidScreenshotCaptureInfo info,
@@ -53,18 +54,23 @@ public sealed class CapturedAndroidScreenshot : IDisposable
     /// </summary>
     public void Dispose()
     {
-        IAndroidScreenshotObserver? observer = Interlocked.Exchange(ref _observer, null);
-        try
+        // Блокировка сохраняет порядок: параллельный Dispose не освободит кадр до завершения наблюдателя.
+        lock (_gate)
         {
-            observer?.FrameReleasing(Frame, Info);
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            // Диагностика не может удержать кадр или изменить исход production-операции.
-        }
-        finally
-        {
-            Frame.Dispose();
+            IAndroidScreenshotObserver? observer = _observer;
+            _observer = null;
+            try
+            {
+                observer?.FrameReleasing(Frame, Info);
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                // Диагностика не может удержать кадр или изменить исход production-операции.
+            }
+            finally
+            {
+                Frame.Dispose();
+            }
         }
 
         GC.SuppressFinalize(this);

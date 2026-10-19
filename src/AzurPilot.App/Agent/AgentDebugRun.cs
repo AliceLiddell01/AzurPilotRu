@@ -239,7 +239,7 @@ internal sealed class AgentDebugRun : IDisposable
 
     /// <summary>
     /// Запечатывает кадры, ограниченно ждёт фоновой записи и пишет итоговые файлы. Ошибки записи остаются
-    /// причинами неполноты; envelope команды не изменяется.
+    /// причинами неполноты; envelope команды не изменяется, а в отчёт попадает его итоговая форма после ограничения вывода.
     /// </summary>
     internal async Task<AgentDebugCompletion> CompleteAsync(AgentEnvelope envelope)
     {
@@ -250,6 +250,8 @@ internal sealed class AgentDebugRun : IDisposable
         {
             AgentEnvelope copy = envelope;
             outputBytes = AgentJson.Serialize(ref copy).Length;
+            // Отчёт фиксирует тот же envelope, что увидит stdout, включая замену при превышении лимита вывода.
+            envelope = copy;
         }
         catch (Exception exception) when (exception is NotSupportedException or InvalidOperationException or JsonException)
         {

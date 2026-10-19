@@ -117,7 +117,7 @@ public sealed class NativeFrame : IDisposable
 
     /// <summary>
     /// Кодирует копию кадра с аннотациями в JPEG без metadata. Допустимы только кадры не больше
-    /// предела превью; полный production-кадр так не экспортируется. Байты JPEG не владеют кадром.
+    /// предела превью; кадр больше предела (например, 4K) так не экспортируется. Байты JPEG не владеют кадром.
     /// </summary>
     /// <exception cref="ObjectDisposedException">Кадр уже освобождён.</exception>
     /// <exception cref="ArgumentException">Аннотация нарушает контракт ABI.</exception>

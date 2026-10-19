@@ -213,6 +213,27 @@ public sealed partial class AzurPilotOperatorServiceTests
         }
     }
 
+    [Fact(DisplayName = "Отчёт Debug Mode фиксирует envelope, замещённый при превышении лимита вывода")]
+    public async Task ReportRecordsEnvelopeReplacedByOutputLimit()
+    {
+        using TemporaryCheckout checkout = new();
+        string correlationId = Guid.NewGuid().ToString("N");
+        AgentDebugRun run = AgentDebugRun.Create(DebugSession, correlationId, "status", null, ["status"], 1000,
+            TimeProvider.System, checkout.Path).Value!;
+        using (run)
+        {
+            AgentEnvelope oversized = AgentJson.Envelope(correlationId, "status", null,
+                new(new string('x', AgentJson.MaximumOutputBytes), null));
+            _ = await run.CompleteAsync(oversized);
+
+            using JsonDocument manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(run.RunDirectory, "manifest.json")));
+            Assert.Equal(AzurPilotExitCode.AgentOutputLimitExceeded, manifest.RootElement.GetProperty("command").GetProperty("exitCode").GetInt32());
+            string indexLine = File.ReadAllLines(Path.Combine(run.SessionDirectory, "runs.jsonl")).Single();
+            using JsonDocument index = JsonDocument.Parse(indexLine);
+            Assert.Equal(AzurPilotExitCode.AgentOutputLimitExceeded, index.RootElement.GetProperty("exitCode").GetInt32());
+        }
+    }
+
     private static async Task<AgentRunResult> RunAbsentScreenshotAsync(TemporaryCheckout checkout, string? session)
     {
         MuMuInstanceId selected = MuMuInstanceId.FromIndex("7");
