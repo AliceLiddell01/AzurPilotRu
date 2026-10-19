@@ -168,64 +168,64 @@
       ]
     },
     {
-      "id": "main.clear-center",
-      "purpose": "Положительное подтверждение свободного центра для предоставленного варианта фона; другой фон остаётся Unknown.",
+      "id": "overlay.dialog-close",
+      "purpose": "Рамка модального окна: красный крест закрытия независимо от заголовка и содержимого; только запрещающий guard, без tap.",
       "search": {
-        "left": 547,
-        "top": 277,
-        "right": 713,
-        "bottom": 443
+        "left": 640,
+        "top": 80,
+        "right": 1120,
+        "bottom": 550
       },
       "safeTapOffset": null,
       "variants": [
         {
           "id": "global-en",
-          "file": "main.clear-center.png",
-          "sourceSha256": "66ea44215e2292b5cdd277f971c48511ab88b8fbc78432d38b04b17d3d2a50d9",
+          "file": "overlay.dialog-close.png",
+          "sourceSha256": "23bf78b7b59004f1865aeef157287f391e771d25f583552bbb3a6dd186af44b2",
           "sourceWidth": 3840,
           "sourceHeight": 2160,
           "crop": {
-            "left": 550,
-            "top": 280,
-            "right": 710,
-            "bottom": 440
+            "left": 914,
+            "top": 180,
+            "right": 951,
+            "bottom": 219
           },
-          "sha256": "3f55dbee0dd1ecd7d2aba667c08d71544341e32843cd077209f0c68f41f0f31d",
+          "sha256": "07f9afe312d7b6d953c2bc412723bddb5b2c934b81344ab8bb45561d78ea017b",
           "mode": "Rgb",
-          "minimumScore": 0.96,
+          "minimumScore": 0.9,
           "minimumMargin": 0.06,
-          "maximumMeanAbsoluteError": 10
+          "maximumMeanAbsoluteError": 24
         }
       ]
     },
     {
-      "id": "main.clear-left",
-      "purpose": "Положительное подтверждение свободной области слева; открытая панель не считается Ready.",
+      "id": "overlay.sidebar-open",
+      "purpose": "Заголовок Commissions открытой левой панели; фон персонажа и значения наград не участвуют, без tap.",
       "search": {
-        "left": 77,
-        "top": 267,
-        "right": 233,
-        "bottom": 423
+        "left": 68,
+        "top": 225,
+        "right": 225,
+        "bottom": 270
       },
       "safeTapOffset": null,
       "variants": [
         {
           "id": "global-en",
-          "file": "main.clear-left.png",
-          "sourceSha256": "66ea44215e2292b5cdd277f971c48511ab88b8fbc78432d38b04b17d3d2a50d9",
+          "file": "overlay.sidebar-open.png",
+          "sourceSha256": "e75fdc8ea62b1284825bd568318286b7a51cf58084162f6828a690b325dae875",
           "sourceWidth": 3840,
           "sourceHeight": 2160,
           "crop": {
-            "left": 80,
-            "top": 270,
-            "right": 230,
-            "bottom": 420
+            "left": 77,
+            "top": 235,
+            "right": 216,
+            "bottom": 260
           },
-          "sha256": "ff9944b76e8af9560434b3f0eb130045fa38992bb22b88f5cfbf08a5ba29b5f9",
+          "sha256": "98912d2eab2112f8a949eec71d33fa4ffd9ba431445898fe845b1d768bb1063f",
           "mode": "Rgb",
-          "minimumScore": 0.96,
+          "minimumScore": 0.9,
           "minimumMargin": 0.06,
-          "maximumMeanAbsoluteError": 10
+          "maximumMeanAbsoluteError": 18
         }
       ]
     },
@@ -532,7 +532,9 @@
       "maximumObservationAge": "00:00:12",
       "postconditionTimeout": "00:00:20",
       "excludedAssetIds": [
-        "dock.selection-confirm"
+        "dock.selection-confirm",
+        "overlay.dialog-close",
+        "overlay.sidebar-open"
       ]
     },
     {
@@ -542,7 +544,9 @@
       "maximumObservationAge": "00:00:12",
       "postconditionTimeout": "00:00:20",
       "excludedAssetIds": [
-        "dock.selection-confirm"
+        "dock.selection-confirm",
+        "overlay.dialog-close",
+        "overlay.sidebar-open"
       ]
     },
     {
@@ -553,7 +557,9 @@
       "postconditionTimeout": "00:00:30",
       "excludedAssetIds": [
         "update.header",
-        "dock.selection-confirm"
+        "dock.selection-confirm",
+        "overlay.dialog-close",
+        "overlay.sidebar-open"
       ],
       "requiredAssetIds": [
         "login.logo"
@@ -574,7 +580,9 @@
         "login.enter",
         "login.success",
         "update.header",
-        "dock.selection-confirm"
+        "dock.selection-confirm",
+        "overlay.dialog-close",
+        "overlay.sidebar-open"
       ],
       "requiredAssetIds": [
         "login.logo",
@@ -594,7 +602,8 @@
       "excludedAssetIds": [
         "login.enter",
         "login.server",
-        "dock.selection-confirm"
+        "dock.selection-confirm",
+        "overlay.sidebar-open"
       ],
       "requiredAssetIds": [
         "update.header",
@@ -612,7 +621,9 @@
         "dock.selection-confirm",
         "update.header",
         "login.enter",
-        "login.server"
+        "login.server",
+        "overlay.dialog-close",
+        "overlay.sidebar-open"
       ]
     }
   ],
@@ -624,9 +635,7 @@
         "requiredAssetIds": [
           "main.dock",
           "main.depot",
-          "main.battle",
-          "main.clear-center",
-          "main.clear-left"
+          "main.battle"
         ],
         "absentAssetIds": [
           "dock.header",
@@ -637,7 +646,9 @@
           "loading.download",
           "update.header",
           "update.download",
-          "update.confirm"
+          "update.confirm",
+          "overlay.dialog-close",
+          "overlay.sidebar-open"
         ],
         "actionId": null
       },
@@ -757,6 +768,29 @@
         ],
         "absentAssetIds": [
           "update.download"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "blocked-dialog",
+        "state": "RequiresUserAction",
+        "requiredAssetIds": [
+          "overlay.dialog-close"
+        ],
+        "absentAssetIds": [
+          "update.header"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "blocked-sidebar",
+        "state": "RequiresUserAction",
+        "requiredAssetIds": [
+          "overlay.sidebar-open"
+        ],
+        "absentAssetIds": [
+          "overlay.dialog-close",
+          "update.header"
         ],
         "actionId": null
       }

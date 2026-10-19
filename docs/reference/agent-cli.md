@@ -45,7 +45,7 @@ Identity в примере условная: сначала выберите с�
 ручного решения сохраняют failure. `game-ui-ready-ensure` включает существующую подготовку и запуск
 игры, затем известный flow; успех требует именно `data.ui.state=Ready`. Обе операции повторно
 проверяют exact identity/endpoint и foreground/viewport. Список допустимых состояний/переходов,
-положительный clearance и ограничения — [game-ui](../architecture/game-ui.md#готовность-главного-ui).
+стабильные признаки меню, независимые guards перекрытий и ограничения — [game-ui](../architecture/game-ui.md#готовность-главного-ui).
 
 `android-prepare` подготавливает только transport выбранного target через существующий readiness owner.
 Она не запускает MuMu или игру, не меняет настройки и не выполняет игровой ввод. Один target-local

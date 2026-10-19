@@ -117,7 +117,8 @@ public sealed class GameAssetCatalog
                 throw new InvalidDataException("Ожидание пульсирующего признака требует отдельного контекста и ограниченного времени.");
             }
 
-            if (action.ExcludedAssetIds!.Count > 4 || action.ExcludedAssetIds.Any(id => !_assets.ContainsKey(id)
+            // Два общих overlay guards добавляются к прежним четырём; общий каталог остаётся <= 16.
+            if (action.ExcludedAssetIds!.Count > 6 || action.ExcludedAssetIds.Any(id => !_assets.ContainsKey(id)
                 || id == action.SourceAssetId || id == action.PostconditionAssetId))
             {
                 throw new InvalidDataException("Недопустимый исключающий признак игрового перехода.");

@@ -57,7 +57,8 @@ public sealed class GameUiReadinessTests
     [InlineData("selection", GameUiReadinessState.RequiresUserAction)]
     [InlineData("unverified-update", GameUiReadinessState.RequiresUserAction)]
     [InlineData("main-overlay", GameUiReadinessState.Unknown)]
-    [InlineData("main-unknown-overlay", GameUiReadinessState.Unknown)]
+    [InlineData("main-unknown-overlay", GameUiReadinessState.RequiresUserAction)]
+    [InlineData("main-sidebar-overlay", GameUiReadinessState.RequiresUserAction)]
     public async Task ReadOnlyDistinguishesStatesWithoutMutation(string initial, GameUiReadinessState expected)
     {
         using ReadyHost host = new(initial);
@@ -158,6 +159,65 @@ public sealed class GameUiReadinessTests
         Assert.Equal(GameUiReadinessState.Unknown, result.State);
         Assert.Equal(0, host.Taps);
         Assert.Empty(result.Actions);
+    }
+
+    [Theory]
+    [InlineData("overlay.dialog-close", null)]
+    [InlineData("overlay.dialog-close", GameMatchStatus.Ambiguous)]
+    [InlineData("overlay.dialog-close", GameMatchStatus.TechnicalFailure)]
+    [InlineData("overlay.dialog-close", GameMatchStatus.GeometryRejected)]
+    [InlineData("overlay.sidebar-open", null)]
+    [InlineData("overlay.sidebar-open", GameMatchStatus.Ambiguous)]
+    [InlineData("overlay.sidebar-open", GameMatchStatus.TechnicalFailure)]
+    [InlineData("overlay.sidebar-open", GameMatchStatus.GeometryRejected)]
+    public async Task OverlayGuardUncertaintyNeverProvesReadyOrTaps(string asset, GameMatchStatus? status)
+    {
+        using ReadyHost host = new("main")
+        {
+            GuardAssetId = asset,
+            Guard = status,
+            Fault = status is null ? "guard-missing" : ""
+        };
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.NotEqual(GameUiReadinessState.Ready, result.State);
+        Assert.NotNull(result.Failure);
+        Assert.Equal(0, result.TapAttempts);
+        Assert.Empty(result.Actions);
+    }
+
+    [Theory]
+    [InlineData("main.dock", null)]
+    [InlineData("main.dock", GameMatchStatus.Absent)]
+    [InlineData("main.depot", null)]
+    [InlineData("main.depot", GameMatchStatus.Absent)]
+    [InlineData("main.battle", null)]
+    [InlineData("main.battle", GameMatchStatus.Absent)]
+    public async Task StableMainRequiresEveryIndependentAnchor(string asset, GameMatchStatus? status)
+    {
+        using ReadyHost host = new("main")
+        {
+            GuardAssetId = asset,
+            Guard = status,
+            Fault = status is null ? "guard-missing" : ""
+        };
+        GameUiReadinessOutcome result = await host.Run(false, new());
+        Assert.Equal(GameUiReadinessState.Unknown, result.State);
+        Assert.Equal(0, result.StableFrames);
+        Assert.Equal(0, host.Taps);
+    }
+
+    [Theory]
+    [InlineData("login", "login.enter")]
+    [InlineData("server", "login.start")]
+    [InlineData("dock", "ready.dock-close")]
+    public async Task DialogAppearingAfterClassificationBlocksFreshActionWithoutTap(string state, string action)
+    {
+        using ReadyHost host = new(state) { Fault = "dialog-before-action" };
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal(action, Assert.Single(result.Actions).ActionId);
+        Assert.Equal("excluded_asset_present_or_unproven", result.Actions[0].Failure!.Details!["reason"]);
+        Assert.Equal(0, host.Taps);
+        Assert.Equal(0, result.TapAttempts);
     }
 
     [Fact]
@@ -263,7 +323,8 @@ public sealed class GameUiReadinessTests
     [InlineData(1440, "server", "server")]
     [InlineData(2160, "download-confirm", "download-confirm")]
     [InlineData(2160, "main-overlay", null)]
-    [InlineData(2160, "main-unknown-overlay", null)]
+    [InlineData(2160, "main-unknown-overlay", "blocked-dialog")]
+    [InlineData(2160, "main-sidebar-overlay", "blocked-sidebar")]
     [InlineData(2160, "download", "download")]
     [InlineData(2160, "login-transition", "login-transition")]
     [InlineData(2160, "unverified-update", "unverified-update")]
@@ -275,11 +336,20 @@ public sealed class GameUiReadinessTests
         GameUiObservation observed = new GameUiRecognizer(GameAssetCatalog.Default).Observe(frame,
             GameUiRecognizerTests.Provenance(frame), policy.AssetIds);
         Assert.Equal(expected, policy.Classify(observed)?.Id);
-        if (fixture.StartsWith("main-", StringComparison.Ordinal))
+        if (fixture.Contains("overlay", StringComparison.Ordinal))
         {
             Assert.Equal(GameMatchStatus.Unique, observed.Find("main.dock")!.Status);
             Assert.Equal(GameMatchStatus.Unique, observed.Find("main.depot")!.Status);
-            Assert.NotEqual(GameMatchStatus.Unique, observed.Find("main.clear-center")!.Status);
+            Assert.Equal(GameMatchStatus.Unique, observed.Find("main.battle")!.Status);
+            Assert.Equal(GameMatchStatus.Unique, observed.Find(fixture == "main-sidebar-overlay"
+                ? "overlay.sidebar-open" : "overlay.dialog-close")!.Status);
+            Assert.NotEqual(GameUiReadinessState.Ready, policy.Classify(observed)?.State);
+            if (fixture == "main-unknown-overlay")
+            {
+                Assert.Equal(GameMatchStatus.Absent, observed.Find("update.header")!.Status);
+                Assert.Equal(GameMatchStatus.Absent, observed.Find("update.download")!.Status);
+                Assert.Equal(GameMatchStatus.Absent, observed.Find("update.confirm")!.Status);
+            }
         }
     }
 
@@ -294,12 +364,30 @@ public sealed class GameUiReadinessTests
         {
             ("main", "main"), ("dock", "dock"), ("selection", "selection"), ("login", "login"),
             ("server", "server"), ("download", "download"), ("download-confirm", "download-confirm"),
-            ("login-transition", "login-transition"), ("main-overlay", null), ("main-unknown-overlay", null),
+            ("login-transition", "login-transition"), ("main-overlay", null), ("main-unknown-overlay", "blocked-dialog"),
+            ("main-sidebar-overlay", "blocked-sidebar"),
             ("unverified-update", "unverified-update"),
         })
         {
             NativeFixturesClassifySupportedStatesAndRejectMainUnderOverlay(height, fixture, expected);
         }
+    }
+
+    [Theory]
+    [InlineData(720)]
+    [InlineData(1080)]
+    [InlineData(1440)]
+    [InlineData(2160)]
+    public void StableMainIgnoresChangingBackgroundAndRejectsOverlays(int height)
+    {
+        foreach (string fixture in new[] { "main", "main-background-light", "main-background-dark" })
+        {
+            NativeFixturesClassifySupportedStatesAndRejectMainUnderOverlay(height, fixture, "main");
+        }
+
+        NativeFixturesClassifySupportedStatesAndRejectMainUnderOverlay(height, "main-overlay", null);
+        NativeFixturesClassifySupportedStatesAndRejectMainUnderOverlay(height, "main-unknown-overlay", "blocked-dialog");
+        NativeFixturesClassifySupportedStatesAndRejectMainUnderOverlay(height, "main-sidebar-overlay", "blocked-sidebar");
     }
 
     internal sealed class ReadyClock : TimeProvider
@@ -349,6 +437,7 @@ public sealed class GameUiReadinessTests
         internal bool Activity { get; init; }
         internal string Fault { get; init; } = "";
         internal GameMatchStatus? Guard { get; init; }
+        internal string GuardAssetId { get; init; } = "dock.selection-confirm";
         internal int Captures { get; private set; }
         internal int Viewports { get; private set; }
         internal int Taps { get; private set; }
@@ -412,9 +501,10 @@ public sealed class GameUiReadinessTests
 
             string[] present = state switch
             {
-                "main" => ["main.dock", "main.depot", "main.battle", "main.clear-center", "main.clear-left"],
-                "main-overlay" => ["main.dock", "main.depot", "main.battle", "main.clear-left", "update.header", "update.download", "update.confirm"],
-                "main-unknown-overlay" => ["main.dock", "main.depot", "main.battle", "main.clear-left"],
+                "main" => ["main.dock", "main.depot", "main.battle"],
+                "main-overlay" => ["main.dock", "main.depot", "main.battle", "overlay.dialog-close", "update.header", "update.download", "update.confirm"],
+                "main-unknown-overlay" => ["main.dock", "main.depot", "main.battle", "overlay.dialog-close"],
+                "main-sidebar-overlay" => ["main.dock", "main.depot", "main.battle", "overlay.sidebar-open"],
                 "login" => ["login.enter", "login.logo", "login.start"],
                 "server" => ["login.server", "login.logo", "login.start"],
                 "login-transition" => ["login.success", "login.server", "login.logo", "login.start"],
@@ -449,14 +539,15 @@ public sealed class GameUiReadinessTests
                 Clock.GetUtcNow().AddSeconds(Fault == "future" ? 1 : 0), timestamp,
                 Fault == "geometry" ? 1000 : Fault == "resized" && Captures > 1 ? 1280 : 3840,
                 Fault == "resized" && Captures > 1 ? 720 : 2160);
-            GameUiObservation observation = new(frame, [.. assets.Where(id => Fault != "guard-missing" || id != "dock.selection-confirm")
+            GameUiObservation observation = new(frame, [.. assets.Where(id => Fault != "guard-missing" || id != GuardAssetId)
                 .Select(id => new GameUiMatch(id, "test",
-                Fault == "native" ? GameMatchStatus.TechnicalFailure : id == "dock.selection-confirm" && Guard is not null
+                Fault == "native" ? GameMatchStatus.TechnicalFailure : id == GuardAssetId && Guard is not null
                     ? Guard.Value : Fault == "purpose-changed" && Captures > 1 && id == "update.download" ? GameMatchStatus.Absent
                         : Fault == "blink-guard" && Captures > 1 && id == "update.header" ? GameMatchStatus.Ambiguous
                         : Captures > 1 && id == "login.start" && (Fault is "blink-timeout" or "blink-guard" or "blink-cancel"
                             || (Fault == "blink-start" && Captures <= 4)) ? GameMatchStatus.Absent
-                        : present.Contains(id, StringComparer.Ordinal) ? GameMatchStatus.Unique : GameMatchStatus.Absent,
+                         : Fault == "dialog-before-action" && Captures > 1 && id == "overlay.dialog-close" ? GameMatchStatus.Unique
+                         : present.Contains(id, StringComparer.Ordinal) ? GameMatchStatus.Unique : GameMatchStatus.Absent,
                 new(10, 10, 100, 80), new(20, 20, 80, 60), 1, 0, 0, "test"))])
             { VisualActivity = Activity ? Captures * 0.1 : 1 };
             return Task.FromResult(ApplicationResult<GameUiObservation>.Success(observation));

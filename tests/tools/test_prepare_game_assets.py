@@ -244,6 +244,26 @@ class PrepareGameAssetsTests(unittest.TestCase):
         self.assertEqual(first, self.snapshot(), "Повторный запуск должен быть байтово воспроизводимым")
         self.assertEqual(sources_before, [path.read_bytes() for path in self.sources])
 
+    def test_state_background_changes_without_changing_ui_crops(self):
+        states = {"light": {"assets": ["dock.header"], "background": [220, 210, 200]},
+                  "dark": {"assets": ["dock.header"], "background": [8, 12, 20]}}
+        (self.root / "tests/fixtures/game/states.json").write_text(json.dumps(states), encoding="utf-8")
+        generator.prepare(self.sources, self.root)
+        for state, background in (("light", (220, 210, 200)), ("dark", (8, 12, 20))):
+            with Image.open(self.root / f"tests/fixtures/game/{state}-720.png") as image:
+                self.assertEqual(background, image.getpixel((1000, 600)))
+                self.assertEqual((20, 80, 120), image.getpixel((12, 8)))
+
+    def test_invalid_state_background_never_publishes_partial_output(self):
+        for background in ([0, 0], [0, 0, 256], [0, 0, -1], [0, True, 0], "red"):
+            with self.subTest(background=background):
+                path = self.root / "tests/fixtures/game/states.json"
+                path.write_text(json.dumps({"bad": {"assets": [], "background": background}}), encoding="utf-8")
+                before = self.snapshot()
+                with self.assertRaisesRegex(ValueError, "состав или фон"):
+                    generator.prepare(self.sources, self.root)
+                self.assertEqual(before, self.snapshot())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

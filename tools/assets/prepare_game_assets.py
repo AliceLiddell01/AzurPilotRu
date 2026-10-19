@@ -160,12 +160,20 @@ def prepare(source_paths: list[Path], root: Path):
         "main": [a["id"] for a in catalog["assets"] if a["id"].startswith("main.")],
         "dock": [a for a in ("dock.header",) if a in known],
         "selection": [a for a in ("dock.header", "dock.selection-confirm") if a in known]}
-    if any(not re.fullmatch(r"[a-zA-Z0-9_-]+", name) or not isinstance(ids, list)
-           or any(asset_id not in known for asset_id in ids) for name, ids in states.items()):
-        raise ValueError("Недопустимый состав синтетического состояния")
+    prepared_states = {}
+    for name, value in states.items():
+        ids = value.get("assets") if isinstance(value, dict) else value
+        background = value.get("background", [37, 46, 58]) if isinstance(value, dict) else [37, 46, 58]
+        if (not re.fullmatch(r"[a-zA-Z0-9_-]+", name) or not isinstance(ids, list)
+                or any(asset_id not in known for asset_id in ids)
+                or not isinstance(background, list) or len(background) != 3
+                or any(type(channel) is not int or not 0 <= channel <= 255 for channel in background)
+                or (isinstance(value, dict) and value.keys() - {"assets", "background"})):
+            raise ValueError("Недопустимый состав или фон синтетического состояния")
+        prepared_states[name] = (ids, tuple(background))
     for width, height in ((1280, 720), (1920, 1080), (2560, 1440), (3840, 2160)):
-        for state, included_ids in states.items():
-            canvas = Image.new("RGB", (width, height), (37, 46, 58))
+        for state, (included_ids, background) in prepared_states.items():
+            canvas = Image.new("RGB", (width, height), background)
             for asset in catalog["assets"]:
                 if asset["id"] in included_ids:
                     variant = asset["variants"][0]

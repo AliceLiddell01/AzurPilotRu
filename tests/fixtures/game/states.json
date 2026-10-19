@@ -2,9 +2,7 @@
   "main": [
     "main.dock",
     "main.depot",
-    "main.battle",
-    "main.clear-center",
-    "main.clear-left"
+    "main.battle"
   ],
   "dock": [
     "dock.header"
@@ -41,7 +39,7 @@
     "main.dock",
     "main.depot",
     "main.battle",
-    "main.clear-left",
+    "overlay.dialog-close",
     "update.header",
     "update.download",
     "update.confirm"
@@ -50,10 +48,40 @@
     "main.dock",
     "main.depot",
     "main.battle",
-    "main.clear-left"
+    "overlay.dialog-close"
   ],
   "unverified-update": [
     "update.header",
     "update.confirm"
-  ]
+  ],
+  "main-sidebar-overlay": [
+    "main.dock",
+    "main.depot",
+    "main.battle",
+    "overlay.sidebar-open"
+  ],
+  "main-background-light": {
+    "assets": [
+      "main.dock",
+      "main.depot",
+      "main.battle"
+    ],
+    "background": [
+      220,
+      210,
+      200
+    ]
+  },
+  "main-background-dark": {
+    "assets": [
+      "main.dock",
+      "main.depot",
+      "main.battle"
+    ],
+    "background": [
+      8,
+      12,
+      20
+    ]
+  }
 }
