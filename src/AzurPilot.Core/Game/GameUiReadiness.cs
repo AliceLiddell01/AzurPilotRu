@@ -198,6 +198,7 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                 }
                 catch (ArgumentOutOfRangeException)
                 {
+                    state = GameUiReadinessState.Unknown;
                     return Rejected("geometry_rejected");
                 }
 

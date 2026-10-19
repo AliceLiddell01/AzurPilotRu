@@ -248,6 +248,15 @@ public sealed class GameUiReadinessTests
     }
 
     [Fact]
+    public async Task GeometryRejectedAfterLoadingDoesNotReportStaleLoadingState()
+    {
+        using ReadyHost host = new("loading") { Fault = "late-geometry" };
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal("geometry_rejected", result.Reason);
+        Assert.Equal(GameUiReadinessState.Unknown, result.State);
+    }
+
+    [Fact]
     public async Task FlickeringUnknownScreenDoesNotRestartInactivityLimit()
     {
         // Чередование Unknown и распознанного перехода не должно перезапускать срок бездействия при каждой смене.
@@ -813,7 +822,7 @@ public sealed class GameUiReadinessTests
                 Fault == "wrong-endpoint" ? new("other-host", 20312) : Endpoint,
                 DateTimeOffset.UnixEpoch.AddTicks(timestamp).AddSeconds(Fault == "future" ? 13 : 0),
                 Fault == "stale" ? timestamp - TimeSpan.FromSeconds(13).Ticks : timestamp,
-                Fault == "geometry" ? 1000 : Fault == "resized" && later ? 1280 : 3840,
+                Fault == "geometry" || (Fault == "late-geometry" && Captures > 2) ? 1000 : Fault == "resized" && later ? 1280 : 3840,
                 Fault == "resized" && later ? 720 : 2160);
             if (_previous is not null && Fault == "replayed-id")
             {
