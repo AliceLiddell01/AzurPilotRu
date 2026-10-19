@@ -7,24 +7,58 @@ namespace AzurPilot.Core.Game;
 /// <summary>Одно действие: свежее распознавание → проверка ввода → нажатие → отдельное наблюдение эффекта с ограничением времени.</summary>
 public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
 {
+    private static readonly TimeSpan PostconditionInterval = TimeSpan.FromMilliseconds(150);
     private readonly TimeProvider _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+    private GameUiMeter? _meter;
+
+    internal GameUiActionRunner(GameUiMeter meter, IGameUiHost host) : this(host, meter.Clock)
+    {
+        _meter = meter;
+    }
 
     /// <summary>Выполняет переход под арендой вызывающего операторского сервиса.</summary>
-    public async Task<GameActionOutcome> RunAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,
+    public Task<GameActionOutcome> RunAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,
         GameUiAction action, GameActionProgress progress, CancellationToken cancellationToken)
+    {
+        return RunAsync(instanceId, endpoint, action, progress, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Выполняет переход; уже классифицированный кадр (например, доказательство предыдущего действия)
+    /// используется как исходный, только если в нём есть результаты всех признаков действия. Все проверки
+    /// исходного кадра, его свежести и viewport перед вводом остаются прежними.
+    /// </summary>
+    public async Task<GameActionOutcome> RunAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,
+        GameUiAction action, GameActionProgress progress, GameUiObservation? classified, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(progress);
+        GameUiMeter meter = _meter ??= new(host, _clock, _clock.GetTimestamp());
+        long actionStarted = _clock.GetTimestamp();
+        meter.BeginAction();
         GameUiObservation? before = null;
         GameUiObservation? after = null;
         GameInputPoint? point = null;
         bool attempted = false;
         bool proven = false;
+        int sourceObservations = 0, postconditionObservations = 0;
+        long? tapCompleted = null, lastUnchanged = null;
         IReadOnlyList<string> excluded = action.ExcludedAssetIds ?? [];
-        string[] assets = [.. new[] { action.SourceAssetId, action.PostconditionAssetId }.Concat(excluded).Distinct(StringComparer.Ordinal)];
+        IReadOnlyList<string> required = action.RequiredAssetIds ?? [];
+        string[] posts = [action.PostconditionAssetId, .. action.AlternativePostconditionAssetIds ?? []];
+        string[] assets = [.. new[] { action.SourceAssetId }.Concat(posts).Concat(excluded).Concat(required).Distinct(StringComparer.Ordinal)];
+        double? At(long? timestamp)
+        {
+            return timestamp is long value ? GameUiMeter.Milliseconds(_clock, actionStarted, value) : null;
+        }
+
         GameActionOutcome Result(ApplicationFailure? failure)
         {
-            return new(action.Id, before, after, point, attempted, proven, failure);
+            return new(action.Id, before, after, point, attempted, proven, failure, sourceObservations, postconditionObservations)
+            {
+                Timing = new(GameUiMeter.Milliseconds(_clock, actionStarted, _clock.GetTimestamp()), At(tapCompleted),
+                    At(lastUnchanged), proven ? At(after!.Frame.CaptureStartedTimestamp) : null, meter.EndAction()),
+            };
         }
 
         GameActionOutcome Rejected(string reason)
@@ -35,14 +69,28 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ApplicationResult<GameUiObservation> observed = await host.ObserveAsync(instanceId, endpoint,
-                assets, cancellationToken).ConfigureAwait(false);
-            if (observed.IsFailure)
+            if (classified is not null && assets.All(id => classified.Find(id) is not null))
             {
-                return Result(observed.FailureInfo);
+                before = classified;
+            }
+            else
+            {
+                long requestedAt = _clock.GetTimestamp();
+                ApplicationResult<GameUiObservation> observed = await meter.ObserveAsync(instanceId, endpoint,
+                    assets, cancellationToken).ConfigureAwait(false);
+                sourceObservations++;
+                if (observed.IsFailure)
+                {
+                    return Result(observed.FailureInfo);
+                }
+
+                before = observed.Value!;
+                if (before.Frame.CaptureStartedTimestamp < requestedAt)
+                {
+                    return Rejected("source_frame_invalid");
+                }
             }
 
-            before = observed.Value!;
             if (!SameTarget(before.Frame, instanceId, endpoint))
             {
                 return Rejected("target_mismatch");
@@ -53,21 +101,45 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
                 return Rejected("excluded_asset_present_or_unproven");
             }
 
-            GameUiMatch? match = before.Find(action.SourceAssetId);
-            if (match?.Status != GameMatchStatus.Unique || match.SafeTapBounds is not GamePixelRect safe)
+            if (required.Any(id => before.Find(id)?.Status != GameMatchStatus.Unique))
             {
-                return Rejected("source_" + (match?.Status.ToString() ?? "missing"));
+                return Rejected("required_asset_unproven");
             }
 
-            if (before.Find(action.PostconditionAssetId)?.Status != GameMatchStatus.Absent)
+            if (posts.Any(id => before.Find(id)?.Status != GameMatchStatus.Absent))
             {
                 return Rejected("postcondition_not_absent_before_action");
             }
 
-            GameGeometry geometry;
+            GameUiMatch? match = before.Find(action.SourceAssetId);
+            if (match?.Status != GameMatchStatus.Unique || match.Bounds is not GamePixelRect bounds)
+            {
+                return Rejected("source_" + (match?.Status.ToString() ?? "missing"));
+            }
+
+            GamePixelRect safe;
             try
             {
-                geometry = new(before.Frame.Width, before.Frame.Height);
+                GameGeometry geometry = new(before.Frame.Width, before.Frame.Height);
+                if (action.TapArea is GameRect area)
+                {
+                    // Отдельная область ввода не должна перекрывать распознанный якорь.
+                    safe = geometry.MapInside(area);
+                    if (safe.Left < bounds.Right && bounds.Left < safe.Right && safe.Top < bounds.Bottom && bounds.Top < safe.Bottom)
+                    {
+                        return Rejected("unsafe_action_region");
+                    }
+                }
+                else if (match.SafeTapBounds is GamePixelRect attached && attached.Left >= bounds.Left && attached.Top >= bounds.Top
+                    && attached.Right <= bounds.Right && attached.Bottom <= bounds.Bottom)
+                {
+                    safe = attached;
+                }
+                else
+                {
+                    return Rejected("unsafe_action_region");
+                }
+
                 point = geometry.Center(safe);
             }
             catch (ArgumentOutOfRangeException)
@@ -75,13 +147,7 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
                 return Rejected("geometry_rejected");
             }
 
-            if (match.Bounds is not GamePixelRect bounds || safe.Left < bounds.Left || safe.Top < bounds.Top
-                || safe.Right > bounds.Right || safe.Bottom > bounds.Bottom)
-            {
-                return Rejected("unsafe_action_region");
-            }
-
-            ApplicationResult<bool> mapping = await host.ValidateInputAsync(before.Frame, cancellationToken).ConfigureAwait(false);
+            ApplicationResult<bool> mapping = await meter.ValidateAsync(before.Frame, cancellationToken).ConfigureAwait(false);
             if (mapping.IsFailure)
             {
                 return Result(mapping.FailureInfo);
@@ -102,8 +168,10 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
             cancellationToken.ThrowIfCancellationRequested();
             attempted = true;
             progress.MutationAttempted = true;
+            progress.TapAttempts++;
             GameTap permit = new(before.Frame, action.SourceAssetId, safe, point.Value, action.MaximumObservationAge);
-            ApplicationResult<AndroidCommandOutcome> tap = await host.TapAsync(permit, cancellationToken).ConfigureAwait(false);
+            ApplicationResult<AndroidCommandOutcome> tap = await meter.TapAsync(permit, cancellationToken).ConfigureAwait(false);
+            tapCompleted = _clock.GetTimestamp();
             if (tap.IsFailure)
             {
                 return Result(tap.FailureInfo);
@@ -115,11 +183,16 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
             }
 
             long started = _clock.GetTimestamp();
+            HashSet<Guid> frames = [before.Frame.FrameId];
+            long previousCapture = before.Frame.CaptureStartedTimestamp;
+            long? previousRequest = null;
             while (_clock.GetElapsedTime(started) < action.PostconditionTimeout)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                ApplicationResult<GameUiObservation> next = await host.ObserveAsync(instanceId, endpoint,
+                await meter.PaceAsync(previousRequest, PostconditionInterval, cancellationToken).ConfigureAwait(false);
+                previousRequest = _clock.GetTimestamp();
+                ApplicationResult<GameUiObservation> next = await meter.ObserveAsync(instanceId, endpoint,
                     assets, cancellationToken).ConfigureAwait(false);
+                postconditionObservations++;
                 if (next.IsFailure)
                 {
                     return Result(next.FailureInfo);
@@ -131,22 +204,26 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
                     return Rejected("excluded_asset_present_or_unproven");
                 }
 
-                if (!SameTarget(after.Frame, instanceId, endpoint) || after.Frame.FrameId == before.Frame.FrameId
+                if (!SameTarget(after.Frame, instanceId, endpoint) || !frames.Add(after.Frame.FrameId)
+                    || after.Frame.CaptureStartedTimestamp < previousCapture
                     || after.Frame.CaptureStartedTimestamp < started
                     || after.Frame.Width != before.Frame.Width || after.Frame.Height != before.Frame.Height)
                 {
                     return Rejected("postcondition_frame_invalid");
                 }
 
+                previousCapture = after.Frame.CaptureStartedTimestamp;
+
                 if (_clock.GetElapsedTime(started) >= action.PostconditionTimeout)
                 {
                     return Rejected("postcondition_unknown");
                 }
 
-                if (after.Find(action.PostconditionAssetId)?.Status == GameMatchStatus.Unique
+                if (posts.Any(id => after.Find(id)?.Status == GameMatchStatus.Unique)
+                    && posts.All(id => after.Find(id)?.Status is GameMatchStatus.Unique or GameMatchStatus.Absent)
                     && after.Find(action.SourceAssetId)?.Status == GameMatchStatus.Absent)
                 {
-                    ApplicationResult<bool> postMapping = await host.ValidateInputAsync(after.Frame, cancellationToken).ConfigureAwait(false);
+                    ApplicationResult<bool> postMapping = await meter.ValidateAsync(after.Frame, cancellationToken).ConfigureAwait(false);
                     if (postMapping.IsFailure)
                     {
                         return Result(postMapping.FailureInfo);
@@ -169,7 +246,7 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
                     return Result(null);
                 }
 
-                await Task.Delay(TimeSpan.FromMilliseconds(150), _clock, cancellationToken).ConfigureAwait(false);
+                lastUnchanged = after.Frame.CaptureStartedTimestamp;
             }
 
             return Rejected("postcondition_unknown");

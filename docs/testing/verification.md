@@ -267,7 +267,9 @@ application host, MuMu-capability и Android/ADB readiness вместе с lifec
 
 Она не доказывает и не должна имитировать в hosted CI работу реальной установки MuMu, реального ADB,
 готовности реального устройства и lifecycle игры внутри Android: hosted CI ничего из этого не запускает.
-Не доказываются готовность UI игры по изображению, OCR/ONNX/GPU inference, ввод и live-device состояние.
+Распознавание, UI readiness и безопасный ввод проверяются детерминированно по
+[game-ui](game-ui.md); реальная готовность установленной игры и live-device состояние этим не доказываются.
+OCR/ONNX/GPU inference не входит в текущую capability.
 Hosted CI проверяет screenshot pipeline только на небольших
 контролируемых PNG fixtures; фактический MuMu capture и пользовательские samples проверяются локально
 режимами [screenshot acceptance](screenshot-acceptance.md). Управляемые границы доказывают корректность

@@ -13,6 +13,7 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
     private readonly AndroidMutationProgress _gameMutation = new();
     private readonly AndroidMutationProgress _androidMutation = new();
     private readonly Core.Game.GameActionProgress _uiMutation = new();
+    private GameUiEnsureTimeline? _timeline;
     private string _effect = "none";
     internal string Effect
     {
@@ -153,6 +154,7 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
             stage = Stage,
             preparation = Preparation,
             completed = Completed?.Data,
+            lifecycle = _timeline?.Phases,
             mutation = new { androidPreparation = _androidMutation, game = _gameMutation, gameUi = _uiMutation },
             postcondition = (object?)null,
         }, failure, Effect);
@@ -177,6 +179,32 @@ internal sealed class AgentContext(AzurPilotOperatorService? service)
     {
         Stage = "mutation";
         Effect = "mayHaveChanged";
+    }
+
+    internal async Task<AgentPayload> GameUiReadyAsync(bool ensure, CancellationToken token)
+    {
+        Stage = ensure ? "game-ui-ready-ensure" : "game-ui-ready-observe";
+        if (!ensure)
+        {
+            ApplicationResult<Core.Game.GameUiReadinessOutcome> observed = await Service.ObserveGameUiReadyAsync(Target!.Value, token).ConfigureAwait(false);
+            return observed.IsFailure ? new(null, observed.FailureInfo)
+                : new(observed.Value, observed.Value!.Failure);
+        }
+
+        _timeline = Service.CreateGameUiTimeline();
+        ApplicationResult<GameUiEnsureOutcome> result = await Service.EnsureGameUiReadyAsync(Target!.Value,
+            _uiMutation, _gameMutation, _androidMutation, RecordPreparation, token, _timeline).ConfigureAwait(false);
+        GameUiEnsureOutcome? outcome = result.IsSuccess ? result.Value : null;
+        return new(new
+        {
+            preparation = Preparation,
+            lifecycle = _timeline.Phases,
+            game = outcome?.Game,
+            ui = outcome?.Ui,
+            mutation = new { android = _androidMutation, game = _gameMutation, gameUi = _uiMutation }
+        },
+            result.IsFailure ? result.FailureInfo : outcome!.Ui!.Failure
+                ?? (outcome.Ui.State == Core.Game.GameUiReadinessState.Ready ? null : Core.Game.GameUiActionRunner.Failure("ui_not_ready", _uiMutation.MutationAttempted)), Effect);
     }
 
     private void RecordPreparation(AzurPilotOperatorAndroidPreparationOutcome outcome)

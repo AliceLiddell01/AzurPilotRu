@@ -28,9 +28,19 @@ public sealed record GameUiMatch(string AssetId, string? VariantId, GameMatchSta
     GamePixelRect? Bounds, GamePixelRect? SafeTapBounds, double Score, double RunnerUpScore,
     double MeanAbsoluteError, string Reason);
 
+/// <summary>Стоимость одного наблюдения на стороне host; захват включает ADB-команду и декодирование PNG.</summary>
+public sealed record GameObservationCost(TimeSpan Capture, TimeSpan CaptureCommand, TimeSpan Match);
+
 /// <summary>Один кадр и результаты поиска в нём.</summary>
 public sealed record GameUiObservation(GameFrameProvenance Frame, IReadOnlyList<GameUiMatch> Matches)
 {
+    /// <summary>
+    /// Доля заполнения полосы прогресса из каталога (0–1, шаг — сегмент полосы); null, если владелец полосы не
+    /// распознан или картина полосы не доказана. Рост показывает продвижение, но не завершение загрузки.
+    /// </summary>
+    public double? ProgressLevel { get; init; }
+    /// <summary>Измеренная host стоимость захвата и распознавания, если она известна.</summary>
+    public GameObservationCost? Cost { get; init; }
     /// <summary>Требует единственного результата запрошенного ассета.</summary>
     public GameUiMatch? Find(string id)
     {
@@ -38,9 +48,14 @@ public sealed record GameUiObservation(GameFrameProvenance Frame, IReadOnlyList<
     }
 }
 
-/// <summary>Разрешённый переход между независимо наблюдаемыми признаками.</summary>
+/// <summary>
+/// Разрешённый переход между независимо наблюдаемыми признаками. TapArea — отдельная логическая область
+/// ввода при распознанном якоре; без неё ввод разрешён только внутри распознанного источника.
+/// </summary>
 public sealed record GameUiAction(string Id, string SourceAssetId, string PostconditionAssetId,
-    TimeSpan MaximumObservationAge, TimeSpan PostconditionTimeout, IReadOnlyList<string>? ExcludedAssetIds = null);
+    TimeSpan MaximumObservationAge, TimeSpan PostconditionTimeout, IReadOnlyList<string>? ExcludedAssetIds = null,
+    IReadOnlyList<string>? RequiredAssetIds = null, IReadOnlyList<string>? AlternativePostconditionAssetIds = null,
+    GameRect? TapArea = null);
 
 /// <summary>Однократное разрешение нажатия, создаваемое Core после проверки распознавания, области игры и свежести кадра.</summary>
 public sealed class GameTap
@@ -89,6 +104,8 @@ public interface IGameUiHost
 /// <summary>Сохраняет известный частичный эффект при исключениях и отмене.</summary>
 public sealed class GameActionProgress
 {
+    /// <summary>Число начатых вызовов однократного ввода; сохраняется также при исключении внешней границы.</summary>
+    public int TapAttempts { get; internal set; }
     /// <summary>Вызвана внешняя операция изменения состояния.</summary>
     public bool MutationAttempted { get; internal set; }
     /// <summary>Переход доказан отдельным кадром.</summary>
@@ -97,4 +114,17 @@ public sealed class GameActionProgress
 
 /// <summary>Итог действия с ограничением времени; Unknown не означает NoEffect.</summary>
 public sealed record GameActionOutcome(string ActionId, GameUiObservation? Before, GameUiObservation? After,
-    GameInputPoint? Point, bool MutationAttempted, bool ChangeProven, ApplicationFailure? Failure);
+    GameInputPoint? Point, bool MutationAttempted, bool ChangeProven, ApplicationFailure? Failure,
+    int SourceObservations = 0, int PostconditionObservations = 0)
+{
+    /// <summary>Время и собственная работа бота в этом действии.</summary>
+    public GameActionTiming? Timing { get; init; }
+}
+
+/// <summary>
+/// Миллисекунды от начала действия. TapCompletedAtMs — возврат команды ввода; LastUnchangedFrameAtMs и
+/// ProofFrameAtMs — начала захвата последнего кадра без доказанного эффекта и кадра-доказательства: смена
+/// экрана игрой лежит между ними (с точностью до длительности захвата). Work — работа бота внутри действия.
+/// </summary>
+public sealed record GameActionTiming(double ElapsedMs, double? TapCompletedAtMs, double? LastUnchangedFrameAtMs,
+    double? ProofFrameAtMs, GameUiWork Work);

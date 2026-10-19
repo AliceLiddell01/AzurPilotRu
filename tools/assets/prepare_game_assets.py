@@ -96,15 +96,15 @@ def publish(outputs, root):
 def prepare(source_paths: list[Path], root: Path):
     catalog_path = root / "assets/game/catalog.json"
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-    negative_recipes = json.loads((root / "tests/fixtures/game/provenance.json").read_text(encoding="utf-8"))
+    sample_recipes = json.loads((root / "tests/fixtures/game/provenance.json").read_text(encoding="utf-8"))
     try:
         recipes = [variant for asset in catalog["assets"] for variant in asset["variants"]]
-        recipes.extend(negative_recipes.values())
+        recipes.extend(sample_recipes.values())
         filenames = [variant["file"] for asset in catalog["assets"] for variant in asset["variants"]]
         if any(not isinstance(asset["id"], str) for asset in catalog["assets"]):
             raise ValueError("Недопустимый идентификатор ассета")
     except (KeyError, TypeError, AttributeError) as error:
-        raise ValueError("Неполный каталог ассетов или отрицательных образцов") from error
+        raise ValueError("Неполный каталог ассетов или реальных образцов") from error
     if not catalog["assets"] or any(not asset["variants"] for asset in catalog["assets"]):
         raise ValueError("Каталог должен содержать ассеты с вариантами")
     output_names = set()
@@ -115,8 +115,8 @@ def prepare(source_paths: list[Path], root: Path):
                 or name in output_names):
             raise ValueError("Недопустимое или повторное имя выходного PNG")
         output_names.add(name)
-    if any(not re.fullmatch(r"[a-zA-Z0-9_-]+", name) for name in negative_recipes):
-        raise ValueError("Недопустимое имя отрицательного образца")
+    if any(not re.fullmatch(r"[a-zA-Z0-9_-]+", name) for name in sample_recipes):
+        raise ValueError("Недопустимое имя реального образца")
     sources = {}
     for path in source_paths:
         try:
@@ -154,21 +154,37 @@ def prepare(source_paths: list[Path], root: Path):
 
     # Искусственные образцы содержат только неперсональные UI-crops на однотонном фоне.
     # Это доказательство масштабирования/ROI, а не работы нативного UI в другом разрешении.
+    states_path = root / "tests/fixtures/game/states.json"
+    known = {a["id"] for a in catalog["assets"]}
+    try:
+        states = json.loads(states_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("Отсутствует или повреждён состав синтетических состояний states.json") from error
+    if not isinstance(states, dict):
+        raise ValueError("Недопустимый состав или фон синтетического состояния")
+    prepared_states = {}
+    for name, value in states.items():
+        ids = value.get("assets") if isinstance(value, dict) else value
+        background = value.get("background", [37, 46, 58]) if isinstance(value, dict) else [37, 46, 58]
+        if (not re.fullmatch(r"[a-zA-Z0-9_-]+", name) or not isinstance(ids, list)
+                or any(asset_id not in known for asset_id in ids)
+                or not isinstance(background, list) or len(background) != 3
+                or any(type(channel) is not int or not 0 <= channel <= 255 for channel in background)
+                or (isinstance(value, dict) and value.keys() - {"assets", "background"})):
+            raise ValueError("Недопустимый состав или фон синтетического состояния")
+        prepared_states[name] = (ids, tuple(background))
     for width, height in ((1280, 720), (1920, 1080), (2560, 1440), (3840, 2160)):
-        for state in ("main", "dock", "selection"):
-            canvas = Image.new("RGB", (width, height), (37, 46, 58))
+        for state, (included_ids, background) in prepared_states.items():
+            canvas = Image.new("RGB", (width, height), background)
             for asset in catalog["assets"]:
-                included = (state == "main" and asset["id"].startswith("main.")) or (
-                    state in ("dock", "selection") and asset["id"] == "dock.header") or (
-                    state == "selection" and asset["id"] == "dock.selection-confirm")
-                if included:
+                if asset["id"] in included_ids:
                     variant = asset["variants"][0]
                     box = physical_bounds(bounds(variant["crop"]), width, height)
                     patch = crops[variant["file"]].resize((box[2] - box[0], box[3] - box[1]), Image.Resampling.BOX)
                     canvas.paste(patch, box[:2])
             outputs[root / "tests/fixtures/game" / f"{state}-{height}.png"] = png_bytes(canvas)
 
-    for name, recipe in negative_recipes.items():
+    for name, recipe in sample_recipes.items():
         source = sources[recipe["sourceSha256"]]
         box = physical_bounds(bounds(recipe["crop"]), source.width, source.height)
         canvas = Image.new("RGB", source.size, (37, 46, 58))

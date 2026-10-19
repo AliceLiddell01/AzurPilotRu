@@ -135,6 +135,449 @@
           "maximumMeanAbsoluteError": 16
         }
       ]
+    },
+    {
+      "id": "main.battle",
+      "purpose": "Независимый правый признак главного меню; ввод запрещён.",
+      "search": {
+        "left": 1117,
+        "top": 542,
+        "right": 1243,
+        "bottom": 584
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "main.battle.png",
+          "sourceSha256": "66ea44215e2292b5cdd277f971c48511ab88b8fbc78432d38b04b17d3d2a50d9",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 1120,
+            "top": 545,
+            "right": 1240,
+            "bottom": 581
+          },
+          "sha256": "4b70d1d9c060a4288b88e5da77300fb85182975031c9db54702af64df163d8c0",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "overlay.dialog-close",
+      "purpose": "Рамка модального окна: красный крест закрытия независимо от заголовка и содержимого; только запрещающий guard, без tap.",
+      "search": {
+        "left": 640,
+        "top": 80,
+        "right": 1120,
+        "bottom": 550
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "overlay.dialog-close.png",
+          "sourceSha256": "23bf78b7b59004f1865aeef157287f391e771d25f583552bbb3a6dd186af44b2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 914,
+            "top": 180,
+            "right": 951,
+            "bottom": 219
+          },
+          "sha256": "07f9afe312d7b6d953c2bc412723bddb5b2c934b81344ab8bb45561d78ea017b",
+          "mode": "Rgb",
+          "minimumScore": 0.9,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 24
+        }
+      ]
+    },
+    {
+      "id": "overlay.sidebar-open",
+      "purpose": "Заголовок Commissions открытой левой панели; фон персонажа и значения наград не участвуют, без tap.",
+      "search": {
+        "left": 68,
+        "top": 225,
+        "right": 225,
+        "bottom": 270
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "overlay.sidebar-open.png",
+          "sourceSha256": "e75fdc8ea62b1284825bd568318286b7a51cf58084162f6828a690b325dae875",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 77,
+            "top": 235,
+            "right": 216,
+            "bottom": 260
+          },
+          "sha256": "98912d2eab2112f8a949eec71d33fa4ffd9ba431445898fe845b1d768bb1063f",
+          "mode": "Rgb",
+          "minimumScore": 0.9,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 18
+        }
+      ]
+    },
+    {
+      "id": "login.logo",
+      "purpose": "Контекст Global/EN login; не подтверждает успешный вход.",
+      "search": {
+        "left": 21,
+        "top": 7,
+        "right": 181,
+        "bottom": 94
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "login.logo.png",
+          "sourceSha256": "248f5e284f0c2e7008f768da50ecf0aee910f337e9e18ab2af59e5e991c79cd2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 24,
+            "top": 10,
+            "right": 178,
+            "bottom": 91
+          },
+          "sha256": "188fd5e82c3bdde78f854d0e8199766859fdeed40b252774d5c45eb630f340d9",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "login.enter",
+      "purpose": "Только LOG IN существующей сессии, без logout/recovery.",
+      "search": {
+        "left": 549,
+        "top": 533,
+        "right": 731,
+        "bottom": 576
+      },
+      "safeTapOffset": {
+        "left": 30,
+        "top": 8,
+        "right": 145,
+        "bottom": 30
+      },
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "login.enter.png",
+          "sourceSha256": "248f5e284f0c2e7008f768da50ecf0aee910f337e9e18ab2af59e5e991c79cd2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 552,
+            "top": 536,
+            "right": 728,
+            "bottom": 573
+          },
+          "sha256": "b0548afca9f5abcb1b66515f3768c2806c69652769bd2df64324194a05e495cd",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "login.server",
+      "purpose": "Фиксированная подпись SERVER без имени сервера или аккаунта.",
+      "search": {
+        "left": 431,
+        "top": 556,
+        "right": 540,
+        "bottom": 601
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "login.server.png",
+          "sourceSha256": "5e3be6cded7ae81d7f9461f5eb9c339d7113e27862e3499ac4d60bdf78ded5a0",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 434,
+            "top": 559,
+            "right": 537,
+            "bottom": 598
+          },
+          "sha256": "8245c39bdd0d3bf27c9ff3bb4ca811b0cc1ce5d857b9cb61a1b84420e8984aa3",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "login.criware",
+      "purpose": "Непрозрачная плашка CRIWARE экрана входа без фона; видна и на LOG IN, поэтому ввод разрешается только вместе с SERVER.",
+      "search": {
+        "left": 1212,
+        "top": 652,
+        "right": 1271,
+        "bottom": 711
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "login.criware.png",
+          "sourceSha256": "5e3be6cded7ae81d7f9461f5eb9c339d7113e27862e3499ac4d60bdf78ded5a0",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 1217,
+            "top": 657,
+            "right": 1266,
+            "bottom": 706
+          },
+          "sha256": "57958e9753b54e1572f3c657b0147e1b56bbefb3753b4d7abf020bff2cb8d0a6",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "login.success",
+      "purpose": "Временный баннер не является доказательством Ready; только пассивное ожидание.",
+      "search": {
+        "left": 506,
+        "top": 297,
+        "right": 738,
+        "bottom": 346
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "login.success.png",
+          "sourceSha256": "5e3be6cded7ae81d7f9461f5eb9c339d7113e27862e3499ac4d60bdf78ded5a0",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 509,
+            "top": 300,
+            "right": 735,
+            "bottom": 343
+          },
+          "sha256": "9c5a0144f31dad09636cbacafdb13f93083819a08d5a0b2939ce4cee47a437e4",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "loading.startup",
+      "purpose": "Подписи стартовой загрузки без обновления: проверка обновлений и Update complete; без точек, фона и кубика; только пассивное ожидание.",
+      "search": {
+        "left": 503,
+        "top": 667,
+        "right": 761,
+        "bottom": 694
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "update-complete",
+          "file": "loading.startup.png",
+          "sourceSha256": "34882ad3f664a091e8bd759ff243f5f751d69fdc8d54e770d28940233081f065",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 506,
+            "top": 672,
+            "right": 758,
+            "bottom": 689
+          },
+          "sha256": "b966787347a7e74466c0140ab10513416bc7660595dce5c47b7a1d0129c480ea",
+          "mode": "Luma",
+          "minimumScore": 0.8,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 42
+        },
+        {
+          "id": "checking-updates",
+          "file": "loading.startup-checking.png",
+          "sourceSha256": "e65cb10f6e66bb95f7f687ae7c243a546e0a7d889867f20326206ba58164dca9",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 550,
+            "top": 672,
+            "right": 716,
+            "bottom": 689
+          },
+          "sha256": "f00c823fb77265f7c3b0f44bba32a7f64336cb5e468ec6b663701d9e3f9ab155",
+          "mode": "Luma",
+          "minimumScore": 0.8,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 42
+        }
+      ]
+    },
+    {
+      "id": "loading.download",
+      "purpose": "Начало центрированной подписи скачивания; цифры не входят, поиск допускает сдвиг строки при изменении их длины.",
+      "search": {
+        "left": 140,
+        "top": 666,
+        "right": 420,
+        "bottom": 695
+      },
+      "safeTapOffset": null,
+      "progress": {
+        "region": {
+          "left": 0,
+          "top": 700,
+          "right": 1280,
+          "bottom": 703
+        },
+        "segments": 64,
+        "filledMinimumBlue": 200,
+        "filledMinimumBlueOverRed": 100,
+        "emptyMaximumBlue": 80
+      },
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "loading.download.png",
+          "sourceSha256": "3233eca025e50b85a3a44dd4664203bd8111146365db25171a6909297d2c32fb",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 191,
+            "top": 669,
+            "right": 370,
+            "bottom": 692
+          },
+          "sha256": "f1f19feb2ccfe4a01a759464b5b152d6f27c630be5b301df34e0575e8996b459",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "update.header",
+      "purpose": "Только известный заголовок окна Update; сам по себе не разрешает Confirm.",
+      "search": {
+        "left": 321,
+        "top": 176,
+        "right": 524,
+        "bottom": 225
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "update.header.png",
+          "sourceSha256": "23bf78b7b59004f1865aeef157287f391e771d25f583552bbb3a6dd186af44b2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 324,
+            "top": 179,
+            "right": 521,
+            "bottom": 222
+          },
+          "sha256": "59ff66da7f0836c66f55f74d1eead8798dd095fd5e2c3815ac5bceeab5bbe35b",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "update.download",
+      "purpose": "Назначение конкретного окна: This update requires downloading; размер файлов не используется.",
+      "search": {
+        "left": 357,
+        "top": 315,
+        "right": 690,
+        "bottom": 347
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "update.download.png",
+          "sourceSha256": "23bf78b7b59004f1865aeef157287f391e771d25f583552bbb3a6dd186af44b2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 360,
+            "top": 318,
+            "right": 687,
+            "bottom": 344
+          },
+          "sha256": "cfdf159891506f127ceb7aa80c400a9f5e0cb8880f9d41fd0608d65e0ade5abc",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
+    },
+    {
+      "id": "update.confirm",
+      "purpose": "Confirm только проверенного запроса загрузки игровых файлов; не обновление APK.",
+      "search": {
+        "left": 697,
+        "top": 469,
+        "right": 876,
+        "bottom": 533
+      },
+      "safeTapOffset": {
+        "left": 30,
+        "top": 12,
+        "right": 140,
+        "bottom": 45
+      },
+      "variants": [
+        {
+          "id": "global-en",
+          "file": "update.confirm.png",
+          "sourceSha256": "23bf78b7b59004f1865aeef157287f391e771d25f583552bbb3a6dd186af44b2",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 700,
+            "top": 472,
+            "right": 873,
+            "bottom": 530
+          },
+          "sha256": "9981dfb036e192366d0526c401558d007fa366fc8bcfd19d569e25dc24350767",
+          "mode": "Rgb",
+          "minimumScore": 0.95,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 12
+        }
+      ]
     }
   ],
   "actions": [
@@ -145,7 +588,12 @@
       "maximumObservationAge": "00:00:12",
       "postconditionTimeout": "00:00:20",
       "excludedAssetIds": [
-        "dock.selection-confirm"
+        "dock.selection-confirm",
+        "update.header",
+        "login.enter",
+        "login.server",
+        "overlay.dialog-close",
+        "overlay.sidebar-open"
       ]
     },
     {
@@ -155,8 +603,269 @@
       "maximumObservationAge": "00:00:12",
       "postconditionTimeout": "00:00:20",
       "excludedAssetIds": [
-        "dock.selection-confirm"
+        "dock.selection-confirm",
+        "update.header",
+        "login.enter",
+        "login.server",
+        "overlay.dialog-close",
+        "overlay.sidebar-open"
       ]
+    },
+    {
+      "id": "login.enter",
+      "sourceAssetId": "login.enter",
+      "postconditionAssetId": "login.server",
+      "maximumObservationAge": "00:00:12",
+      "postconditionTimeout": "00:00:30",
+      "excludedAssetIds": [
+        "update.header",
+        "dock.selection-confirm",
+        "overlay.dialog-close",
+        "overlay.sidebar-open"
+      ],
+      "requiredAssetIds": [
+        "login.logo"
+      ],
+      "alternativePostconditionAssetIds": [
+        "loading.download",
+        "main.dock",
+        "login.success"
+      ]
+    },
+    {
+      "id": "login.start",
+      "sourceAssetId": "login.criware",
+      "postconditionAssetId": "main.dock",
+      "maximumObservationAge": "00:00:12",
+      "postconditionTimeout": "00:00:30",
+      "excludedAssetIds": [
+        "login.enter",
+        "login.success",
+        "update.header",
+        "dock.selection-confirm",
+        "overlay.dialog-close",
+        "overlay.sidebar-open"
+      ],
+      "requiredAssetIds": [
+        "login.logo",
+        "login.server"
+      ],
+      "alternativePostconditionAssetIds": [
+        "loading.download"
+      ],
+      "tapArea": {
+        "left": 1078,
+        "top": 591,
+        "right": 1168,
+        "bottom": 635
+      }
+    },
+    {
+      "id": "update.download",
+      "sourceAssetId": "update.confirm",
+      "postconditionAssetId": "loading.download",
+      "maximumObservationAge": "00:00:12",
+      "postconditionTimeout": "00:00:30",
+      "excludedAssetIds": [
+        "login.enter",
+        "login.server",
+        "dock.selection-confirm",
+        "overlay.sidebar-open"
+      ],
+      "requiredAssetIds": [
+        "update.header",
+        "update.download"
+      ],
+      "alternativePostconditionAssetIds": []
     }
-  ]
+  ],
+  "readiness": {
+    "rules": [
+      {
+        "id": "main",
+        "state": "Ready",
+        "requiredAssetIds": [
+          "main.dock",
+          "main.depot",
+          "main.battle"
+        ],
+        "absentAssetIds": [
+          "dock.header",
+          "dock.selection-confirm",
+          "login.enter",
+          "login.server",
+          "login.success",
+          "loading.startup",
+          "loading.download",
+          "update.header",
+          "update.download",
+          "update.confirm",
+          "overlay.dialog-close",
+          "overlay.sidebar-open"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "login",
+        "state": "AwaitingInput",
+        "requiredAssetIds": [
+          "login.enter",
+          "login.logo"
+        ],
+        "absentAssetIds": [
+          "login.server",
+          "login.success",
+          "update.header",
+          "main.dock",
+          "dock.header"
+        ],
+        "actionId": "login.enter"
+      },
+      {
+        "id": "server",
+        "state": "AwaitingInput",
+        "requiredAssetIds": [
+          "login.criware",
+          "login.server",
+          "login.logo"
+        ],
+        "absentAssetIds": [
+          "login.enter",
+          "login.success",
+          "update.header",
+          "main.dock",
+          "dock.header"
+        ],
+        "actionId": "login.start"
+      },
+      {
+        "id": "login-transition",
+        "state": "Transition",
+        "requiredAssetIds": [
+          "login.success",
+          "login.logo"
+        ],
+        "absentAssetIds": [
+          "login.enter",
+          "main.dock",
+          "dock.header",
+          "update.header"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "loading",
+        "state": "Loading",
+        "requiredAssetIds": [
+          "loading.startup"
+        ],
+        "absentAssetIds": [
+          "loading.download",
+          "update.header",
+          "update.download",
+          "update.confirm",
+          "main.dock",
+          "dock.header",
+          "login.enter",
+          "login.server"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "download",
+        "state": "Loading",
+        "requiredAssetIds": [
+          "loading.download"
+        ],
+        "absentAssetIds": [
+          "loading.startup",
+          "update.header",
+          "update.download",
+          "update.confirm",
+          "main.dock",
+          "dock.header",
+          "login.enter",
+          "login.server"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "download-confirm",
+        "state": "AwaitingInput",
+        "requiredAssetIds": [
+          "update.header",
+          "update.download",
+          "update.confirm"
+        ],
+        "absentAssetIds": [
+          "loading.download",
+          "main.dock",
+          "dock.header",
+          "login.enter",
+          "login.server"
+        ],
+        "actionId": "update.download"
+      },
+      {
+        "id": "dock",
+        "state": "AwaitingInput",
+        "requiredAssetIds": [
+          "dock.header"
+        ],
+        "absentAssetIds": [
+          "dock.selection-confirm",
+          "main.dock",
+          "update.header",
+          "login.enter",
+          "login.server"
+        ],
+        "actionId": "dock.close"
+      },
+      {
+        "id": "selection",
+        "state": "RequiresUserAction",
+        "requiredAssetIds": [
+          "dock.selection-confirm"
+        ],
+        "absentAssetIds": [
+          "main.dock"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "unverified-update",
+        "state": "RequiresUserAction",
+        "requiredAssetIds": [
+          "update.header"
+        ],
+        "absentAssetIds": [
+          "update.download"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "blocked-dialog",
+        "state": "RequiresUserAction",
+        "requiredAssetIds": [
+          "overlay.dialog-close"
+        ],
+        "absentAssetIds": [
+          "update.header"
+        ],
+        "actionId": null
+      },
+      {
+        "id": "blocked-sidebar",
+        "state": "RequiresUserAction",
+        "requiredAssetIds": [
+          "overlay.sidebar-open"
+        ],
+        "absentAssetIds": [
+          "overlay.dialog-close",
+          "update.header"
+        ],
+        "actionId": null
+      }
+    ]
+  }
 }

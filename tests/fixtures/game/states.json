@@ -1,0 +1,90 @@
+{
+  "main": [
+    "main.dock",
+    "main.depot",
+    "main.battle"
+  ],
+  "dock": [
+    "dock.header"
+  ],
+  "selection": [
+    "dock.header",
+    "dock.selection-confirm"
+  ],
+  "login": [
+    "login.logo",
+    "login.enter",
+    "login.criware"
+  ],
+  "server": [
+    "login.logo",
+    "login.server",
+    "login.criware"
+  ],
+  "login-transition": [
+    "login.logo",
+    "login.server",
+    "login.criware",
+    "login.success"
+  ],
+  "download": [
+    "loading.download"
+  ],
+  "download-confirm": [
+    "update.header",
+    "update.download",
+    "update.confirm"
+  ],
+  "main-overlay": [
+    "main.dock",
+    "main.depot",
+    "main.battle",
+    "overlay.dialog-close",
+    "update.header",
+    "update.download",
+    "update.confirm"
+  ],
+  "main-unknown-overlay": [
+    "main.dock",
+    "main.depot",
+    "main.battle",
+    "overlay.dialog-close"
+  ],
+  "unverified-update": [
+    "update.header",
+    "update.confirm"
+  ],
+  "main-sidebar-overlay": [
+    "main.dock",
+    "main.depot",
+    "main.battle",
+    "overlay.sidebar-open"
+  ],
+  "main-background-light": {
+    "assets": [
+      "main.dock",
+      "main.depot",
+      "main.battle"
+    ],
+    "background": [
+      220,
+      210,
+      200
+    ]
+  },
+  "main-background-dark": {
+    "assets": [
+      "main.dock",
+      "main.depot",
+      "main.battle"
+    ],
+    "background": [
+      8,
+      12,
+      20
+    ]
+  },
+  "loading": [
+    "loading.startup"
+  ]
+}

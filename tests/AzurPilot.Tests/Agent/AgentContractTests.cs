@@ -16,6 +16,8 @@ public sealed class AgentContractTests
     [Theory]
     [InlineData("android-prepare", true)]
     [InlineData("game-dock-roundtrip", true)]
+    [InlineData("game-ui-ready-ensure", true)]
+    [InlineData("game-ui-ready-observe", false)]
     [InlineData("android-observe", false)]
     [InlineData("game-observe", false)]
     [InlineData("game-ui-observe", false)]

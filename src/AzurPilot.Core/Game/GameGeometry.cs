@@ -49,6 +49,20 @@ public sealed class GameGeometry
             ScaleCeiling(rect.Right, Width, LogicalWidth), ScaleCeiling(rect.Bottom, Height, LogicalHeight));
     }
 
+    /// <summary>Округляет границы внутрь: результат никогда не выходит за логическую область.</summary>
+    public GamePixelRect MapInside(GameRect rect)
+    {
+        Validate(rect);
+        return new(ScaleCeiling(rect.Left, Width, LogicalWidth), ScaleCeiling(rect.Top, Height, LogicalHeight),
+            ScaleFloor(rect.Right, Width, LogicalWidth), ScaleFloor(rect.Bottom, Height, LogicalHeight));
+    }
+
+    /// <summary>Пересекаются ли две полуоткрытые логические области.</summary>
+    public static bool Intersects(GameRect first, GameRect second)
+    {
+        return first.Left < second.Right && second.Left < first.Right && first.Top < second.Bottom && second.Top < first.Bottom;
+    }
+
     /// <summary>Выбирает внутреннюю центральную точку разрешённой области.</summary>
     public GameInputPoint Center(GamePixelRect rect)
     {

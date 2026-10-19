@@ -361,7 +361,7 @@ public sealed partial class AzurPilotOperatorServiceTests
     }
 
     private static AzurPilotOperatorService CreateAgentService(OperatorFixture fixture, AndroidTestContext android,
-        AzurPilotConfigurationSnapshot? snapshot = null)
+        AzurPilotConfigurationSnapshot? snapshot = null, Core.Game.IGameUiHost? gameUi = null, TimeProvider? clock = null)
     {
         fixture.MuMuHost.ObservationResult = MuMuLifecycleTestContext.Observed(MuMuLifecycleState.Running);
         android.Host.AdbExecutableHandler = _ => ApplicationResult<AndroidAdbExecutable>.Success(new("controlled-adb", "controlled-version"));
@@ -375,8 +375,8 @@ public sealed partial class AzurPilotOperatorServiceTests
             NativeBoundaryFailureMapper.MapIncompatibility, fixture.MuMuHost, lifecycle,
             android.Host, android.Readiness, android.GameState);
         return new(diagnostics, fixture.MuMuHost, lifecycle, android.Host, android.Readiness,
-            android.GameState, android.Lifecycle, fixture.ScreenshotHost, configuration, TimeProvider.System,
-            new AzurPilot.Windows.Game.GameUiWindowsHost(fixture.ScreenshotHost,
+            android.GameState, android.Lifecycle, fixture.ScreenshotHost, configuration, clock ?? TimeProvider.System,
+            gameUi ?? new AzurPilot.Windows.Game.GameUiWindowsHost(fixture.ScreenshotHost,
                 new AzurPilot.Windows.Android.AndroidWindowsHost(fixture.Runner, TimeProvider.System)));
     }
 

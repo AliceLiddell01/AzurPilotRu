@@ -43,6 +43,8 @@ class PrepareGameAssetsTests(unittest.TestCase):
             recipes[0], file="dock.header.png", sha256="0" * 64)])])
         self.provenance = dict(depot=recipes[1], technology=recipes[2])
         self.write_recipes()
+        (self.root / "tests/fixtures/game/states.json").write_text(json.dumps(
+            {"main": [], "dock": ["dock.header"], "selection": ["dock.header"]}), encoding="utf-8")
         # Старый комплект намеренно отличается от результата генерации.
         for relative in ["assets/game/dock.header.png", "tests/fixtures/game/dock-720.png",
                          "tests/fixtures/game/depot-720.png", "tests/fixtures/game/technology-720.png"]:
@@ -68,6 +70,24 @@ class PrepareGameAssetsTests(unittest.TestCase):
         for index in (1, 2):
             with self.subTest(negative=index):
                 self.assert_rejected_unchanged([p for i, p in enumerate(self.sources) if i != index], "SHA256")
+
+    def test_missing_states_composition_preserves_entire_set(self):
+        (self.root / "tests/fixtures/game/states.json").unlink()
+        self.assert_rejected_unchanged(self.sources, "states.json")
+
+    def test_data_driven_states_reject_unknown_asset_without_publication(self):
+        states = self.root / "tests/fixtures/game/states.json"
+        states.write_text(json.dumps({"known": ["missing.asset"]}), encoding="utf-8")
+        self.assert_rejected_unchanged(self.sources, "состав")
+
+    def test_data_driven_states_generate_only_selected_patches(self):
+        states = self.root / "tests/fixtures/game/states.json"
+        states.write_text(json.dumps({"positive": ["dock.header"], "negative": []}), encoding="utf-8")
+        generator.prepare(self.sources, self.root)
+        with Image.open(self.root / "tests/fixtures/game/positive-720.png") as positive, Image.open(
+                self.root / "tests/fixtures/game/negative-720.png") as negative:
+            self.assertEqual((20, 80, 120), positive.getpixel((3, 3)))
+            self.assertEqual((37, 46, 58), negative.getpixel((3, 3)))
 
     def test_wrong_negative_hash_preserves_entire_set(self):
         Image.new("RGB", (1280, 720), (1, 2, 3)).save(self.sources[2])
@@ -229,6 +249,26 @@ class PrepareGameAssetsTests(unittest.TestCase):
         generator.prepare(list(reversed(self.sources)), self.root)
         self.assertEqual(first, self.snapshot(), "Повторный запуск должен быть байтово воспроизводимым")
         self.assertEqual(sources_before, [path.read_bytes() for path in self.sources])
+
+    def test_state_background_changes_without_changing_ui_crops(self):
+        states = {"light": {"assets": ["dock.header"], "background": [220, 210, 200]},
+                  "dark": {"assets": ["dock.header"], "background": [8, 12, 20]}}
+        (self.root / "tests/fixtures/game/states.json").write_text(json.dumps(states), encoding="utf-8")
+        generator.prepare(self.sources, self.root)
+        for state, background in (("light", (220, 210, 200)), ("dark", (8, 12, 20))):
+            with Image.open(self.root / f"tests/fixtures/game/{state}-720.png") as image:
+                self.assertEqual(background, image.getpixel((1000, 600)))
+                self.assertEqual((20, 80, 120), image.getpixel((12, 8)))
+
+    def test_invalid_state_background_never_publishes_partial_output(self):
+        for background in ([0, 0], [0, 0, 256], [0, 0, -1], [0, True, 0], "red"):
+            with self.subTest(background=background):
+                path = self.root / "tests/fixtures/game/states.json"
+                path.write_text(json.dumps({"bad": {"assets": [], "background": background}}), encoding="utf-8")
+                before = self.snapshot()
+                with self.assertRaisesRegex(ValueError, "состав или фон"):
+                    generator.prepare(self.sources, self.root)
+                self.assertEqual(before, self.snapshot())
 
 
 if __name__ == "__main__":

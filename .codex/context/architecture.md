@@ -62,7 +62,8 @@ Product CLI/REPL/agent CLI не получают команды `build`, `repair
 - игровая геометрия, native распознавание известных ассетов и безопасный tap с postcondition
   через Agent CLI; контракт — `game-ui.md`.
 
-Не реализованы и не должны имитироваться placeholder-кодом: OCR/ONNX/GPU, общая UI readiness игры,
+Отдельная capability главного UI и ограниченного login flow описана в `game-ui.md`.
+Не реализованы и не должны имитироваться placeholder-кодом: OCR/ONNX/GPU,
 REPL. Screenshot diagnostic boundaries описаны
 в `screenshot-diagnostics.md`.
 

@@ -26,6 +26,8 @@ AzurPilot.App.exe agent screenshot-scan --target mumu:1
 AzurPilot.App.exe agent game-ui-observe --target mumu:1
 AzurPilot.App.exe agent game-input-observe --target mumu:1
 AzurPilot.App.exe agent game-dock-roundtrip --target mumu:1
+AzurPilot.App.exe agent game-ui-ready-observe --target mumu:1
+AzurPilot.App.exe agent game-ui-ready-ensure --target mumu:1 --timeout-ms 180000
 AzurPilot.App.exe agent settings
 ```
 
@@ -36,6 +38,18 @@ Identity в примере условная: сначала выберите с�
 Подготовка окружения сама обеспечивает MuMu и Android readiness; запуск игры включает эту подготовку.
 Вызывающему агенту не требуется заранее выполнять цепочку низкоуровневых диагностических команд.
 Остальные lifecycle и read-only операции перечисляются discovery.
+
+`game-ui-ready-observe` возвращает классификацию и ограниченное evidence устойчивости без mutation.
+Успешное read-only наблюдение состояния `Loading`, `Transition`, `AwaitingInput` или `Unknown` не
+означает `Ready`. Потребитель обязан проверить `data.state`. Технический отказ или необходимость
+ручного решения сохраняют failure. `game-ui-ready-ensure` включает существующую подготовку и запуск
+игры, затем известный flow; успех требует именно `data.ui.state=Ready`. Обе операции повторно
+проверяют exact identity/endpoint и foreground/viewport. Срок ensure задаёт только `--timeout-ms`:
+при его истечении возвращается `AgentDeadlineExceeded`, а `data.lifecycle` и сведения о мутациях
+сохраняются. `data.lifecycle` и `data.ui.phases` — фазы на одной монотонной шкале операции
+(`enteredAtMs`, `exitedAtMs`, `elapsedMs`, `endReason`, `status=Observed|NotObserved`); `work` содержит
+счётчики и длительности захвата, ADB-команды, распознавания, viewport, ввода и пауз. Список допустимых состояний/переходов,
+стабильные признаки меню, независимые guards перекрытий и ограничения — [game-ui](../architecture/game-ui.md#готовность-главного-ui).
 
 `android-prepare` подготавливает только transport выбранного target через существующий readiness owner.
 Она не запускает MuMu или игру, не меняет настройки и не выполняет игровой ввод. Один target-local
@@ -131,6 +145,8 @@ AzurPilot одного Windows-пользователя, включая разн
 может быть доказан до отказа boot. В `game-dock-roundtrip` успешная preparation хранится рядом с
 `open`/`close`; ранний отказ несёт `androidMutation` и `gameUiMutation`. `effect=changed` из-за ADB
 не означает доказанного перехода игры — проверяй оба `changeProven` игровых результатов.
+`open.timing`/`close.timing` и `data.timing` дают время и работу бота по шагам; их смысл описан в
+[игровом UI](../architecture/game-ui.md#фазовая-телеметрия).
 
 После частичного отказа `data` сохраняет preparation stage, начальное состояние, результат запуска
 MuMu и доступное postflight-наблюдение. Ошибка shutdown сохраняет уже завершённый результат в

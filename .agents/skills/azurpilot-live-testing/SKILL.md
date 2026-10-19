@@ -41,6 +41,8 @@ description: >-
    Отмена/deadline не означают rollback; `Unknown`, nullable facts и `mayHaveChanged` не равны `none`.
    Cleanup разрешён лишь для своего доказанного эффекта, на том же target и в согласованных границах.
    Не делай слепой повтор tap или compensating stop. Не исключай упавший сценарий из плана.
+   Для игровых capabilities соблюдай раздел «Игровые capabilities» [процедуры](references/procedure.md):
+   один production-триггер, телеметрия из envelope и итог «игра Stopped, MuMu Running».
 7. Сверь до/после и дай отдельный `PASS / FAIL / PARTIAL / NOT_RUN / BLOCKED` каждому обязательному
    сценарию по [процедуре](references/procedure.md), отделив deterministic tests, CI и реальные
    Windows/MuMu/Android свидетельства. Общий PASS допустим только при PASS всех обязательных сценариев.
