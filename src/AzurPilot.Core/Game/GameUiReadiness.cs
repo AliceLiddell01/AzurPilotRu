@@ -319,7 +319,9 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                     {
                         _ = frames.Add(action.After.Frame.FrameId);
                         previousCapture = action.After.Frame.CaptureStartedTimestamp;
-                        if (action.After.ProgressLevel is double initialLevel and >= 0 and <= 1)
+                        // Право продления даёт только основной postcondition действия, а не альтернативный исход.
+                        if (action.After.Find(getAction(actionId).PostconditionAssetId)?.Status == GameMatchStatus.Unique
+                            && action.After.ProgressLevel is double initialLevel and >= 0 and <= 1)
                         {
                             // Начальное заполнение — точка отсчёта, а не прогресс.
                             progressAuthorized = true;

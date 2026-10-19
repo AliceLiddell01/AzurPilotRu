@@ -166,6 +166,20 @@ public sealed class GameUiReadinessTests
     }
 
     [Fact]
+    public async Task DownloadAfterLoginActionIsAlternativeOutcomeAndStaysPassive()
+    {
+        // Скачивание как альтернативный исход входа не является подтверждённым Confirm и не продлевается ростом полосы.
+        using ReadyHost host = new("login") { Progress = "endless" };
+        host.OnTap["login"] = "download";
+        _ = host.Timed.Remove("download");
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal("loading_unfinished", result.Reason);
+        Assert.InRange(result.Elapsed.TotalSeconds, 120, 135);
+        Assert.Equal(1, host.Taps);
+        Assert.Equal("login.enter", Assert.Single(result.Actions).ActionId);
+    }
+
+    [Fact]
     public async Task ConfirmedDownloadGrowthExtendsWaitUntilIndependentReady()
     {
         using ReadyHost host = new("download-confirm") { Progress = "slow", Timed = { ["download"] = (TimeSpan.FromSeconds(200), "main") } };
