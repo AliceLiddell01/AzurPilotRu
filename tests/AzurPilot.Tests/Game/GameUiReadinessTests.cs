@@ -248,6 +248,17 @@ public sealed class GameUiReadinessTests
     }
 
     [Fact]
+    public async Task FlickeringUnknownScreenDoesNotRestartInactivityLimit()
+    {
+        // Чередование Unknown и распознанного перехода не должно перезапускать срок бездействия при каждой смене.
+        using ReadyHost host = new("unknown") { Flicker = "login-transition" };
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal("state_unproven_or_no_progress", result.Reason);
+        Assert.InRange(result.Elapsed.TotalSeconds, 12, 20);
+        Assert.Equal(0, host.Taps);
+    }
+
+    [Fact]
     public async Task RevisitedActionStopsBeforeSecondTap()
     {
         using ReadyHost host = new("login") { Timed = { ["server"] = (TimeSpan.FromSeconds(1), "login") } };

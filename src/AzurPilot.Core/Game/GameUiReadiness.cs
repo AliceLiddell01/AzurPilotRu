@@ -128,8 +128,10 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
         bool progressAuthorized = false;
         double? progressHighWater = null;
         long? lastProgress = null;
-        // Повторный вход в ту же загрузку (мерцание распознавания) не перезапускает её срок.
+        // Повторный вход в то же пассивное состояние (мерцание распознавания) не перезапускает его срок;
+        // записи сбрасываются доказанным действием, а срок неизвестных экранов — ещё и входом в загрузку.
         Dictionary<string, long> loadingEntered = new(StringComparer.Ordinal);
+        Dictionary<string, long> idleEntered = new(StringComparer.Ordinal);
         GameUiReadinessState state = GameUiReadinessState.Unknown;
         bool readyProven = false;
         bool supportedStateObserved = false;
@@ -250,9 +252,19 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                 if (previousState != stateId)
                 {
                     stateStarted = clock.GetTimestamp();
-                    if (state == GameUiReadinessState.Loading && !loadingEntered.TryAdd(stateId, stateStarted))
+                    if (state == GameUiReadinessState.Loading)
                     {
-                        stateStarted = loadingEntered[stateId];
+                        // Распознанная загрузка — собственный предел; мерцание вокруг неё не копит срок неизвестных экранов.
+                        idleEntered.Clear();
+                        if (!loadingEntered.TryAdd(stateId, stateStarted))
+                        {
+                            stateStarted = loadingEntered[stateId];
+                        }
+                    }
+                    else if (state is GameUiReadinessState.Transition or GameUiReadinessState.Unknown
+                        && !idleEntered.TryAdd(stateId, stateStarted))
+                    {
+                        stateStarted = idleEntered[stateId];
                     }
                 }
 
@@ -332,6 +344,8 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
 
                     previousState = "";
                     previousRequest = null;
+                    loadingEntered.Clear();
+                    idleEntered.Clear();
                     stateStarted = clock.GetTimestamp();
                     continue;
                 }
