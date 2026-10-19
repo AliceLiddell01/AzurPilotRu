@@ -13,11 +13,19 @@ public sealed record GameAssetVariant(string Id, string File, string SourceSha25
     double MaximumMeanAbsoluteError);
 
 /// <summary>
-/// Единственный владелец ROI, безопасной области и способов распознавания ассета. ProgressRegion —
-/// логическая полоса прогресса, измеряемая только при Unique этого ассета.
+/// Полоса прогресса: логическая область делится на равные сегменты. Сегмент заполнен при синем канале не ниже
+/// FilledMinimumBlue и превышении синего над красным не меньше FilledMinimumBlueOverRed, пуст при синем не выше
+/// EmptyMaximumBlue; иначе это граница заполнения.
+/// </summary>
+public sealed record GameProgressBar(GameRect Region, int Segments, double FilledMinimumBlue,
+    double FilledMinimumBlueOverRed, double EmptyMaximumBlue);
+
+/// <summary>
+/// Единственный владелец ROI, безопасной области и способов распознавания ассета. Progress —
+/// полоса прогресса, измеряемая только при Unique этого ассета.
 /// </summary>
 public sealed record GameAsset(string Id, string Purpose, GameRect Search, GameRect? SafeTapOffset,
-    IReadOnlyList<GameAssetVariant> Variants, GameRect? ProgressRegion = null);
+    IReadOnlyList<GameAssetVariant> Variants, GameProgressBar? Progress = null);
 
 /// <summary>Небольшой неизменяемый каталог встроенных игровых ресурсов Global/EN.</summary>
 public sealed class GameAssetCatalog
@@ -44,12 +52,12 @@ public sealed class GameAssetCatalog
 
     // Бюджет кеша закодированных шаблонов и нативных сопоставлений одного кадра: каждый кадр readiness
     // ищет не больше всех ассетов каталога. Правила и фазы телеметрии ограничены тем же бюджетом.
-    private const int MaximumAssets = 16;
+    private const int MaximumAssets = 20;
 
     private GameAssetCatalog(Manifest manifest)
     {
         if (manifest.SchemaVersion != 1 || manifest.Client != "Global/EN" || manifest.Assets.Count is < 1 or > MaximumAssets
-            || manifest.Assets.Count(a => a.ProgressRegion is not null) > 1)
+            || manifest.Assets.Count(a => a.Progress is not null) > 1)
         {
             throw new InvalidDataException("Неподдерживаемый каталог игровых ассетов.");
         }
@@ -58,9 +66,17 @@ public sealed class GameAssetCatalog
         foreach (GameAsset asset in manifest.Assets)
         {
             GameGeometry.Validate(asset.Search);
-            if (asset.ProgressRegion is GameRect progress)
+            if (asset.Progress is GameProgressBar progress)
             {
-                GameGeometry.Validate(progress);
+                // Сегменты целые в логических координатах и не меньше пикселя на 720p; пустой и заполненный цвет различимы.
+                GameGeometry.Validate(progress.Region);
+                int width = progress.Region.Right - progress.Region.Left;
+                if (progress.Segments is < 8 or > 128 || width % progress.Segments != 0
+                    || progress.FilledMinimumBlue is <= 0 or > 255 || progress.FilledMinimumBlueOverRed is <= 0 or > 255
+                    || progress.EmptyMaximumBlue < 0 || progress.EmptyMaximumBlue >= progress.FilledMinimumBlue)
+                {
+                    throw new InvalidDataException("Непригодная полоса прогресса.");
+                }
             }
 
             if (asset.Variants.Count is < 1 or > 4)

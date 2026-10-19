@@ -55,6 +55,7 @@ public sealed class GameUiReadinessTests
     [InlineData("server", GameUiReadinessState.AwaitingInput)]
     [InlineData("download-confirm", GameUiReadinessState.AwaitingInput)]
     [InlineData("download", GameUiReadinessState.Loading)]
+    [InlineData("loading", GameUiReadinessState.Loading)]
     [InlineData("login-transition", GameUiReadinessState.Transition)]
     [InlineData("selection", GameUiReadinessState.RequiresUserAction)]
     [InlineData("unverified-update", GameUiReadinessState.RequiresUserAction)]
@@ -106,37 +107,95 @@ public sealed class GameUiReadinessTests
     }
 
     [Theory]
-    [InlineData("stalled", "loading_no_progress")]
-    [InlineData("noise", "loading_no_progress")]
-    [InlineData("endless", "readiness_maximum_duration")]
-    public async Task PassiveLoadingIsBoundedByProgressAndNeverUsesTap(string progress, string reason)
+    [InlineData("loading", null)]
+    [InlineData("loading", "unknown")]
+    [InlineData("download", null)]
+    public async Task StartupOrUnconfirmedLoadingIsPassiveAndBoundedWithoutProgress(string initial, string? flicker)
     {
-        using ReadyHost host = new("download") { Progress = progress };
+        // Полная полоса обычного входа, рост полосы без подтверждённого Confirm и мерцание распознавания
+        // не продлевают срок, отсчитанный от первого входа в загрузку.
+        using ReadyHost host = new(initial) { Progress = "endless", Flicker = flicker };
+        _ = host.Timed.Remove("download");
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal(GameUiReadinessState.Loading, result.State);
+        Assert.Equal("loading_unfinished", result.Reason);
+        Assert.InRange(result.Elapsed.TotalSeconds, 120, 125);
+        Assert.Equal(0, host.Taps);
+        Assert.Empty(result.Actions);
+    }
+
+    [Fact]
+    public async Task StartupLoadingWaitsPassivelyUntilIndependentReady()
+    {
+        using ReadyHost host = new("loading") { Timed = { ["loading"] = (TimeSpan.FromSeconds(90), "main") } };
+        GameUiReadinessOutcome result = await host.Run(true, new(), allowInitialTransition: true);
+        Assert.Equal(GameUiReadinessState.Ready, result.State);
+        Assert.True(result.Elapsed > TimeSpan.FromSeconds(90));
+        Assert.Equal(0, host.Taps);
+        Assert.Contains(result.Evidence, e => e.StateId == "loading" && e.ProgressLevel is null);
+    }
+
+    [Fact]
+    public async Task RecognizedStartupLoadingKeepsInitialTransitionForFollowingUnknownScreen()
+    {
+        // Неизвестный экран между стартовой загрузкой и логином остаётся частью стартового перехода.
+        using ReadyHost host = new("loading")
+        {
+            Timed = { ["loading"] = (TimeSpan.FromSeconds(10), "unknown"), ["unknown"] = (TimeSpan.FromSeconds(30), "main") },
+        };
+        GameUiReadinessOutcome result = await host.Run(true, new(), allowInitialTransition: true);
+        Assert.Equal(GameUiReadinessState.Ready, result.State);
+        Assert.Equal(0, host.Taps);
+    }
+
+    [Theory]
+    [InlineData("stalled", "loading_unfinished")]
+    [InlineData("oscillating", "loading_no_progress")]
+    [InlineData("reset", "loading_no_progress")]
+    public async Task ConfirmedDownloadIgnoresFluctuationAndResetWithoutNewMaximum(string progress, string reason)
+    {
+        // Колебания выше прежнего порога, циклы снижения/роста и сброс к нулю дают не больше одного нового максимума.
+        using ReadyHost host = new("download-confirm") { Progress = progress };
         _ = host.Timed.Remove("download");
         GameUiReadinessOutcome result = await host.Run(true, new());
         Assert.Equal(GameUiReadinessState.Loading, result.State);
         Assert.Equal(reason, result.Reason);
+        Assert.InRange(result.Elapsed.TotalSeconds, 120, 135);
+        Assert.Equal(1, host.Taps);
         Assert.InRange(result.Evidence.Count, 1, 16);
-        Assert.Equal(0, result.TapAttempts);
-        Assert.Empty(result.Actions);
-        Assert.Equal(0, host.Taps);
-        if (progress != "endless")
-        {
-            // Ни цифры, ни шум ниже шага не продлевают ожидание без роста заполнения полосы.
-            Assert.InRange(result.Elapsed.TotalSeconds, 40, 45);
-        }
     }
 
-    [Theory]
-    [InlineData("slow")]
-    [InlineData("reset")]
-    public async Task SlowOrStagedProgressKeepsWaitingUntilIndependentReady(string progress)
+    [Fact]
+    public async Task ConfirmedDownloadGrowthExtendsWaitUntilIndependentReady()
     {
-        using ReadyHost host = new("download") { Progress = progress, Timed = { ["download"] = (TimeSpan.FromSeconds(100), "main") } };
+        using ReadyHost host = new("download-confirm") { Progress = "slow", Timed = { ["download"] = (TimeSpan.FromSeconds(200), "main") } };
         GameUiReadinessOutcome result = await host.Run(true, new());
         Assert.Equal(GameUiReadinessState.Ready, result.State);
-        Assert.True(result.Elapsed > TimeSpan.FromSeconds(100));
-        Assert.Equal(0, host.Taps);
+        Assert.True(result.Elapsed > TimeSpan.FromSeconds(200));
+        Assert.Equal(1, host.Taps);
+        Assert.Equal("update.download", Assert.Single(result.Actions).ActionId);
+    }
+
+    [Fact]
+    public async Task EndlessConfirmedGrowthStopsAtServiceLimit()
+    {
+        using ReadyHost host = new("download-confirm") { Progress = "endless" };
+        _ = host.Timed.Remove("download");
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal("readiness_maximum_duration", result.Reason);
+        Assert.Equal(1, host.Taps);
+    }
+
+    [Fact]
+    public async Task UnknownFrameRevokesConfirmedDownloadContext()
+    {
+        // После любого кадра вне загрузки рост полосы больше не продлевает ожидание.
+        using ReadyHost host = new("download-confirm") { Progress = "slow", Flicker = "unknown" };
+        _ = host.Timed.Remove("download");
+        GameUiReadinessOutcome result = await host.Run(true, new());
+        Assert.Equal("loading_unfinished", result.Reason);
+        Assert.InRange(result.Elapsed.TotalSeconds, 120, 135);
+        Assert.Equal(1, host.Taps);
     }
 
     [Fact]
@@ -449,6 +508,9 @@ public sealed class GameUiReadinessTests
     [InlineData(2160, "main-unknown-overlay", "blocked-dialog")]
     [InlineData(2160, "main-sidebar-overlay", "blocked-sidebar")]
     [InlineData(2160, "download", "download")]
+    [InlineData(2160, "loading", "loading")]
+    [InlineData(2160, "loading-real-2", "loading")]
+    [InlineData(2160, "loading-real-3", "loading")]
     [InlineData(2160, "login-transition", "login-transition")]
     [InlineData(2160, "unverified-update", "unverified-update")]
     public void NativeFixturesClassifySupportedStatesAndRejectMainUnderOverlay(int height, string fixture, string? expected)
@@ -503,7 +565,7 @@ public sealed class GameUiReadinessTests
         foreach ((string fixture, string? expected) in new (string, string?)[]
         {
             ("main", "main"), ("dock", "dock"), ("selection", "selection"), ("login", "login"),
-            ("server", "server"), ("download", "download"), ("download-confirm", "download-confirm"),
+            ("server", "server"), ("download", "download"), ("loading", "loading"), ("download-confirm", "download-confirm"),
             ("login-transition", "login-transition"), ("main-overlay", null), ("main-unknown-overlay", "blocked-dialog"),
             ("main-sidebar-overlay", "blocked-sidebar"),
             ("unverified-update", "unverified-update"),
@@ -603,6 +665,7 @@ public sealed class GameUiReadinessTests
             ["download-confirm"] = ["update.header", "update.download", "update.confirm"],
             ["unverified-update"] = ["update.header", "update.confirm"],
             ["download"] = ["loading.download"],
+            ["loading"] = ["loading.startup"],
             ["dock"] = ["dock.header"],
             ["selection"] = ["dock.header", "dock.selection-confirm"],
             ["unknown"] = [],
@@ -686,18 +749,22 @@ public sealed class GameUiReadinessTests
             return Flicker is not null && (long)sinceStart.TotalSeconds / 2 % 2 == 1 ? Flicker : _screen;
         }
 
+        /// <summary>Доля заполнения, квантованная сегментами полосы так же, как измерение host.</summary>
         private double Level(TimeSpan onScreen)
         {
             double seconds = onScreen.TotalSeconds;
-            return Progress switch
+            double fill = Progress switch
             {
-                "stalled" => 20,
-                "noise" => 20 + ((long)seconds / 2 % 2 * 0.04),
-                "endless" => 20 + seconds,
-                // Медленный рост меньше шага между соседними кадрами, но заметный накопительно.
-                "reset" => 20 + (seconds % 30 * 0.02),
-                _ => 20 + (seconds * 0.02),
+                "stalled" => 0.25,
+                // Колебание на четверть полосы — намного выше одного сегмента — с возвратом к прежнему значению.
+                "oscillating" => (long)seconds / 2 % 2 == 0 ? 0.25 : 0.5,
+                "endless" => seconds / 400,
+                // Пилообразный сброс к нулю без доказанного нового этапа.
+                "reset" => seconds % 30 / 60,
+                // Один сегмент примерно за 16 s: медленнее интервала кадров, но быстрее срока без роста.
+                _ => seconds / 1000,
             };
+            return Math.Floor(Math.Min(fill, 1) * 64) / 64;
         }
 
         public Task<ApplicationResult<GameUiObservation>> ObserveAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,

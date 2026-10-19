@@ -53,6 +53,10 @@ mutation и освобождать её аренду: учитывай productio
   tap», fake JSON, mock ADB и собственная логика игровых решений не являются приёмкой.
 - Фазы и стоимость берутся из телеметрии production envelope. Невстреченная или ненаблюдаемая фаза —
   `NOT_TESTED`/`UNKNOWN`; успешный ADB/foreground не доказывает главный UI.
+- Новая или изменённая игровая mutation-capability считается проверенной по производительности только
+  с собственной измеренной live-latency на MuMu по шагам (wall-clock, каждый переход, захваты,
+  viewport, ввод, момент кадра-доказательства), сопоставимой с baseline в тех же условиях; зелёный
+  `changeProven` её не заменяет.
 - Конечное состояние согласованного игрового прогона: штатный `game-stop` только Azur Lane,
   независимые `game-observe → Stopped` и `mumu-observe → Running` с пригодным transport, тот же exact
   target. `mumu-stop`, `mumu-restart`, закрытие player.exe и остановка ADB-сервера как cleanup запрещены;

@@ -43,6 +43,7 @@ internal sealed class GameUiMeter(IGameUiHost host, TimeProvider clock, long ori
 {
     private readonly Accumulator _total = new();
     private Accumulator? _pending;
+    private Accumulator? _action;
     private readonly List<string> _order = [];
     private readonly Dictionary<string, PhaseAccumulator> _phases = new(StringComparer.Ordinal);
     private PhaseAccumulator? _current;
@@ -185,9 +186,33 @@ internal sealed class GameUiMeter(IGameUiHost host, TimeProvider clock, long ori
         }
     }
 
+    /// <summary>Начинает отдельный учёт работы одного действия поверх фаз.</summary>
+    internal void BeginAction()
+    {
+        _action = new();
+    }
+
+    /// <summary>Завершает учёт работы действия.</summary>
+    internal GameUiWork EndAction()
+    {
+        GameUiWork work = (_action ?? new()).Snapshot();
+        _action = null;
+        return work;
+    }
+
+    internal static double Milliseconds(TimeProvider clock, long from, long to)
+    {
+        return Milliseconds(clock.GetElapsedTime(from, to));
+    }
+
     private void Record(Action<Accumulator> update)
     {
         update(_total);
+        if (_action is not null)
+        {
+            update(_action);
+        }
+
         if (_pending is not null)
         {
             update(_pending);

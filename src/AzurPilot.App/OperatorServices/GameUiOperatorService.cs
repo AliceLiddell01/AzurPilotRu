@@ -9,7 +9,14 @@ namespace AzurPilot.App.OperatorServices;
 
 /// <summary>Ограниченный итог безопасного открытия Dock и подтверждённого возврата.</summary>
 public sealed record GameDockRoundtrip(GameActionOutcome Open, GameActionOutcome? Close,
-    AndroidTransportPreparationOutcome? AndroidPreparation = null);
+    AndroidTransportPreparationOutcome? AndroidPreparation = null)
+{
+    /// <summary>Время сценария внутри процесса; время действий — в Open/Close.Timing.</summary>
+    public GameDockTiming? Timing { get; init; }
+}
+
+/// <summary>Миллисекунды от вызова: получение аренды, конец подготовки transport, итог сценария.</summary>
+public sealed record GameDockTiming(double LeaseAcquiredAtMs, double PreparedAtMs, double TotalMs);
 
 public sealed partial class AzurPilotOperatorService
 {
@@ -47,8 +54,10 @@ public sealed partial class AzurPilotOperatorService
         GameActionProgress progress, CancellationToken cancellationToken,
         AndroidMutationProgress? androidMutationProgress = null)
     {
+        long started = _timeProvider.GetTimestamp();
         return WithMutationLeaseAsync(instanceId, async () =>
         {
+            long leased = _timeProvider.GetTimestamp();
             ApplicationResult<ResolvedAndroidTarget> target = ResolveAndroidTarget(instanceId);
             if (target.IsFailure)
             {
@@ -64,6 +73,16 @@ public sealed partial class AzurPilotOperatorService
                 return ApplicationResult<GameDockRoundtrip>.Failure(prepared.FailureInfo!);
             }
 
+            long preparedAt = _timeProvider.GetTimestamp();
+            GameDockRoundtrip Timed(GameActionOutcome open, GameActionOutcome? close)
+            {
+                return new(open, close, prepared.Value)
+                {
+                    Timing = new(Milliseconds(started, leased), Milliseconds(started, preparedAt),
+                        Milliseconds(started, _timeProvider.GetTimestamp())),
+                };
+            }
+
             try
             {
                 GameUiActionRunner runner = new(_gameUi, _timeProvider);
@@ -71,17 +90,24 @@ public sealed partial class AzurPilotOperatorService
                     GameAssetCatalog.Default.GetAction("dock.open"), progress, cancellationToken).ConfigureAwait(false);
                 if (!open.ChangeProven)
                 {
-                    return ApplicationResult<GameDockRoundtrip>.Success(new(open, null, prepared.Value));
+                    return ApplicationResult<GameDockRoundtrip>.Success(Timed(open, null));
                 }
 
+                // Кадр-доказательство открытия содержит все признаки возврата и служит его исходным кадром:
+                // guards, свежесть и viewport перед вводом проверяются на нём заново, без повторного захвата.
                 GameActionOutcome close = await runner.RunAsync(instanceId, target.Value.Endpoint,
-                    GameAssetCatalog.Default.GetAction("dock.close"), progress, cancellationToken).ConfigureAwait(false);
-                return ApplicationResult<GameDockRoundtrip>.Success(new(open, close, prepared.Value));
+                    GameAssetCatalog.Default.GetAction("dock.close"), progress, open.After, cancellationToken).ConfigureAwait(false);
+                return ApplicationResult<GameDockRoundtrip>.Success(Timed(open, close));
             }
             catch (AzurPilotNativeBoundaryException exception)
             {
                 return ApplicationResult<GameDockRoundtrip>.Failure(NativeBoundaryFailureMapper.Map(exception));
             }
         }, cancellationToken);
+    }
+
+    private double Milliseconds(long from, long to)
+    {
+        return Math.Round(_timeProvider.GetElapsedTime(from, to).TotalMilliseconds, 1);
     }
 }

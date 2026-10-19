@@ -390,20 +390,75 @@
       ]
     },
     {
-      "id": "loading.download",
-      "purpose": "Фиксированная подпись загрузки, без чисел и файлов; только ожидание.",
+      "id": "loading.startup",
+      "purpose": "Подписи стартовой загрузки без обновления: проверка обновлений и Update complete; без точек, фона и кубика; только пассивное ожидание.",
       "search": {
-        "left": 188,
+        "left": 503,
+        "top": 667,
+        "right": 761,
+        "bottom": 694
+      },
+      "safeTapOffset": null,
+      "variants": [
+        {
+          "id": "update-complete",
+          "file": "loading.startup.png",
+          "sourceSha256": "34882ad3f664a091e8bd759ff243f5f751d69fdc8d54e770d28940233081f065",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 506,
+            "top": 672,
+            "right": 758,
+            "bottom": 689
+          },
+          "sha256": "b966787347a7e74466c0140ab10513416bc7660595dce5c47b7a1d0129c480ea",
+          "mode": "Luma",
+          "minimumScore": 0.8,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 42
+        },
+        {
+          "id": "checking-updates",
+          "file": "loading.startup-checking.png",
+          "sourceSha256": "e65cb10f6e66bb95f7f687ae7c243a546e0a7d889867f20326206ba58164dca9",
+          "sourceWidth": 3840,
+          "sourceHeight": 2160,
+          "crop": {
+            "left": 550,
+            "top": 672,
+            "right": 716,
+            "bottom": 689
+          },
+          "sha256": "f00c823fb77265f7c3b0f44bba32a7f64336cb5e468ec6b663701d9e3f9ab155",
+          "mode": "Luma",
+          "minimumScore": 0.8,
+          "minimumMargin": 0.06,
+          "maximumMeanAbsoluteError": 42
+        }
+      ]
+    },
+    {
+      "id": "loading.download",
+      "purpose": "Начало центрированной подписи скачивания; цифры не входят, поиск допускает сдвиг строки при изменении их длины.",
+      "search": {
+        "left": 140,
         "top": 666,
-        "right": 373,
+        "right": 420,
         "bottom": 695
       },
       "safeTapOffset": null,
-      "progressRegion": {
-        "left": 0,
-        "top": 700,
-        "right": 1280,
-        "bottom": 703
+      "progress": {
+        "region": {
+          "left": 0,
+          "top": 700,
+          "right": 1280,
+          "bottom": 703
+        },
+        "segments": 64,
+        "filledMinimumBlue": 200,
+        "filledMinimumBlueOverRed": 100,
+        "emptyMaximumBlue": 80
       },
       "variants": [
         {
@@ -534,6 +589,9 @@
       "postconditionTimeout": "00:00:20",
       "excludedAssetIds": [
         "dock.selection-confirm",
+        "update.header",
+        "login.enter",
+        "login.server",
         "overlay.dialog-close",
         "overlay.sidebar-open"
       ]
@@ -637,6 +695,7 @@
           "login.enter",
           "login.server",
           "login.success",
+          "loading.startup",
           "loading.download",
           "update.header",
           "update.download",
@@ -695,12 +754,31 @@
         "actionId": null
       },
       {
+        "id": "loading",
+        "state": "Loading",
+        "requiredAssetIds": [
+          "loading.startup"
+        ],
+        "absentAssetIds": [
+          "loading.download",
+          "update.header",
+          "update.download",
+          "update.confirm",
+          "main.dock",
+          "dock.header",
+          "login.enter",
+          "login.server"
+        ],
+        "actionId": null
+      },
+      {
         "id": "download",
         "state": "Loading",
         "requiredAssetIds": [
           "loading.download"
         ],
         "absentAssetIds": [
+          "loading.startup",
           "update.header",
           "update.download",
           "update.confirm",

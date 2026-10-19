@@ -38,6 +38,40 @@ public sealed class GameUiActionRunnerTests
         Assert.Equal(2, host.MappingChecks);
         Assert.NotEqual(result.Before!.Frame.FrameId, result.After!.Frame.FrameId);
         Assert.Equal(new GameInputPoint(49, 39), result.Point);
+        GameActionTiming timing = result.Timing!;
+        Assert.Equal((2, 2, 1), (timing.Work.Captures, timing.Work.ViewportChecks, timing.Work.Taps));
+        Assert.Null(timing.LastUnchangedFrameAtMs);
+        Assert.True(timing.TapCompletedAtMs <= timing.ProofFrameAtMs && timing.ProofFrameAtMs <= timing.ElapsedMs);
+    }
+
+    [Fact]
+    public async Task PreviousProofFrameIsSourceWithoutDuplicateCaptureButWithFreshChecks()
+    {
+        Fixture host = new();
+        ApplicationResult<GameUiObservation> proof = await host.ObserveAsync(Target, Endpoint, ["source", "post"],
+            TestContext.Current.CancellationToken);
+        GameActionOutcome result = await new GameUiActionRunner(host, host.Clock).RunAsync(Target, Endpoint, Action, new(),
+            proof.Value, TestContext.Current.CancellationToken);
+        Assert.True(result.ChangeProven);
+        Assert.Same(proof.Value, result.Before);
+        Assert.Equal(0, result.SourceObservations);
+        Assert.Equal(2, host.Captures);
+        Assert.Equal(2, host.MappingChecks);
+        Assert.Equal(1, result.Timing!.Work.Captures);
+    }
+
+    [Fact]
+    public async Task StaleProofFrameNeverAuthorizesTap()
+    {
+        Fixture host = new();
+        ApplicationResult<GameUiObservation> proof = await host.ObserveAsync(Target, Endpoint, ["source", "post"],
+            TestContext.Current.CancellationToken);
+        host.Clock.Timestamp += 12_001;
+        GameActionOutcome result = await new GameUiActionRunner(host, host.Clock).RunAsync(Target, Endpoint, Action, new(),
+            proof.Value, TestContext.Current.CancellationToken);
+        Assert.Equal("observation_stale", result.Failure!.Details!["reason"]);
+        Assert.Equal(0, host.Taps);
+        Assert.Equal(1, host.Captures);
     }
 
     [Theory]

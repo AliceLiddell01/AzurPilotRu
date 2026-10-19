@@ -20,5 +20,71 @@
       "right": 240,
       "bottom": 64
     }
+  },
+  "loading-real-2": {
+    "sourceSha256": "c78a6a386111f8e8ef7508213ef4fc735527cf7cca6378211ce7ee29c9d4aeff",
+    "sourceWidth": 3840,
+    "sourceHeight": 2160,
+    "crop": {
+      "left": 500,
+      "top": 664,
+      "right": 766,
+      "bottom": 697
+    }
+  },
+  "loading-real-3": {
+    "sourceSha256": "eab2dcb51c648e4d74489d58d70f345ecd037ea29c1432c7f83198aaedcdf778",
+    "sourceWidth": 3840,
+    "sourceHeight": 2160,
+    "crop": {
+      "left": 500,
+      "top": 664,
+      "right": 766,
+      "bottom": 697
+    }
+  },
+  "loading-real-download": {
+    "sourceSha256": "3233eca025e50b85a3a44dd4664203bd8111146365db25171a6909297d2c32fb",
+    "sourceWidth": 3840,
+    "sourceHeight": 2160,
+    "crop": {
+      "left": 500,
+      "top": 664,
+      "right": 766,
+      "bottom": 697
+    }
+  },
+  "loading-real-confirm": {
+    "sourceSha256": "23bf78b7b59004f1865aeef157287f391e771d25f583552bbb3a6dd186af44b2",
+    "sourceWidth": 3840,
+    "sourceHeight": 2160,
+    "crop": {
+      "left": 500,
+      "top": 664,
+      "right": 766,
+      "bottom": 697
+    }
+  },
+  "progress-real-full": {
+    "sourceSha256": "c78a6a386111f8e8ef7508213ef4fc735527cf7cca6378211ce7ee29c9d4aeff",
+    "sourceWidth": 3840,
+    "sourceHeight": 2160,
+    "crop": {
+      "left": 0,
+      "top": 697,
+      "right": 1280,
+      "bottom": 706
+    }
+  },
+  "progress-real-partial": {
+    "sourceSha256": "3233eca025e50b85a3a44dd4664203bd8111146365db25171a6909297d2c32fb",
+    "sourceWidth": 3840,
+    "sourceHeight": 2160,
+    "crop": {
+      "left": 0,
+      "top": 697,
+      "right": 1280,
+      "bottom": 706
+    }
   }
 }

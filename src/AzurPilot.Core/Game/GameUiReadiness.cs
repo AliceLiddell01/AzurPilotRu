@@ -93,12 +93,14 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
     // Минимальный интервал между началами захватов: медленный захват не дополняется лишней паузой.
     private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan StateInactivity = TimeSpan.FromSeconds(12);
+    // Пассивная загрузка (стартовая или без подтверждённого Confirm) ограничена временем от первого входа
+    // в состояние: полная полоса, кубик и иллюстрация не являются прогрессом. Предел равен стартовому переходу.
+    private static readonly TimeSpan PassiveLoading = TimeSpan.FromSeconds(120);
+    // После подтверждённого Confirm новый максимум заполнения полосы продлевает ожидание на этот срок.
     private static readonly TimeSpan LoadingInactivity = TimeSpan.FromSeconds(40);
     private static readonly TimeSpan InitialTransition = TimeSpan.FromSeconds(120);
     // Верхняя граница Agent CLI deadline; защищает вызывающего без собственного deadline и не обрывает агентский раньше.
     private static readonly TimeSpan MaximumDuration = TimeSpan.FromMinutes(5);
-    // Рост заполнения полосы прогресса меньше шага считается шумом и не продлевает ожидание.
-    private const double ProgressStep = 0.05;
     // Read-only доказательство Ready требует трёх устойчивых кадров; лишние кадры не ожидаются бесконечно.
     private const int ReadOnlyFrames = 6;
     private const int MaximumEvidence = 16;
@@ -121,7 +123,13 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
         long previousCapture = started - 1;
         long? previousRequest = null;
         string previousState = "";
-        double? progressBaseline = null;
+        // Контекст скачивания: разрешение даёт только подтверждённое в этом flow действие, результатом
+        // которого стала измеримая полоса; любой кадр вне загрузки его снимает. Максимум не сбрасывается.
+        bool progressAuthorized = false;
+        double? progressHighWater = null;
+        long? lastProgress = null;
+        // Повторный вход в ту же загрузку (мерцание распознавания) не перезапускает её срок.
+        Dictionary<string, long> loadingEntered = new(StringComparer.Ordinal);
         GameUiReadinessState state = GameUiReadinessState.Unknown;
         bool readyProven = false;
         bool supportedStateObserved = false;
@@ -192,7 +200,8 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                 }
 
                 GameUiStateRule? rule = policy.Classify(last);
-                supportedStateObserved |= rule is not null;
+                // Распознанная загрузка — часть стартового перехода и не сокращает ожидание его неизвестных экранов.
+                supportedStateObserved |= rule is not null && rule.State != GameUiReadinessState.Loading;
                 state = rule?.State ?? GameUiReadinessState.Unknown;
                 string stateId = rule?.Id ?? GameUiReadinessPolicy.UnknownStateId;
                 meter.Enter(GameUiReadinessPolicy.StatePhase(stateId), last.Frame.CaptureStartedTimestamp);
@@ -225,25 +234,26 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                     viewportProven = true;
                 }
 
-                bool progressed = false;
-                if (state == GameUiReadinessState.Loading && last.ProgressLevel is double level)
+                if (state != GameUiReadinessState.Loading)
                 {
-                    // Учитывается только накопленный рост заполнения; сброс полосы начинает новый этап без продления ожидания.
-                    progressed = progressBaseline is double baseline && level - baseline >= ProgressStep;
-                    if (progressBaseline is null || progressed || level < progressBaseline)
-                    {
-                        progressBaseline = level;
-                    }
+                    progressAuthorized = false;
+                    lastProgress = null;
+                }
+                else if (progressAuthorized && last.ProgressLevel is double level and >= 0 and <= 1
+                    && progressHighWater is double highWater && level > highWater)
+                {
+                    // Только новый максимум доли заполнения: снижение, сброс и возврат к прежнему значению не продлевают ожидание.
+                    progressHighWater = level;
+                    lastProgress = clock.GetTimestamp();
                 }
 
-                if (previousState != stateId || progressed)
+                if (previousState != stateId)
                 {
                     stateStarted = clock.GetTimestamp();
-                }
-
-                if (previousState != stateId && state != GameUiReadinessState.Loading)
-                {
-                    progressBaseline = null;
+                    if (state == GameUiReadinessState.Loading && !loadingEntered.TryAdd(stateId, stateStarted))
+                    {
+                        stateStarted = loadingEntered[stateId];
+                    }
                 }
 
                 previousState = stateId;
@@ -309,6 +319,13 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                     {
                         _ = frames.Add(action.After.Frame.FrameId);
                         previousCapture = action.After.Frame.CaptureStartedTimestamp;
+                        if (action.After.ProgressLevel is double initialLevel and >= 0 and <= 1)
+                        {
+                            // Начальное заполнение — точка отсчёта, а не прогресс.
+                            progressAuthorized = true;
+                            progressHighWater = initialLevel;
+                            lastProgress = null;
+                        }
                     }
 
                     previousState = "";
@@ -318,13 +335,21 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                 }
 
                 TimeSpan inactivity = clock.GetElapsedTime(stateStarted);
-                bool initial = state == GameUiReadinessState.Unknown && allowInitialTransition && !supportedStateObserved;
-                TimeSpan inactivityLimit = initial ? InitialTransition
-                    : state == GameUiReadinessState.Loading ? LoadingInactivity : StateInactivity;
-                if (inactivity >= inactivityLimit)
+                if (state == GameUiReadinessState.Loading)
                 {
-                    return Rejected(initial ? "initial_transition_unproven"
-                        : state == GameUiReadinessState.Loading ? "loading_no_progress" : "state_unproven_or_no_progress");
+                    // Рост подтверждённого скачивания только продлевает пассивный срок, но не сокращает его.
+                    if (inactivity >= PassiveLoading && !(lastProgress is long grown && clock.GetElapsedTime(grown) < LoadingInactivity))
+                    {
+                        return Rejected(lastProgress is null ? "loading_unfinished" : "loading_no_progress");
+                    }
+
+                    continue;
+                }
+
+                bool initial = state == GameUiReadinessState.Unknown && allowInitialTransition && !supportedStateObserved;
+                if (inactivity >= (initial ? InitialTransition : StateInactivity))
+                {
+                    return Rejected(initial ? "initial_transition_unproven" : "state_unproven_or_no_progress");
                 }
             }
         }

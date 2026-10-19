@@ -145,6 +145,8 @@ AzurPilot одного Windows-пользователя, включая разн
 может быть доказан до отказа boot. В `game-dock-roundtrip` успешная preparation хранится рядом с
 `open`/`close`; ранний отказ несёт `androidMutation` и `gameUiMutation`. `effect=changed` из-за ADB
 не означает доказанного перехода игры — проверяй оба `changeProven` игровых результатов.
+`open.timing`/`close.timing` и `data.timing` дают время и работу бота по шагам; их смысл описан в
+[игровом UI](../architecture/game-ui.md#фазовая-телеметрия).
 
 После частичного отказа `data` сохраняет preparation stage, начальное состояние, результат запуска
 MuMu и доступное postflight-наблюдение. Ошибка shutdown сохраняет уже завершённый результат в

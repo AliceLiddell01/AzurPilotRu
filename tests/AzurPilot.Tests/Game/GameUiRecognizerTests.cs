@@ -56,6 +56,30 @@ public sealed class GameUiRecognizerTests
         Assert.Null(observation.Find("dock.header")!.SafeTapBounds);
     }
 
+    // Реальные crops подписи из независимых кадров (иные фоны, чем у исходника шаблона) и другие подписи
+    // в той же области: скачивание с цифрами и окно Update поверх загрузки.
+    [Theory]
+    [InlineData("loading-real-2", GameMatchStatus.Unique)]
+    [InlineData("loading-real-3", GameMatchStatus.Unique)]
+    [InlineData("loading-real-download", GameMatchStatus.Absent)]
+    [InlineData("loading-real-confirm", GameMatchStatus.Absent)]
+    public void StartupLoadingCaptionSurvivesIndependentBackgroundsAndRejectsOtherCaptions(string sample, GameMatchStatus expected)
+    {
+        using NativeFrame frame = AzurPilotNativeBridge.DecodePng(File.ReadAllBytes(Path.Combine(
+            PinnedVersions.RepositoryRoot, "tests", "fixtures", "game", sample + "-2160.png")));
+        GameUiObservation observation = new GameUiRecognizer(GameAssetCatalog.Default).Observe(frame, Provenance(frame),
+            ["loading.startup", "loading.download"]);
+        GameUiMatch startup = observation.Find("loading.startup")!;
+        Assert.Equal(expected, startup.Status);
+        Assert.Null(startup.SafeTapBounds);
+        if (expected == GameMatchStatus.Unique)
+        {
+            Assert.Equal("update-complete", startup.VariantId);
+        }
+
+        Assert.Equal(GameMatchStatus.Absent, observation.Find("loading.download")!.Status);
+    }
+
     [Fact]
     public void InvalidGeometryAndDisposedFrameNeverReachMatcher()
     {

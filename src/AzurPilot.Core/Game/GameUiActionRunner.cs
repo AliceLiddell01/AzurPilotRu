@@ -24,28 +24,41 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
     }
 
     /// <summary>
-    /// Выполняет переход; уже классифицированный кадр используется как исходный, только если в нём есть
-    /// результаты всех признаков действия. Все проверки исходного кадра и его свежести остаются прежними.
+    /// Выполняет переход; уже классифицированный кадр (например, доказательство предыдущего действия)
+    /// используется как исходный, только если в нём есть результаты всех признаков действия. Все проверки
+    /// исходного кадра, его свежести и viewport перед вводом остаются прежними.
     /// </summary>
-    internal async Task<GameActionOutcome> RunAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,
+    public async Task<GameActionOutcome> RunAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,
         GameUiAction action, GameActionProgress progress, GameUiObservation? classified, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(progress);
         GameUiMeter meter = _meter ??= new(host, _clock, _clock.GetTimestamp());
+        long actionStarted = _clock.GetTimestamp();
+        meter.BeginAction();
         GameUiObservation? before = null;
         GameUiObservation? after = null;
         GameInputPoint? point = null;
         bool attempted = false;
         bool proven = false;
         int sourceObservations = 0, postconditionObservations = 0;
+        long? tapCompleted = null, lastUnchanged = null;
         IReadOnlyList<string> excluded = action.ExcludedAssetIds ?? [];
         IReadOnlyList<string> required = action.RequiredAssetIds ?? [];
         string[] posts = [action.PostconditionAssetId, .. action.AlternativePostconditionAssetIds ?? []];
         string[] assets = [.. new[] { action.SourceAssetId }.Concat(posts).Concat(excluded).Concat(required).Distinct(StringComparer.Ordinal)];
+        double? At(long? timestamp)
+        {
+            return timestamp is long value ? GameUiMeter.Milliseconds(_clock, actionStarted, value) : null;
+        }
+
         GameActionOutcome Result(ApplicationFailure? failure)
         {
-            return new(action.Id, before, after, point, attempted, proven, failure, sourceObservations, postconditionObservations);
+            return new(action.Id, before, after, point, attempted, proven, failure, sourceObservations, postconditionObservations)
+            {
+                Timing = new(GameUiMeter.Milliseconds(_clock, actionStarted, _clock.GetTimestamp()), At(tapCompleted),
+                    At(lastUnchanged), proven ? At(after!.Frame.CaptureStartedTimestamp) : null, meter.EndAction()),
+            };
         }
 
         GameActionOutcome Rejected(string reason)
@@ -158,6 +171,7 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
             progress.TapAttempts++;
             GameTap permit = new(before.Frame, action.SourceAssetId, safe, point.Value, action.MaximumObservationAge);
             ApplicationResult<AndroidCommandOutcome> tap = await meter.TapAsync(permit, cancellationToken).ConfigureAwait(false);
+            tapCompleted = _clock.GetTimestamp();
             if (tap.IsFailure)
             {
                 return Result(tap.FailureInfo);
@@ -231,6 +245,8 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
                     progress.ChangeProven = true;
                     return Result(null);
                 }
+
+                lastUnchanged = after.Frame.CaptureStartedTimestamp;
             }
 
             return Rejected("postcondition_unknown");

@@ -34,7 +34,10 @@ public sealed record GameObservationCost(TimeSpan Capture, TimeSpan CaptureComma
 /// <summary>Один кадр и результаты поиска в нём.</summary>
 public sealed record GameUiObservation(GameFrameProvenance Frame, IReadOnlyList<GameUiMatch> Matches)
 {
-    /// <summary>Уровень заполнения полосы прогресса из каталога; рост показывает продвижение, но не завершение загрузки.</summary>
+    /// <summary>
+    /// Доля заполнения полосы прогресса из каталога (0–1, шаг — сегмент полосы); null, если владелец полосы не
+    /// распознан или картина полосы не доказана. Рост показывает продвижение, но не завершение загрузки.
+    /// </summary>
     public double? ProgressLevel { get; init; }
     /// <summary>Измеренная host стоимость захвата и распознавания, если она известна.</summary>
     public GameObservationCost? Cost { get; init; }
@@ -112,4 +115,16 @@ public sealed class GameActionProgress
 /// <summary>Итог действия с ограничением времени; Unknown не означает NoEffect.</summary>
 public sealed record GameActionOutcome(string ActionId, GameUiObservation? Before, GameUiObservation? After,
     GameInputPoint? Point, bool MutationAttempted, bool ChangeProven, ApplicationFailure? Failure,
-    int SourceObservations = 0, int PostconditionObservations = 0);
+    int SourceObservations = 0, int PostconditionObservations = 0)
+{
+    /// <summary>Время и собственная работа бота в этом действии.</summary>
+    public GameActionTiming? Timing { get; init; }
+}
+
+/// <summary>
+/// Миллисекунды от начала действия. TapCompletedAtMs — возврат команды ввода; LastUnchangedFrameAtMs и
+/// ProofFrameAtMs — начала захвата последнего кадра без доказанного эффекта и кадра-доказательства: смена
+/// экрана игрой лежит между ними (с точностью до длительности захвата). Work — работа бота внутри действия.
+/// </summary>
+public sealed record GameActionTiming(double ElapsedMs, double? TapCompletedAtMs, double? LastUnchangedFrameAtMs,
+    double? ProofFrameAtMs, GameUiWork Work);

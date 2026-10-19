@@ -87,7 +87,8 @@ public sealed partial class AzurPilotOperatorServiceTests
         QueueGameCapture(scripted, "main");
         scripted.Runner.EnqueueOutcome(0, "");
         QueueGameCapture(scripted, "dock");
-        QueueGameCapture(scripted, "dock");
+        // Кадр-доказательство открытия служит исходным кадром возврата; viewport перед вводом проверяется заново.
+        QueueViewport(scripted);
         scripted.Runner.EnqueueOutcome(0, "");
         QueueGameCapture(scripted, "main");
 
@@ -95,7 +96,7 @@ public sealed partial class AzurPilotOperatorServiceTests
             (run, token) => run(scripted.Service, token), TestContext.Current.CancellationToken);
         Assert.Equal(0, result.ExitCode);
         Assert.Equal("changed", result.Effect);
-        Assert.Equal(4, scripted.ScreenshotHost.CaptureCount);
+        Assert.Equal(3, scripted.ScreenshotHost.CaptureCount);
         Assert.Equal(2, scripted.Runner.Requests.Count(r => r.Request.Arguments.Contains("tap", StringComparer.Ordinal)));
         Assert.All(scripted.Runner.Requests.Skip(2), r =>
         {
@@ -120,7 +121,24 @@ public sealed partial class AzurPilotOperatorServiceTests
             open.GetProperty("after").GetProperty("frame").GetProperty("frameId").GetString()!,
             close.GetProperty("before").GetProperty("frame").GetProperty("frameId").GetString()!,
             close.GetProperty("after").GetProperty("frame").GetProperty("frameId").GetString()!];
-        Assert.Equal(4, frameIds.Distinct().Count());
+        Assert.Equal(3, frameIds.Distinct().Count());
+        Assert.Equal(frameIds[1], frameIds[2]);
+        Assert.Equal(0, close.GetProperty("sourceObservations").GetInt32());
+        foreach (JsonElement action in new[] { open, close })
+        {
+            JsonElement timing = action.GetProperty("timing");
+            JsonElement work = timing.GetProperty("work");
+            Assert.Equal(1, work.GetProperty("taps").GetInt32());
+            Assert.Equal(2, work.GetProperty("viewportChecks").GetInt32());
+            Assert.True(timing.GetProperty("tapCompletedAtMs").GetDouble() <= timing.GetProperty("proofFrameAtMs").GetDouble());
+            Assert.True(timing.GetProperty("proofFrameAtMs").GetDouble() <= timing.GetProperty("elapsedMs").GetDouble());
+        }
+
+        Assert.Equal(2, open.GetProperty("timing").GetProperty("work").GetProperty("captures").GetInt32());
+        Assert.Equal(1, close.GetProperty("timing").GetProperty("work").GetProperty("captures").GetInt32());
+        JsonElement total = json.RootElement.GetProperty("data").GetProperty("timing");
+        Assert.True(total.GetProperty("leaseAcquiredAtMs").GetDouble() <= total.GetProperty("preparedAtMs").GetDouble());
+        Assert.True(total.GetProperty("preparedAtMs").GetDouble() <= total.GetProperty("totalMs").GetDouble());
         ApplicationResult<FileStream> released = WindowsInstanceMutationLease.TryAcquire(selected);
         Assert.True(released.IsSuccess);
         using FileStream finalLease = released.Value!;
@@ -145,6 +163,11 @@ public sealed partial class AzurPilotOperatorServiceTests
     private static void QueueGameCapture(OperatorFixture fixture, string state)
     {
         fixture.Runner.EnqueueBinaryOutcome(File.ReadAllBytes(Path.Combine(PinnedVersions.RepositoryRoot, "tests", "fixtures", "game", state + "-2160.png")));
+        QueueViewport(fixture);
+    }
+
+    private static void QueueViewport(OperatorFixture fixture)
+    {
         fixture.Runner.EnqueueOutcome(0, GameInputViewportTests.Input);
         fixture.Runner.EnqueueOutcome(0, GameInputViewportTests.Window);
         fixture.Runner.EnqueueOutcome(0, GameInputViewportTests.Focus);
