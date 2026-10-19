@@ -89,14 +89,14 @@ public sealed partial class AzurPilotOperatorService
     /// Один bounded flow и одна межпроцессная аренда: MuMu → Android → процесс → UI. Общий срок задаёт
     /// token вызывающего (Agent CLI deadline); собственного более короткого срока здесь нет.
     /// </summary>
-    public Task<ApplicationResult<GameUiEnsureOutcome>> EnsureGameUiReadyAsync(MuMuInstanceId instanceId,
+    public async Task<ApplicationResult<GameUiEnsureOutcome>> EnsureGameUiReadyAsync(MuMuInstanceId instanceId,
         GameActionProgress uiMutation, AndroidMutationProgress gameMutation, AndroidMutationProgress androidMutation,
         Action<AzurPilotOperatorAndroidPreparationOutcome>? preparation, CancellationToken cancellationToken,
         GameUiEnsureTimeline? timeline = null)
     {
         timeline ??= CreateGameUiTimeline();
         timeline.Enter("lifecycle:lease");
-        return WithMutationLeaseAsync(instanceId, async () =>
+        ApplicationResult<GameUiEnsureOutcome> result = await WithMutationLeaseAsync(instanceId, async () =>
         {
             AzurPilotOperatorAndroidPreparationOutcome? prepared = null;
             bool androidEntered = false;
@@ -151,7 +151,14 @@ public sealed partial class AzurPilotOperatorService
             {
                 return ApplicationResult<GameUiEnsureOutcome>.Failure(NativeBoundaryFailureMapper.Map(exception));
             }
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
+        // Незакрытая фаза (например, аренда не получена) получает код отказа вместо пустой причины.
+        if (result.IsFailure)
+        {
+            timeline.Exit(result.FailureInfo!.Code);
+        }
+
+        return result;
     }
 
     /// <summary>Шкала фаз ensure на часах этого сервиса.</summary>

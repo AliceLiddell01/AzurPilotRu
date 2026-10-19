@@ -82,6 +82,27 @@ public sealed partial class AzurPilotOperatorServiceTests
         Assert.Equal(2, data.GetProperty("ui").GetProperty("work").GetProperty("taps").GetInt32());
     }
 
+    [Fact]
+    public async Task ReadyEnsureBusyLeaseKeepsExplicitPhaseReasonWithoutMutation()
+    {
+        using GameUiReadinessTests.ReadyHost ui = new("main");
+        OperatorFixture fixture = CreateFixture(MuMuLifecycleTestContext.Instance("7"));
+        AndroidTestContext android = new();
+        var service = CreateAgentService(fixture, android, gameUi: ui, clock: ui.Clock);
+        var held = WindowsInstanceMutationLease.TryAcquire(ui.Target);
+        using FileStream lease = held.Value!;
+        AgentEnvelope result = await AgentRunner.RunAsync(["agent", "game-ui-ready-ensure", "--target", "mumu:7"],
+            (run, token) => run(service, token), TestContext.Current.CancellationToken);
+        Assert.Equal("busy", result.Status);
+        Assert.Equal("none", result.Effect);
+        Assert.Equal(0, ui.Captures);
+        Assert.Empty(fixture.MuMuHost.MutationRequests);
+        using JsonDocument json = JsonDocument.Parse(AgentJson.Serialize(ref result));
+        JsonElement[] lifecycle = [.. json.RootElement.GetProperty("data").GetProperty("lifecycle").EnumerateArray()];
+        Assert.Equal(ApplicationFailure.TargetBusy, lifecycle[0].GetProperty("endReason").GetString());
+        Assert.All(lifecycle.Skip(1), p => Assert.Equal("NotObserved", p.GetProperty("status").GetString()));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
