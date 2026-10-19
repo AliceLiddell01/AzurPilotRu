@@ -189,8 +189,16 @@ public static partial class AzurPilotNativeBridge
         return native;
     }
 
+    // Запоминается только успех: отсутствующий export по-прежнему даёт MissingFrameApi при каждом вызове.
+    private static volatile bool s_previewApiVerified;
+
     private static void EnsureFramePreviewApi()
     {
+        if (s_previewApiVerified)
+        {
+            return;
+        }
+
         _ = VerifyAnnotationStructLayout();
         int status;
         try
@@ -226,6 +234,8 @@ public static partial class AzurPilotNativeBridge
         {
             throw MissingFrameApi("azurpilot_native_frame_encode_jpeg");
         }
+
+        s_previewApiVerified = true;
     }
 
     [StructLayout(LayoutKind.Sequential)]

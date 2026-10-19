@@ -213,9 +213,21 @@ internal sealed class AgentDebugRun : IDisposable
             }
             catch
             {
-                // Отказ начального manifest не должен оставлять открытыми trace и listener.
+                // Отказ начального manifest не должен оставлять открытыми trace и listener, фоновую запись
+                // кадров и частично созданный каталог прогона: операция не запускалась и эффектов нет.
                 run._activities.Dispose();
                 run.Trace.Close();
+                run.Frames.CompleteAsync().GetAwaiter().GetResult();
+                run.Frames.Dispose();
+                try
+                {
+                    Directory.Delete(run.RunDirectory, recursive: true);
+                }
+                catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+                {
+                    // Исходный отказ важнее: остаток каталога не маскирует причину.
+                }
+
                 throw;
             }
 
