@@ -46,6 +46,28 @@ public sealed class NativeInteropTests
         Assert.Equal(expected, AzurPilotNativeBridge.GetMaximumPngBytes());
     }
 
+    [Fact(DisplayName = "Managed-пределы превью совпадают с макросами нормативного заголовка ABI")]
+    public void PreviewLimitsMatchNormativeHeader()
+    {
+        string header = File.ReadAllText(Path.Combine(PinnedVersions.RepositoryRoot, "native", "include", "azurpilot_native_abi.h"));
+        long Limit(string name)
+        {
+            System.Text.RegularExpressions.Match value = System.Text.RegularExpressions.Regex.Match(
+                header,
+                @"#define\s+" + name + @"\s+U?INT32_C\((\d+)\)",
+                System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+                TimeSpan.FromSeconds(1));
+            Assert.True(value.Success, $"В нормативном заголовке не найден макрос {name}.");
+            return long.Parse(value.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        Assert.Equal(AzurPilotNativeBridge.MaximumPreviewDimension, Limit("AZURPILOT_NATIVE_MAX_PREVIEW_DIMENSION"));
+        Assert.Equal(AzurPilotNativeBridge.MaximumAnnotations, Limit("AZURPILOT_NATIVE_MAX_ANNOTATIONS"));
+        Assert.Equal(AzurPilotNativeBridge.MinimumJpegQuality, Limit("AZURPILOT_NATIVE_MIN_JPEG_QUALITY"));
+        Assert.Equal(AzurPilotNativeBridge.MaximumJpegQuality, Limit("AZURPILOT_NATIVE_MAX_JPEG_QUALITY"));
+        Assert.Equal(AzurPilotNativeBridge.MaximumJpegBytes, Limit("AZURPILOT_NATIVE_MAX_JPEG_BYTES"));
+    }
+
     [Fact(DisplayName = "Native библиотека реально загружается и сообщает ожидаемую версию ABI")]
     public void NativeLibraryReportsExpectedAbiVersion()
     {

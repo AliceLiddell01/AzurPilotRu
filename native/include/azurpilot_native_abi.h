@@ -96,10 +96,15 @@
 #define AZURPILOT_NATIVE_MAX_JPEG_QUALITY UINT32_C(95)
 /* Предел координат аннотации по модулю: рисование вне превью отсекается OpenCV, но арифметика остаётся ограниченной. */
 #define AZURPILOT_NATIVE_MAX_ANNOTATION_COORDINATE INT32_C(16384)
+/* Пределы параметров аннотаций: радиус (поле right у кругов), масштаб текста в процентах и толщина линии. */
+#define AZURPILOT_NATIVE_MAX_ANNOTATION_RADIUS INT32_C(1024)
+#define AZURPILOT_NATIVE_MIN_ANNOTATION_TEXT_SCALE INT32_C(25)
+#define AZURPILOT_NATIVE_MAX_ANNOTATION_TEXT_SCALE INT32_C(300)
+#define AZURPILOT_NATIVE_MAX_ANNOTATION_THICKNESS UINT32_C(8)
 
 /* Виды аннотаций. RECT/FILLED_RECT: region — полуоткрытый прямоугольник превью.
- * CIRCLE/FILLED_CIRCLE/CROSS: центр (left, top), радиус right (1..1024), bottom == 0.
- * TEXT: начало базовой линии (left, top), масштаб шрифта right в процентах (25..300), bottom == 0;
+ * CIRCLE/FILLED_CIRCLE/CROSS: центр (left, top), радиус right (1..AZURPILOT_NATIVE_MAX_ANNOTATION_RADIUS), bottom == 0.
+ * TEXT: начало базовой линии (left, top), масштаб шрифта right в процентах (AZURPILOT_NATIVE_MIN_ANNOTATION_TEXT_SCALE..AZURPILOT_NATIVE_MAX_ANNOTATION_TEXT_SCALE), bottom == 0;
  * text — печатный ASCII 0x20..0x7E с завершающим NUL. У остальных видов text пуст. */
 #define AZURPILOT_NATIVE_ANNOTATION_RECT UINT32_C(1)
 #define AZURPILOT_NATIVE_ANNOTATION_FILLED_RECT UINT32_C(2)

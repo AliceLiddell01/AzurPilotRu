@@ -15,10 +15,6 @@
 
 namespace {
 
-constexpr std::int32_t kMaximumRadius = 1024;
-constexpr std::int32_t kMinimumTextScale = 25;
-constexpr std::int32_t kMaximumTextScale = 300;
-constexpr std::uint8_t kMaximumThickness = 8;
 constexpr int kDashLength = 8;
 constexpr int kDashGap = 6;
 
@@ -49,7 +45,7 @@ int text_length(const char (&text)[AZURPILOT_NATIVE_ANNOTATION_TEXT_BYTES]) noex
 
 bool annotation_is_valid(const AzurPilotNativeAnnotation& annotation) noexcept {
     const AzurPilotNativeRegion& region = annotation.region;
-    if (annotation.thickness == 0u || annotation.thickness > kMaximumThickness
+    if (annotation.thickness == 0u || annotation.thickness > AZURPILOT_NATIVE_MAX_ANNOTATION_THICKNESS
         || !coordinate_is_bounded(region.left) || !coordinate_is_bounded(region.top)
         || !coordinate_is_bounded(region.right) || !coordinate_is_bounded(region.bottom)) {
         return false;
@@ -73,9 +69,9 @@ bool annotation_is_valid(const AzurPilotNativeAnnotation& annotation) noexcept {
     case AZURPILOT_NATIVE_ANNOTATION_CIRCLE:
     case AZURPILOT_NATIVE_ANNOTATION_FILLED_CIRCLE:
     case AZURPILOT_NATIVE_ANNOTATION_CROSS:
-        return length == 0 && region.right >= 1 && region.right <= kMaximumRadius && region.bottom == 0;
+        return length == 0 && region.right >= 1 && region.right <= AZURPILOT_NATIVE_MAX_ANNOTATION_RADIUS && region.bottom == 0;
     case AZURPILOT_NATIVE_ANNOTATION_TEXT:
-        return length > 0 && region.right >= kMinimumTextScale && region.right <= kMaximumTextScale
+        return length > 0 && region.right >= AZURPILOT_NATIVE_MIN_ANNOTATION_TEXT_SCALE && region.right <= AZURPILOT_NATIVE_MAX_ANNOTATION_TEXT_SCALE
             && region.bottom == 0;
     default:
         return false;

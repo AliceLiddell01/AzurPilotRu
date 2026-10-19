@@ -212,25 +212,10 @@ public sealed class AgentContractTests
         Assert.DoesNotContain(AgentCommands.All.Single(c => c.Name == "discover").Arguments, a => a.Name == AgentDebugRun.ArgumentName);
     }
 
+    public static TheoryData<int> InvalidCaseIndexes => [.. Enumerable.Range(0, InvalidCases.Length)];
+
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    [InlineData(5)]
-    [InlineData(6)]
-    [InlineData(7)]
-    [InlineData(8)]
-    [InlineData(9)]
-    [InlineData(10)]
-    [InlineData(11)]
-    [InlineData(12)]
-    [InlineData(13)]
-    [InlineData(14)]
-    [InlineData(15)]
-    [InlineData(16)]
-    [InlineData(17)]
+    [MemberData(nameof(InvalidCaseIndexes))]
     public async Task InvalidArgumentsAlwaysProduceMachineFailure(int caseIndex)
     {
         AgentEnvelope result = await AgentRunner.RunAsync(InvalidCases[caseIndex], (_, _) => throw new InvalidOperationException(), TestContext.Current.CancellationToken);

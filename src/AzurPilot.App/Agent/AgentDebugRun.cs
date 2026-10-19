@@ -181,13 +181,18 @@ internal sealed class AgentDebugRun : IDisposable
                 return Unavailable("session_path_escape");
             }
 
-            _ = Directory.CreateDirectory(sessionDirectory);
-            foreach (string directory in new[] { Path.Combine(root, ".codex"), Path.Combine(root, ".codex", "local"), reports, sessionDirectory })
+            // Ссылку нужно отвергнуть до создания каталогов: иначе они появятся за ignored boundary.
+            string[] components = [Path.Combine(root, ".codex"), Path.Combine(root, ".codex", "local"), reports, sessionDirectory];
+            foreach (string directory in components)
             {
-                // Перенаправление каталога отчёта ссылкой могло бы вывести запись за ignored boundary.
-                if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+                if (Directory.Exists(directory) && (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
                 {
                     return Unavailable("report_path_reparse_point");
+                }
+
+                if (!Directory.Exists(directory))
+                {
+                    _ = Directory.CreateDirectory(directory);
                 }
             }
 
