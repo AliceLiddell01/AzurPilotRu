@@ -49,7 +49,14 @@ public static partial class AzurPilotNativeBridge
     /// <summary>Предел размера одного JPEG.</summary>
     public const int MaximumJpegBytes = 8_388_608;
 
-    private const int AnnotationTextBytes = 64;
+    /// <summary>Размер буфера текста аннотации с завершающим NUL.</summary>
+    internal const int AnnotationTextBytes = 64;
+
+    /// <summary>Значение стиля сплошной линии.</summary>
+    internal const uint SolidAnnotationStyle = 0;
+
+    /// <summary>Значение стиля штриховой линии.</summary>
+    internal const uint DashedAnnotationStyle = 1;
     // Типичный аннотированный JPEG логического размера заметно меньше; при нехватке выполняется одна повторная попытка.
     private const int InitialJpegBuffer = 768 * 1024;
 
@@ -161,7 +168,7 @@ public static partial class AzurPilotNativeBridge
         NativeAnnotation native = new()
         {
             Kind = (uint)annotation.Kind,
-            Style = annotation.Dashed ? 1u : 0u,
+            Style = annotation.Dashed ? DashedAnnotationStyle : SolidAnnotationStyle,
             Region = new()
             {
                 Left = annotation.Region.Left,

@@ -326,7 +326,23 @@ internal sealed class AgentDebugRun : IDisposable
             status = "incomplete";
         }
 
-        AppendSessionIndex(envelope, counters, status, completed);
+        if (!await AppendSessionIndexAsync(envelope, counters, status, completed).ConfigureAwait(false))
+        {
+            // Строка индекса, на которую опирается приёмка, не записана: отчёт нельзя считать полным.
+            reasons.Add("session_index_write_failed");
+            status = "incomplete";
+            try
+            {
+                await File.WriteAllTextAsync(Path.Combine(RunDirectory, "summary.md"),
+                    Summary(envelope, counters, reasons, completed), new UTF8Encoding(false)).ConfigureAwait(false);
+                WriteManifest(envelope, counters, reasons, completed, FileMode.Create);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // Причина уже возвращается вызывающему в результате; прежние файлы отчёта остаются как были.
+            }
+        }
+
         return new(RelativeRunDirectory, status, reasons);
     }
 
@@ -411,7 +427,7 @@ internal sealed class AgentDebugRun : IDisposable
         return runs;
     }
 
-    private void AppendSessionIndex(AgentEnvelope envelope, AgentDebugFrameCounters counters, string status, DateTimeOffset completed)
+    private async Task<bool> AppendSessionIndexAsync(AgentEnvelope envelope, AgentDebugFrameCounters counters, string status, DateTimeOffset completed)
     {
         byte[] line = [.. JsonSerializer.SerializeToUtf8Bytes(new
         {
@@ -440,17 +456,19 @@ internal sealed class AgentDebugRun : IDisposable
                 using FileStream index = new(Path.Combine(SessionDirectory, SessionIndexFile), FileMode.Append, FileAccess.Write, FileShare.Read);
                 index.Write(line);
                 index.Flush(flushToDisk: true);
-                return;
+                return true;
             }
             catch (IOException)
             {
-                Thread.Sleep(20);
+                await Task.Delay(20).ConfigureAwait(false);
             }
             catch (UnauthorizedAccessException)
             {
-                return;
+                return false;
             }
         }
+
+        return false;
     }
 
     private object Performance(AgentDebugFrameCounters counters, double finalizeMs)
