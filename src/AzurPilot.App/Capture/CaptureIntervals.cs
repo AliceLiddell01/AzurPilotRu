@@ -148,7 +148,36 @@ internal static class CaptureIntervals
             return Rejected("environment_changed", CaptureVerdict.Blocked);
         }
 
-        SceneCheck before = await SceneCheck.ObserveAsync(service, target, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<double> grid = ScreenshotIntervalAnalysis.NormalizeGrid(
+            request.Grid ?? (combat ? ScreenshotIntervalAnalysis.DefaultCombatGrid : ScreenshotIntervalAnalysis.DefaultNormalGrid),
+            request.Scene, combat ? request.Settings.CombatIntervalMilliseconds : request.Settings.NormalIntervalMilliseconds);
+        TimeSpan deadline = request.Timeout - PostcheckReserve;
+
+        // Наблюдения сцены до и после и само измерение — под одной арендой: между ними другой процесс не изменит экран.
+        ApplicationResult<LeasedPhase> leased = await service.WithCaptureLeaseAsync(target.InstanceId, async () =>
+        {
+            SceneCheck sceneBefore = await SceneCheck.ObserveAsync(service, target, cancellationToken).ConfigureAwait(false);
+            if (combat == sceneBefore.Ready)
+            {
+                return ApplicationResult<LeasedPhase>.Success(new(sceneBefore, null, null));
+            }
+
+            ApplicationResult<MeasuredGrid> measuredGrid = await MeasureAsync(router, target, method, grid,
+                () => deadline - Stopwatch.GetElapsedTime(started), cancellationToken).ConfigureAwait(false);
+            if (measuredGrid.IsFailure)
+            {
+                return ApplicationResult<LeasedPhase>.Failure(measuredGrid.FailureInfo!);
+            }
+
+            SceneCheck sceneAfter = await SceneCheck.ObserveAsync(service, target, cancellationToken).ConfigureAwait(false);
+            return ApplicationResult<LeasedPhase>.Success(new(sceneBefore, measuredGrid.Value, sceneAfter));
+        }, cancellationToken).ConfigureAwait(false);
+        if (leased.IsFailure)
+        {
+            return new(new { verdict = CaptureVerdictNames.ToName(CaptureVerdict.Blocked) }, leased.FailureInfo, "none");
+        }
+
+        SceneCheck before = leased.Value!.Before;
         if (combat && before.Ready)
         {
             // Главный экран доказан: пользователь ещё не в бою, измерение боя было бы подменой сцены.
@@ -157,25 +186,13 @@ internal static class CaptureIntervals
 
         if (!combat && !before.Ready)
         {
-            writer.WriteJson("normal.json", new { verdict = CaptureVerdictNames.ToName(CaptureVerdict.Blocked), scene = before.Report() });
+            writer.WriteJson(NormalFile, new { verdict = CaptureVerdictNames.ToName(CaptureVerdict.Blocked), scene = before.Report() });
             return new(new { verdict = CaptureVerdictNames.ToName(CaptureVerdict.Blocked), scene = before.Report() },
                 before.Failure ?? GameUiActionRunner.Failure("ui_not_ready"), "none");
         }
 
-        IReadOnlyList<double> grid = ScreenshotIntervalAnalysis.NormalizeGrid(
-            request.Grid ?? (combat ? ScreenshotIntervalAnalysis.DefaultCombatGrid : ScreenshotIntervalAnalysis.DefaultNormalGrid),
-            request.Scene, combat ? request.Settings.CombatIntervalMilliseconds : request.Settings.NormalIntervalMilliseconds);
-        TimeSpan deadline = request.Timeout - PostcheckReserve;
-        ApplicationResult<MeasuredGrid> measured = await service.WithCaptureLeaseAsync(target.InstanceId,
-            () => MeasureAsync(router, target, method, grid, () => deadline - Stopwatch.GetElapsedTime(started), cancellationToken),
-            cancellationToken).ConfigureAwait(false);
-        if (measured.IsFailure)
-        {
-            return new(new { verdict = CaptureVerdictNames.ToName(CaptureVerdict.Blocked) }, measured.FailureInfo, "none");
-        }
-
-        SceneCheck after = await SceneCheck.ObserveAsync(service, target, cancellationToken).ConfigureAwait(false);
-        MeasuredGrid points = measured.Value!;
+        SceneCheck after = leased.Value.After!;
+        MeasuredGrid points = leased.Value.Points!;
         bool complete = points.NotTested.Count == 0 && points.Failure is null;
         (int Width, int Height)[] resolutions = [.. points.Points.Where(p => p.Resolution is not null)
             .Select(p => p.Resolution!.Value).Distinct()];
@@ -530,6 +547,8 @@ internal static class CaptureIntervals
             return null;
         }
     }
+
+    private sealed record LeasedPhase(SceneCheck Before, MeasuredGrid? Points, SceneCheck? After);
 
     private sealed record MeasuredGrid(IReadOnlyList<CaptureIntervalPoint> Points, IReadOnlyList<double> NotTested,
         string? Failure, double SetupMs, IReadOnlyDictionary<string, string> Facts);

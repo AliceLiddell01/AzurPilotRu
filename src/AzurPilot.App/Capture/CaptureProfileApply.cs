@@ -331,12 +331,18 @@ internal static class CaptureProfileApply
         CaptureReportWriter writer, CaptureProfileSession loaded, CaptureProfilePlan plan, CaptureProfileEnvironment environment)
     {
         ApplicationResult<AzurPilotConfigurationSnapshot> before = source.Load();
+        if (before.IsFailure)
+        {
+            return Rejected("configuration_unreadable");
+        }
+
         ApplicationResult<AzurPilotConfigurationSnapshot> saved = service.SaveScreenshotIntervals(source.YamlPath, source.JsonPath,
             environment.ConfigurationSha256,
             plan.NormalMs, plan.CombatMs, out string? backupPath);
-        if (before.IsFailure || saved.IsFailure)
+        if (saved.IsFailure)
         {
-            ApplicationFailure cause = (before.FailureInfo ?? saved.FailureInfo)!;
+            ApplicationFailure cause = saved.FailureInfo!;
+            // Backup появляется только при замене файла: без него файл не менялся, с ним — мог измениться.
             return new(new { status = "FAILED", reason = "configuration_write_failed" }, new ApplicationFailure
             {
                 Code = cause.Code,
@@ -346,7 +352,7 @@ internal static class CaptureProfileApply
                     ["reason"] = "configuration_write_failed",
                     [ApplicationFailure.MutationAttemptedDetailKey] = "true",
                 },
-            }, "none");
+            }, backupPath is null ? "none" : "mayHaveChanged");
         }
 
         ApplicationResult<AzurPilotConfigurationSnapshot> reread = source.Load();

@@ -9,9 +9,9 @@ using AzurPilot.Windows.Capture;
 
 namespace AzurPilot.App.Capture;
 
-/// <summary>Сравнение кадра транспорта с эталоном ADB для отчёта.</summary>
+/// <summary>Сравнение кадра транспорта с эталоном ADB для отчёта; при разной геометрии ошибки не определены (null).</summary>
 internal sealed record CaptureCorrectness(string Phase, bool Matches, string? Reason, int Cells, int MatchedCells,
-    double MeanAbsoluteError, double SwappedMeanAbsoluteError, int ChromaticCells);
+    double? MeanAbsoluteError, double? SwappedMeanAbsoluteError, int ChromaticCells);
 
 /// <summary>Итог серии одного транспорта на одном target; кадры не сохраняются.</summary>
 internal sealed record CaptureProbeResult
@@ -251,8 +251,9 @@ internal static class CaptureProbe
     {
         ScreenshotFrameComparison comparison = ScreenshotFrameComparison.Compare(reference, candidate);
         return new(phase, comparison.Matches, comparison.FailureReason, comparison.Cells, comparison.MatchedCells,
-            Math.Round(comparison.MeanAbsoluteError, 2), Math.Round(comparison.SwappedMeanAbsoluteError, 2),
-            comparison.ChromaticCells);
+            // NaN несовпавшей геометрии не сериализуется в JSON envelope worker-а и потерял бы причину отказа.
+            comparison.SameGeometry ? Math.Round(comparison.MeanAbsoluteError, 2) : null,
+            comparison.SameGeometry ? Math.Round(comparison.SwappedMeanAbsoluteError, 2) : null, comparison.ChromaticCells);
     }
 
     private static CaptureProbeResult Failed(string method, string reason)

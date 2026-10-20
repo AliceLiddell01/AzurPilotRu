@@ -81,6 +81,15 @@ public sealed class CaptureContractTests
             id => Assert.Contains(dependencies, dependency => dependency.Id == id));
     }
 
+    [Fact(DisplayName = "Сравнение с несовпавшей геометрией сериализуется в envelope worker-а с причиной")]
+    public void GeometryMismatchIsSerializable()
+    {
+        CaptureCorrectness mismatch = new("before", false, "geometry_mismatch", 0, 0, null, null, 0);
+        string json = System.Text.Json.JsonSerializer.Serialize(mismatch, AgentJson.Options);
+        Assert.Contains("geometry_mismatch", json, StringComparison.Ordinal);
+        _ = Assert.Throws<ArgumentException>(() => System.Text.Json.JsonSerializer.Serialize(double.NaN, AgentJson.Options));
+    }
+
     [Fact(DisplayName = "Envelope worker-а разбирается в итог серии; busy и мусор — BLOCKED и FAILED")]
     public void WorkerEnvelopeIsParsed()
     {
