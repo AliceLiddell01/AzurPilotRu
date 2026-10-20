@@ -10,6 +10,20 @@ using AzurPilot.Windows.Capture;
 
 namespace AzurPilot.App.Capture;
 
+/// <summary>Источник настроек вызова: явный <c>--config</c> — один файл, иначе runtime-политика YAML и legacy JSON.</summary>
+/// <param name="YamlPath">Файл, который читается и в который записываются интервалы.</param>
+/// <param name="JsonPath">Legacy JSON runtime-политики либо null для явного файла.</param>
+internal sealed record CaptureConfigurationSource(string YamlPath, string? JsonPath)
+{
+    /// <summary>Источник вызова с тем же правилом чтения, что у host.</summary>
+    internal static CaptureConfigurationSource For(string? explicitPath) => explicitPath is not null ? new(explicitPath, null)
+        : new(AzurPilotConfigurationPath.GetDefaultRuntimePath(), AzurPilotConfigurationPath.GetLegacyJsonRuntimePath());
+
+    /// <summary>Свежее чтение источника.</summary>
+    internal ApplicationResult<AzurPilotConfigurationSnapshot> Load()
+        => JsonPath is null ? AzurPilotConfigurationLoader.Load(YamlPath) : AzurPilotConfigurationLoader.LoadFromSources(YamlPath, JsonPath);
+}
+
 /// <summary>Наблюдаемые условия target и конфигурации на момент preview или apply.</summary>
 internal sealed record CaptureProfileEnvironment(
     string InstanceId, string Endpoint, string Fingerprint, string MuMuVersion, int Width, int Height,
@@ -61,8 +75,8 @@ internal static class CaptureProfileApply
     private const string CombatVerdict = "UNVERIFIED_SCENE";
 
     internal static async Task<CaptureCommandOutcome> RunAsync(AzurPilotOperatorService service,
-        CaptureMeasurementTarget target, string session, string profile, string? confirmation,
-        CancellationToken cancellationToken)
+        CaptureMeasurementTarget target, CaptureConfigurationSource source, string session, string profile,
+        string? confirmation, CancellationToken cancellationToken)
     {
         CaptureReportWriter? writer = CaptureReportWriter.OpenExisting(CaptureIntervals.Topic, session, out string? missing);
         if (writer is null)
@@ -72,7 +86,7 @@ internal static class CaptureProfileApply
 
         ApplicationResult<CaptureCommandOutcome> outcome = await service.WithCaptureLeaseAsync(target.InstanceId, async () =>
         {
-            ApplicationResult<CaptureProfileEnvironment> observed = await ObserveAsync(service, target, cancellationToken)
+            ApplicationResult<CaptureProfileEnvironment> observed = await ObserveAsync(service, target, source, cancellationToken)
                 .ConfigureAwait(false);
             if (observed.IsFailure)
             {
@@ -103,7 +117,7 @@ internal static class CaptureProfileApply
                 return ApplicationResult<CaptureCommandOutcome>.Success(Rejected(redeemed) with { Effect = effect });
             }
 
-            return ApplicationResult<CaptureCommandOutcome>.Success(Write(service, session, writer, loaded!, plan!, environment));
+            return ApplicationResult<CaptureCommandOutcome>.Success(Write(service, source, session, writer, loaded!, plan!, environment));
         }, cancellationToken).ConfigureAwait(false);
         return outcome.IsSuccess ? outcome.Value! : new(new { status = "BLOCKED" }, outcome.FailureInfo, "none");
     }
@@ -313,12 +327,12 @@ internal static class CaptureProfileApply
             : null;
     }
 
-    private static CaptureCommandOutcome Write(AzurPilotOperatorService service, string session, CaptureReportWriter writer,
-        CaptureProfileSession loaded, CaptureProfilePlan plan, CaptureProfileEnvironment environment)
+    private static CaptureCommandOutcome Write(AzurPilotOperatorService service, CaptureConfigurationSource source, string session,
+        CaptureReportWriter writer, CaptureProfileSession loaded, CaptureProfilePlan plan, CaptureProfileEnvironment environment)
     {
-        (string yamlPath, string jsonPath) = service.ConfigurationFilePaths();
-        ApplicationResult<AzurPilotConfigurationSnapshot> before = AzurPilotConfigurationLoader.LoadFromSources(yamlPath, jsonPath);
-        ApplicationResult<AzurPilotConfigurationSnapshot> saved = service.SaveScreenshotIntervals(environment.ConfigurationSha256,
+        ApplicationResult<AzurPilotConfigurationSnapshot> before = source.Load();
+        ApplicationResult<AzurPilotConfigurationSnapshot> saved = service.SaveScreenshotIntervals(source.YamlPath, source.JsonPath,
+            environment.ConfigurationSha256,
             plan.NormalMs, plan.CombatMs, out string? backupPath);
         if (before.IsFailure || saved.IsFailure)
         {
@@ -335,7 +349,7 @@ internal static class CaptureProfileApply
             }, "none");
         }
 
-        ApplicationResult<AzurPilotConfigurationSnapshot> reread = AzurPilotConfigurationLoader.LoadFromSources(yamlPath, jsonPath);
+        ApplicationResult<AzurPilotConfigurationSnapshot> reread = source.Load();
         string? mismatch = reread.IsFailure ? "reread_failed" : Verify(before.Value!.Configuration, reread.Value!, plan);
         object data = Describe(mismatch is null ? "APPLIED" : "FAILED", session, writer, loaded, plan, environment, null,
             new
@@ -407,7 +421,7 @@ internal static class CaptureProfileApply
     }
 
     private static async Task<ApplicationResult<CaptureProfileEnvironment>> ObserveAsync(AzurPilotOperatorService service,
-        CaptureMeasurementTarget target, CancellationToken cancellationToken)
+        CaptureMeasurementTarget target, CaptureConfigurationSource source, CancellationToken cancellationToken)
     {
         if (service.ScreenshotRouter is not ScreenshotCaptureRouter router)
         {
@@ -432,8 +446,7 @@ internal static class CaptureProfileApply
         (int width, int height) = ((int)frame.Value!.Info.FrameInfo.Width, (int)frame.Value.Info.FrameInfo.Height);
         frame.Value.Dispose();
         ScreenshotSelection selection = router.LastSelection!;
-        (string yamlPath, string jsonPath) = service.ConfigurationFilePaths();
-        ApplicationResult<AzurPilotConfigurationSnapshot> configuration = AzurPilotConfigurationLoader.LoadFromSources(yamlPath, jsonPath);
+        ApplicationResult<AzurPilotConfigurationSnapshot> configuration = source.Load();
         if (configuration.IsFailure)
         {
             return ApplicationResult<CaptureProfileEnvironment>.Failure(configuration.FailureInfo!);
@@ -442,7 +455,7 @@ internal static class CaptureProfileApply
         return ApplicationResult<CaptureProfileEnvironment>.Success(new(target.InstanceId.ToString(), target.Endpoint.ToString(),
             fingerprint.Value!, target.MuMuVersion, width, height, ScreenshotMethodNames.ToName(selection.Method),
             selection.FallbackFrom is ScreenshotMethod fallback ? ScreenshotMethodNames.ToName(fallback) : null,
-            router.Calibration.Find(fingerprint.Value!)?.RunId, yamlPath, configuration.Value!.SourceFormat,
+            router.Calibration.Find(fingerprint.Value!)?.RunId, source.YamlPath, configuration.Value!.SourceFormat,
             configuration.Value.SourceVersion, configuration.Value.Configuration.Screenshot));
     }
 

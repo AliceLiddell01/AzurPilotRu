@@ -347,13 +347,12 @@ public sealed partial class AzurPilotOperatorService
     }
 
     /// <summary>
-    /// Точечно задаёт интервалы screenshot следующего запуска с сохранением остального текста файла; запись
-    /// выполняется, только если SHA-256 источника совпадает с ожидаемым. DI снимок текущей сессии не меняется.
+    /// Точечно задаёт интервалы screenshot следующего запуска в источнике вызова с сохранением остального текста
+    /// файла; запись выполняется, только если SHA-256 источника совпадает с ожидаемым. DI снимок не меняется.
     /// </summary>
-    public ApplicationResult<AzurPilotConfigurationSnapshot> SaveScreenshotIntervals(string? expectedSourceVersion,
-        int normalIntervalMilliseconds, int? combatIntervalMilliseconds, out string? backupPath)
+    public ApplicationResult<AzurPilotConfigurationSnapshot> SaveScreenshotIntervals(string yamlPath, string? jsonPath,
+        string? expectedSourceVersion, int normalIntervalMilliseconds, int? combatIntervalMilliseconds, out string? backupPath)
     {
-        (string yamlPath, string jsonPath) = ConfigurationFilePaths();
         ApplicationResult isolation = ValidateConfigurationIsolation();
         if (isolation.IsFailure)
         {
@@ -365,8 +364,7 @@ public sealed partial class AzurPilotOperatorService
             normalIntervalMilliseconds, combatIntervalMilliseconds, out backupPath);
     }
 
-    /// <summary>Пути YAML и legacy JSON, в которые сохраняются настройки текущего источника.</summary>
-    public (string YamlPath, string JsonPath) ConfigurationFilePaths()
+    private (string YamlPath, string JsonPath) ConfigurationFilePaths()
     {
         string defaultYamlPath = AzurPilotConfigurationPath.GetDefaultRuntimePath();
         string defaultJsonPath = AzurPilotConfigurationPath.GetLegacyJsonRuntimePath();

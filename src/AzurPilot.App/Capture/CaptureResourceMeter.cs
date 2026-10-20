@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using AzurPilot.Windows.Processes;
 
 namespace AzurPilot.App.Capture;
 
@@ -18,7 +18,7 @@ internal sealed record CaptureResourceUsage(double WallMs, double ProcessCpuMs, 
 /// Измеритель ресурсов. CPU процесса не включает эмулятор и внешние процессы ADB, поэтому рядом всегда
 /// сообщается общая загрузка системы. Кадры и пиксели не измеряются и не сохраняются.
 /// </summary>
-internal sealed partial class CaptureResourceMeter
+internal sealed class CaptureResourceMeter
 {
     private readonly long _started = Stopwatch.GetTimestamp();
     private readonly TimeSpan _cpu;
@@ -30,7 +30,7 @@ internal sealed partial class CaptureResourceMeter
         using Process process = Process.GetCurrentProcess();
         _cpu = process.TotalProcessorTime;
         _workingSet = process.WorkingSet64;
-        _system = SystemTimes();
+        _system = SystemCpuTimes.Read();
     }
 
     internal static CaptureResourceMeter Start() => new();
@@ -42,7 +42,7 @@ internal sealed partial class CaptureResourceMeter
         process.Refresh();
         double cpu = (process.TotalProcessorTime - _cpu).TotalMilliseconds;
         double system = 0;
-        if (_system is { } before && SystemTimes() is { } after)
+        if (_system is { } before && SystemCpuTimes.Read() is { } after)
         {
             // Время ядра GetSystemTimes включает простой: занятость = (kernel + user − idle) / (kernel + user).
             long idle = after.Idle - before.Idle;
@@ -53,10 +53,4 @@ internal sealed partial class CaptureResourceMeter
         return new(Math.Round(wall, 1), Math.Round(cpu, 1), wall <= 0 ? 0 : Math.Round(cpu * 100 / wall, 1),
             Math.Round(system, 1), process.WorkingSet64, process.PeakWorkingSet64, process.WorkingSet64 - _workingSet);
     }
-
-    private static (long Idle, long Kernel, long User)? SystemTimes()
-        => GetSystemTimes(out long idle, out long kernel, out long user) != 0 ? (idle, kernel, user) : null;
-
-    [LibraryImport("kernel32.dll", SetLastError = false)]
-    private static partial int GetSystemTimes(out long idleTime, out long kernelTime, out long userTime);
 }

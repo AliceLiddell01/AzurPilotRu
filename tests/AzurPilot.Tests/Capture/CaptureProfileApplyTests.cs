@@ -230,6 +230,15 @@ public sealed class CaptureProfileApplyTests
         Assert.True(AgentCommands.All.Single(c => c.Name == CaptureProfileApply.Command).Mutation);
     }
 
+    [Fact(DisplayName = "Источник настроек вызова совпадает с правилом чтения host")]
+    public void ConfigurationSourceFollowsHost()
+    {
+        string explicitPath = Path.Combine(Path.GetTempPath(), "azurpilot-apply", "custom.yaml");
+        Assert.Equal(new CaptureConfigurationSource(explicitPath, null), CaptureConfigurationSource.For(explicitPath));
+        Assert.Equal(new CaptureConfigurationSource(AzurPilotConfigurationPath.GetDefaultRuntimePath(),
+            AzurPilotConfigurationPath.GetLegacyJsonRuntimePath()), CaptureConfigurationSource.For(null));
+    }
+
     private static CaptureProfileSession Session()
     {
         CaptureIntervalBinding binding = new("fingerprint", "6.8.5.0", "15.0", 3840, 2160, "calibrated:run-1", "run-1",

@@ -41,6 +41,10 @@ public sealed class AzurPilotConfigurationScreenshotIntervalsTests
                 directory.WriteYamlConfiguration(edited));
             Assert.True(loaded.IsSuccess, loaded.IsSuccess ? null : loaded.FailureInfo!.Message);
             Assert.Equal(normal, loaded.Value!.Configuration.Screenshot.NormalIntervalMilliseconds);
+            if (combat is int expectedCombat)
+            {
+                Assert.Equal(expectedCombat, loaded.Value.Configuration.Screenshot.CombatIntervalMilliseconds);
+            }
         }
     }
 
@@ -132,6 +136,29 @@ public sealed class AzurPilotConfigurationScreenshotIntervalsTests
         Assert.Equal(ApplicationFailure.ConfigurationInvalid, rejected.FailureInfo!.Code);
         Assert.Contains("legacy JSON", rejected.FailureInfo.Message, StringComparison.Ordinal);
         Assert.False(File.Exists(legacy.YamlConfigurationFilePath));
+    }
+
+    [Fact(DisplayName = "Явный файл с произвольным именем меняется сам, соседний config.yaml не создаётся")]
+    public void ExplicitSourceIsWrittenInPlace()
+    {
+        using TemporaryConfigurationDirectory directory = new();
+        string custom = Path.Combine(directory.Root, "custom.yaml");
+        File.WriteAllText(custom, Head + Logging);
+        AzurPilotConfigurationSnapshot before = AzurPilotConfigurationLoader.Load(custom).Value!;
+
+        ApplicationResult<AzurPilotConfigurationSnapshot> saved = AzurPilotConfigurationStore.SaveScreenshotIntervals(
+            custom, null, before.SourceVersion, 75, null, out _);
+
+        Assert.True(saved.IsSuccess, saved.IsSuccess ? null : saved.FailureInfo!.Message);
+        Assert.Equal(75, AzurPilotConfigurationLoader.Load(custom).Value!.Configuration.Screenshot.NormalIntervalMilliseconds);
+        Assert.False(File.Exists(directory.YamlConfigurationFilePath));
+
+        string missingJson = Path.Combine(directory.Root, "absent.json");
+        ApplicationResult<AzurPilotConfigurationSnapshot> rejected = AzurPilotConfigurationStore.SaveScreenshotIntervals(
+            missingJson, null, null, 75, null, out _);
+        Assert.True(rejected.IsFailure);
+        Assert.Equal(ApplicationFailure.ConfigurationInvalid, rejected.FailureInfo!.Code);
+        Assert.False(File.Exists(missingJson));
     }
 
     private static byte[] TextAfterInsert(byte[] original)

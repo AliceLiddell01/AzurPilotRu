@@ -168,23 +168,28 @@ internal sealed partial class AgentContext
 
         ScreenshotMethod? method = Options.TryGetValue(AgentCaptureArguments.IntervalMethod.Name, out string? name)
             && ScreenshotMethodNames.TryParse(name, out ScreenshotMethod parsed) ? parsed : null;
-        IReadOnlyList<double>? grid = Options.TryGetValue(AgentCaptureArguments.Grid.Name, out string? values)
-            ? AgentCaptureArguments.ParseGrid(values) : null;
-        CaptureIntervalRequest request = new(combat ? ScreenshotIntervalScene.Combat : ScreenshotIntervalScene.Normal,
-            session, confirmation, grid, method, TimeSpan.FromMilliseconds(TimeoutMilliseconds),
-            Service.Configuration.Configuration.Screenshot, Service.ConfigurationFilePaths().YamlPath,
-            Service.Configuration.SourceVersion);
-        CaptureCommandOutcome outcome;
-        try
+        ScreenshotIntervalScene intervalScene = combat ? ScreenshotIntervalScene.Combat : ScreenshotIntervalScene.Normal;
+        ScreenshotConfiguration settings = Service.Configuration.Configuration.Screenshot;
+        IReadOnlyList<double>? grid = null;
+        if (Options.TryGetValue(AgentCaptureArguments.Grid.Name, out string? values))
         {
-            outcome = await CaptureIntervals.RunAsync(Service, target.Value!, request, token).ConfigureAwait(false);
-        }
-        catch (ArgumentException)
-        {
-            // Сетка вне границ сцены (например, combat-значение для normal).
-            return new(null, MissingArgument(AgentCaptureArguments.Grid.Name));
+            try
+            {
+                // Сетка проверяется до наблюдения и захвата: отказ аргумента не должен следовать за действиями.
+                grid = ScreenshotIntervalAnalysis.NormalizeGrid(AgentCaptureArguments.ParseGrid(values), intervalScene,
+                    combat ? settings.CombatIntervalMilliseconds : settings.NormalIntervalMilliseconds);
+            }
+            catch (ArgumentException)
+            {
+                return new(null, MissingArgument(AgentCaptureArguments.Grid.Name));
+            }
         }
 
+        CaptureIntervalRequest request = new(intervalScene, session, confirmation, grid, method,
+            TimeSpan.FromMilliseconds(TimeoutMilliseconds), settings,
+            CaptureConfigurationSource.For(ConfigurationPath).YamlPath, Service.Configuration.SourceVersion);
+        CaptureCommandOutcome outcome = await CaptureIntervals.RunAsync(Service, target.Value!, request, token)
+            .ConfigureAwait(false);
         Effect = outcome.Effect;
         return new(outcome.Data, outcome.Failure, outcome.Effect);
     }
@@ -208,7 +213,8 @@ internal sealed partial class AgentContext
             return new(null, target.FailureInfo);
         }
 
-        CaptureCommandOutcome outcome = await CaptureProfileApply.RunAsync(Service, target.Value!, session, profile,
+        CaptureCommandOutcome outcome = await CaptureProfileApply.RunAsync(Service, target.Value!,
+            CaptureConfigurationSource.For(ConfigurationPath), session, profile,
             Options.GetValueOrDefault(AgentCaptureArguments.ApplyConfirm.Name), token).ConfigureAwait(false);
         Effect = outcome.Effect;
         return new(outcome.Data, outcome.Failure, outcome.Effect);

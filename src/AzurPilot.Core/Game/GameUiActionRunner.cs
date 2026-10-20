@@ -8,7 +8,8 @@ namespace AzurPilot.Core.Game;
 public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock, IGameUiTrace? trace = null)
 {
     /// <summary>Период start→start наблюдения постусловия по умолчанию (<c>screenshot.normalIntervalMs</c>).</summary>
-    public static readonly TimeSpan DefaultPostconditionInterval = TimeSpan.FromMilliseconds(150);
+    public static readonly TimeSpan DefaultPostconditionInterval = TimeSpan.FromMilliseconds(
+        Configuration.AzurPilotConfigurationDefaults.Create().Screenshot.NormalIntervalMilliseconds);
     private readonly TimeProvider _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     private GameUiMeter? _meter;
 

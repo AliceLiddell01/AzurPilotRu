@@ -1,21 +1,21 @@
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
-namespace AzurPilot.App.Agent;
+namespace AzurPilot.Windows.Processes;
 
 /// <summary>
-/// Изоляция stdout Agent CLI: сторонние native-компоненты (например, DLL эмулятора) пишут диагностику в CRT fd 1
-/// или в STD_OUTPUT_HANDLE процесса. Исходный stdout дублируется для единственного JSON envelope, а fd 1 и
-/// стандартный handle перенаправляются в NUL до загрузки таких компонентов.
+/// Изоляция stdout процесса: сторонние native-компоненты (например, DLL эмулятора) пишут диагностику в CRT fd 1
+/// или в STD_OUTPUT_HANDLE процесса. Исходный stdout дублируется для машинного вывода, а fd 1 и стандартный
+/// handle перенаправляются в NUL до загрузки таких компонентов.
 /// </summary>
-internal static partial class AgentStandardOutput
+public static partial class StandardOutputIsolation
 {
     private const int StandardOutputDescriptor = 1;
     private const int StandardOutputHandle = -11;
     private const int WriteOnly = 0x0001;
 
     /// <summary>Поток исходного stdout; при недоступности CRT — обычный stdout без изоляции.</summary>
-    internal static Stream Isolate()
+    public static Stream Isolate()
     {
         try
         {
