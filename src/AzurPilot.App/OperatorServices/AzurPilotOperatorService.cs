@@ -152,6 +152,7 @@ public sealed partial class AzurPilotOperatorService
     private readonly TimeProvider _timeProvider;
     private readonly Core.Game.IGameUiHost _gameUi;
     private readonly AzurPilotLogViewerSession? _logViewer;
+    private readonly Core.Game.IGameUiTrace? _gameUiTrace;
 
     /// <summary>Создаёт сценарии оператора поверх singleton-сервисов одного хоста приложения.</summary>
     public AzurPilotOperatorService(
@@ -166,7 +167,8 @@ public sealed partial class AzurPilotOperatorService
         AzurPilotConfigurationSnapshot configuration,
         TimeProvider timeProvider,
         Core.Game.IGameUiHost gameUi,
-        AzurPilotLogViewerSession? logViewer = null)
+        AzurPilotLogViewerSession? logViewer = null,
+        Core.Game.IGameUiTrace? gameUiTrace = null)
     {
         ArgumentNullException.ThrowIfNull(diagnostics);
         ArgumentNullException.ThrowIfNull(muMuHost);
@@ -192,6 +194,7 @@ public sealed partial class AzurPilotOperatorService
         _timeProvider = timeProvider;
         _gameUi = gameUi;
         _logViewer = logViewer;
+        _gameUiTrace = gameUiTrace;
     }
 
     /// <summary>Неизменяемая конфигурация текущего хоста приложения.</summary>

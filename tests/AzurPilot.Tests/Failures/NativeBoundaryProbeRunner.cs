@@ -76,7 +76,8 @@ internal static class NativeBoundaryProbeRunner
             {
                 File.WriteAllText(Path.Combine(probeDirectory, NativeLibraryFileName), "не библиотека");
             }
-            else if (mode is ProbeMode.AbiMismatch or ProbeMode.AbiV3MissingRelease or ProbeMode.AbiV3MissingRoi or ProbeMode.AbiMissingMatch)
+            else if (mode is ProbeMode.AbiMismatch or ProbeMode.AbiV3MissingRelease or ProbeMode.AbiV3MissingRoi or ProbeMode.AbiMissingMatch
+                or ProbeMode.AbiMissingPreview)
             {
                 string fixtureDirectory = mode switch
                 {
@@ -84,6 +85,7 @@ internal static class NativeBoundaryProbeRunner
                     ProbeMode.AbiV3MissingRelease => "abi-v3-missing-release",
                     ProbeMode.AbiV3MissingRoi => "abi-v3-missing-roi",
                     ProbeMode.AbiMissingMatch => "abi-missing-match",
+                    ProbeMode.AbiMissingPreview => "abi-missing-preview",
                     ProbeMode.MissingLibrary or ProbeMode.BrokenLibrary or ProbeMode.DisposedFrame
                         or ProbeMode.RetryableGameCatalog
                         => throw new ArgumentOutOfRangeException(nameof(mode)),
@@ -125,6 +127,9 @@ internal static class NativeBoundaryProbeRunner
                     break;
                 case ProbeMode.AbiMissingMatch:
                     startInfo.ArgumentList.Add("--abi-missing-match");
+                    break;
+                case ProbeMode.AbiMissingPreview:
+                    startInfo.ArgumentList.Add("--abi-missing-preview");
                     break;
                 case ProbeMode.DisposedFrame:
                     startInfo.ArgumentList.Add("--disposed-frame");
@@ -231,6 +236,7 @@ internal static class NativeBoundaryProbeRunner
 
         /// <summary>Текущий ABI без обязательного match-экспорта.</summary>
         AbiMissingMatch,
+        AbiMissingPreview,
 
         /// <summary>Проверяется вызов GetInfo после Dispose без native DLL.</summary>
         DisposedFrame,

@@ -139,6 +139,9 @@ public static class AzurPilotExitCode
     /// <summary>Игровой ввод отклонён либо postcondition не доказан.</summary>
     public const int GameUiActionRejected = 35;
 
+    /// <summary>Запрошенный debug-отчёт Agent CLI нельзя создать; runtime не запускался.</summary>
+    public const int DebugReportUnavailable = 36;
+
     /// <summary>Возвращает код выхода для application-level отказа.</summary>
     /// <param name="failure">Ожидаемый отказ application boundary.</param>
     /// <returns>Код выхода процесса, соответствующий коду отказа.</returns>
@@ -155,6 +158,7 @@ public static class AzurPilotExitCode
             ApplicationFailure.AgentDeadlineExceeded => AgentDeadlineExceeded,
             ApplicationFailure.AgentOutputLimitExceeded => AgentOutputLimitExceeded,
             ApplicationFailure.GameUiActionRejected => GameUiActionRejected,
+            ApplicationFailure.DebugReportUnavailable => DebugReportUnavailable,
             ApplicationFailure.ConfigurationInvalid => ConfigurationInvalid,
             ApplicationFailure.ConfigurationSchemaUnsupported => ConfigurationSchemaUnsupported,
             ApplicationFailure.NativeUnavailable => NativeUnavailable,

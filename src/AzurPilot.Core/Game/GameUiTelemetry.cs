@@ -39,7 +39,7 @@ public sealed record GameUiPhase(string Id, GameUiPhaseStatus Status, double? En
 }
 
 /// <summary>Накопитель стоимости и фаз одного выполнения; хранит только агрегаты, без кадров и пикселей.</summary>
-internal sealed class GameUiMeter(IGameUiHost host, TimeProvider clock, long origin)
+internal sealed class GameUiMeter(IGameUiHost host, TimeProvider clock, long origin, IGameUiTrace? trace = null)
 {
     private readonly Accumulator _total = new();
     private Accumulator? _pending;
@@ -49,6 +49,7 @@ internal sealed class GameUiMeter(IGameUiHost host, TimeProvider clock, long ori
     private PhaseAccumulator? _current;
 
     internal TimeProvider Clock => clock;
+    internal IGameUiTrace? Trace => trace;
     internal GameUiWork Total => _total.Snapshot();
 
     /// <summary>Закрывает текущую фазу и открывает новую в указанный момент.</summary>
@@ -75,6 +76,7 @@ internal sealed class GameUiMeter(IGameUiHost host, TimeProvider clock, long ori
         phase.Entered = timestamp;
         _current = phase;
         Flush();
+        trace.Emit(() => new("phase_entered", timestamp) { PhaseId = phaseId });
     }
 
     /// <summary>Закрывает текущую фазу с причиной завершения.</summary>
@@ -89,7 +91,9 @@ internal sealed class GameUiMeter(IGameUiHost host, TimeProvider clock, long ori
         _current.Elapsed += clock.GetElapsedTime(_current.Entered, Math.Max(_current.Entered, timestamp));
         _current.LastExited = Math.Max(_current.Entered, timestamp);
         _current.EndReason = reason;
+        string exited = _current.Id;
         _current = null;
+        trace.Emit(() => new("phase_exited", timestamp) { PhaseId = exited, Reason = reason });
     }
 
     /// <summary>Все известные фазы: встреченные — в порядке первого входа, затем невстреченные.</summary>
@@ -183,6 +187,7 @@ internal sealed class GameUiMeter(IGameUiHost host, TimeProvider clock, long ori
         {
             TimeSpan elapsed = clock.GetElapsedTime(started);
             Record(a => { a.Waits++; a.Wait += elapsed; });
+            trace.Emit(() => new("wait", clock.GetTimestamp()) { Value = Milliseconds(elapsed) });
         }
     }
 

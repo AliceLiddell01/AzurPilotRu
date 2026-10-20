@@ -57,6 +57,31 @@ public sealed class GameGeometry
             ScaleFloor(rect.Right, Width, LogicalWidth), ScaleFloor(rect.Bottom, Height, LogicalHeight));
     }
 
+    /// <summary>
+    /// Обратное отображение физической полуоткрытой области кадра в логическое пространство: границы
+    /// округляются наружу, область вне кадра отвергается, а не обрезается. Используется для показа уже
+    /// принятых решений и не участвует в распознавании или вводе.
+    /// </summary>
+    public GameRect ToLogical(GamePixelRect rect)
+    {
+        if (rect.Left < 0 || rect.Top < 0 || rect.Right > Width || rect.Bottom > Height
+            || rect.Left >= rect.Right || rect.Top >= rect.Bottom)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rect));
+        }
+
+        return new(ScaleFloor(rect.Left, LogicalWidth, Width), ScaleFloor(rect.Top, LogicalHeight, Height),
+            ScaleCeiling(rect.Right, LogicalWidth, Width), ScaleCeiling(rect.Bottom, LogicalHeight, Height));
+    }
+
+    /// <summary>Логический пиксель, содержащий физическую точку кадра.</summary>
+    public GameInputPoint ToLogical(GameInputPoint point)
+    {
+        return point.X < 0 || point.Y < 0 || point.X >= Width || point.Y >= Height
+            ? throw new ArgumentOutOfRangeException(nameof(point))
+            : new(ScaleFloor(point.X, LogicalWidth, Width), ScaleFloor(point.Y, LogicalHeight, Height));
+    }
+
     /// <summary>Пересекаются ли две полуоткрытые логические области.</summary>
     public static bool Intersects(GameRect first, GameRect second)
     {

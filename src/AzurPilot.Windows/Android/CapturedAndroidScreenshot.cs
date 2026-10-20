@@ -29,12 +29,17 @@ public sealed record AndroidScreenshotCaptureInfo(
 /// <summary>Владелец native frame успешного capture; encoded PNG не хранится.</summary>
 public sealed class CapturedAndroidScreenshot : IDisposable
 {
-    internal CapturedAndroidScreenshot(NativeFrame frame, AndroidScreenshotCaptureInfo info)
+    private readonly Lock _gate = new();
+    private IAndroidScreenshotObserver? _observer;
+
+    internal CapturedAndroidScreenshot(NativeFrame frame, AndroidScreenshotCaptureInfo info,
+        IAndroidScreenshotObserver? observer = null)
     {
         ArgumentNullException.ThrowIfNull(frame);
         ArgumentNullException.ThrowIfNull(info);
         Frame = frame;
         Info = info;
+        _observer = observer;
     }
 
     /// <summary>Native-owned frame; использование и освобождение защищены его SafeHandle.</summary>
@@ -43,10 +48,31 @@ public sealed class CapturedAndroidScreenshot : IDisposable
     /// <summary>Неизменяемые metadata и provenance успешного capture.</summary>
     public AndroidScreenshotCaptureInfo Info { get; }
 
-    /// <summary>Идемпотентно освобождает единственный принадлежащий capture frame.</summary>
+    /// <summary>
+    /// Идемпотентно освобождает единственный принадлежащий capture frame. Необязательный наблюдатель
+    /// видит кадр один раз непосредственно перед освобождением; его отказ освобождение не отменяет.
+    /// </summary>
     public void Dispose()
     {
-        Frame.Dispose();
+        // Блокировка сохраняет порядок: параллельный Dispose не освободит кадр до завершения наблюдателя.
+        lock (_gate)
+        {
+            IAndroidScreenshotObserver? observer = _observer;
+            _observer = null;
+            try
+            {
+                observer?.FrameReleasing(Frame, Info);
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                // Диагностика не может удержать кадр или изменить исход production-операции.
+            }
+            finally
+            {
+                Frame.Dispose();
+            }
+        }
+
         GC.SuppressFinalize(this);
     }
 }

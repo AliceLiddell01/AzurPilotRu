@@ -170,7 +170,8 @@ public sealed partial class AzurPilotOperatorService
     private GameUiReadinessService Readiness(MuMuInstanceId instanceId, AndroidEndpoint endpoint)
     {
         GameAssetCatalog catalog = GameAssetCatalog.Default;
-        return new(new ExactGameUiHost(this, instanceId, endpoint), catalog.Readiness, catalog.GetAction, _timeProvider);
+        return new(new ExactGameUiHost(this, instanceId, endpoint), catalog.Readiness, catalog.GetAction, _timeProvider,
+            _gameUiTrace);
     }
 
     // Повторное разрешение exact identity/endpoint закрывает исчезновение target между кадрами.

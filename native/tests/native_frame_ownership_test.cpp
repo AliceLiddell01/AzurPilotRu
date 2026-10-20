@@ -362,6 +362,39 @@ void test_match_ownership() {
     check(snapshot_matches(baseline), "Освобождение 4K после match возвращает live frame/RGB counters к исходному уровню");
 }
 
+void test_preview_ownership() {
+    const auto baseline = azurpilot::native::detail::frame_ownership_snapshot_for_test();
+    cv::Mat pixels(2160, 3840, CV_8UC3, cv::Scalar(17, 89, 203));
+    auto* frame = new AzurPilotNativeFrameOpaque(std::move(pixels), 3840u, 2160u, 11520u, 24883200u);
+    const auto* source_pointer = frame->rgb.data;
+    AzurPilotNativeFrameHandle preview = nullptr;
+    check(azurpilot_native_frame_create_preview(frame, 1280u, 720u, &preview) == AZURPILOT_NATIVE_OK && preview != nullptr,
+          "Превью логического размера создаётся как отдельный native-кадр");
+    if (preview == nullptr) {
+        delete frame;
+        return;
+    }
+    check(preview->rgb.data != source_pointer && frame->rgb.data == source_pointer,
+          "Превью не разделяет и не заменяет пиксельный буфер исходного кадра");
+    const auto both = azurpilot::native::detail::frame_ownership_snapshot_for_test();
+    check(both.live_frames == baseline.live_frames + 2u
+              && both.live_rgb_bytes == baseline.live_rgb_bytes + 24883200u + 2764800u,
+          "Учёт владения видит исходный 4K кадр и отдельное превью логического размера");
+    delete frame;
+    const auto preview_only = azurpilot::native::detail::frame_ownership_snapshot_for_test();
+    check(preview_only.live_frames == baseline.live_frames + 1u
+              && preview_only.live_rgb_bytes == baseline.live_rgb_bytes + 2764800u,
+          "Освобождение исходного кадра не освобождает и не портит превью");
+    std::uint32_t written = 0u;
+    check(azurpilot_native_frame_encode_jpeg(preview, 82u, nullptr, 0u, nullptr, 0u, &written)
+              == AZURPILOT_NATIVE_ERROR_BUFFER_TOO_SMALL && written > 0u,
+          "Превью кодируется после освобождения исходного кадра");
+    check(snapshot_matches(preview_only), "Кодирование JPEG не создаёт новых владельцев кадра");
+    // Экспорт release проверяет native_frame_preview через DLL; здесь освобождается та же внутренняя реализация.
+    delete preview;
+    check(snapshot_matches(baseline), "После освобождения превью нет активных кадров и RGB-байтов");
+}
+
 }  // namespace
 
 int main() {
@@ -371,6 +404,7 @@ int main() {
     test_argument_and_repeated_ownership();
     test_region_scan_ownership();
     test_match_ownership();
+    test_preview_ownership();
 
     const auto final_snapshot = azurpilot::native::detail::frame_ownership_snapshot_for_test();
     check(final_snapshot.live_frames == 0u && final_snapshot.live_rgb_bytes == 0u,

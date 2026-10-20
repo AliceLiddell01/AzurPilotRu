@@ -8,6 +8,7 @@
     <_AzurPilotAbiV3MissingReleaseFixture>$(MSBuildThisFileDirectory)artifacts/native/abi-v3-missing-release/$(Configuration)/AzurPilot.Native.dll</_AzurPilotAbiV3MissingReleaseFixture>
     <_AzurPilotAbiV3MissingRoiFixture>$(MSBuildThisFileDirectory)artifacts/native/abi-v3-missing-roi/$(Configuration)/AzurPilot.Native.dll</_AzurPilotAbiV3MissingRoiFixture>
     <_AzurPilotAbiMissingMatchFixture>$(MSBuildThisFileDirectory)artifacts/native/abi-missing-match/$(Configuration)/AzurPilot.Native.dll</_AzurPilotAbiMissingMatchFixture>
+    <_AzurPilotAbiMissingPreviewFixture>$(MSBuildThisFileDirectory)artifacts/native/abi-missing-preview/$(Configuration)/AzurPilot.Native.dll</_AzurPilotAbiMissingPreviewFixture>
   </PropertyGroup>
 
   <Target Name="AzurPilotIncludeNativeRuntime"
@@ -41,6 +42,8 @@
            Text="Не найдена DLL текущего ABI без функции анализа региона: $(_AzurPilotAbiV3MissingRoiFixture). Сначала соберите соответствующий CMake workflow preset native-x64-release или native-x64-debug из каталога native." />
     <Error Condition="!Exists('$(_AzurPilotAbiMissingMatchFixture)')"
            Text="Не найдена DLL текущего ABI без match export. Сначала соберите native workflow." />
+    <Error Condition="!Exists('$(_AzurPilotAbiMissingPreviewFixture)')"
+           Text="Не найдена DLL текущего ABI без preview export. Сначала соберите native workflow." />
     <ItemGroup>
       <Content Include="$(_AzurPilotAbiMismatchFixture)"
                Link="abi-mismatch/AzurPilot.Native.dll"
@@ -56,6 +59,10 @@
                Visible="false" />
       <Content Include="$(_AzurPilotAbiMissingMatchFixture)"
                Link="abi-missing-match/AzurPilot.Native.dll"
+               CopyToOutputDirectory="PreserveNewest"
+               Visible="false" />
+      <Content Include="$(_AzurPilotAbiMissingPreviewFixture)"
+               Link="abi-missing-preview/AzurPilot.Native.dll"
                CopyToOutputDirectory="PreserveNewest"
                Visible="false" />
     </ItemGroup>

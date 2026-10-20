@@ -13,12 +13,13 @@ internal sealed record AgentCommand(
 {
     public IReadOnlyList<AgentArgument> Arguments => Target
         ? [new("--target", "MuMuInstanceValue", false, "Exact identity либо однозначный auto; по умолчанию mumu.instance."),
-            AgentRequest.ConfigurationArgument, AgentRequest.TimeoutArgument]
+            AgentRequest.ConfigurationArgument, AgentRequest.TimeoutArgument, AgentRequest.DebugReportArgument]
         : Name == "discover" ? [AgentRequest.TimeoutArgument]
-        : [AgentRequest.ConfigurationArgument, AgentRequest.TimeoutArgument];
+        : [AgentRequest.ConfigurationArgument, AgentRequest.TimeoutArgument, AgentRequest.DebugReportArgument];
 }
 
-internal sealed record AgentRequest(AgentCommand Command, string? Target, int TimeoutMilliseconds, string? ConfigurationPath)
+internal sealed record AgentRequest(AgentCommand Command, string? Target, int TimeoutMilliseconds, string? ConfigurationPath,
+    string? DebugSession = null)
 {
     internal const int DefaultTimeoutMilliseconds = 180_000;
     internal const int MinimumTimeoutMilliseconds = 1;
@@ -29,10 +30,12 @@ internal sealed record AgentRequest(AgentCommand Command, string? Target, int Ti
         $"Deadline: 1..{MaximumTimeoutMilliseconds}; по умолчанию {DefaultTimeoutMilliseconds} ms.");
     internal static readonly AgentArgument ConfigurationArgument = new("--config", "absolute-path", false,
         "Явный источник строгой конфигурации; по умолчанию runtime YAML/legacy JSON.");
+    internal static readonly AgentArgument DebugReportArgument = new(AgentDebugRun.ArgumentName, "debug-session", false,
+        "Включить Debug Mode этого вызова: локальный отчёт в .codex/local/reports/<session>/<run> текущего checkout. Не меняет разрешения и envelope.");
 
     internal static ApplicationResult<AgentRequest> Parse(string[] args)
     {
-        if (args.Length < 2 || args[0] != "agent" || args.Length > 8 || args.Any(a => a.Length > MaximumArgumentLength))
+        if (args.Length < 2 || args[0] != "agent" || args.Length > 10 || args.Any(a => a.Length > MaximumArgumentLength))
         {
             return Invalid();
         }
@@ -45,6 +48,7 @@ internal sealed record AgentRequest(AgentCommand Command, string? Target, int Ti
 
         string? target = null;
         string? configurationPath = null;
+        string? debugSession = null;
         int timeout = DefaultTimeoutMilliseconds;
         HashSet<string> seen = new(StringComparer.Ordinal);
         for (int index = 2; index < args.Length; index += 2)
@@ -74,13 +78,17 @@ internal sealed record AgentRequest(AgentCommand Command, string? Target, int Ti
             {
                 timeout = int.Parse(value, NumberStyles.None, CultureInfo.InvariantCulture);
             }
+            else if (key == AgentDebugRun.ArgumentName)
+            {
+                debugSession = value;
+            }
             else
             {
                 return Invalid();
             }
         }
 
-        return ApplicationResult<AgentRequest>.Success(new(command, target, timeout, configurationPath));
+        return ApplicationResult<AgentRequest>.Success(new(command, target, timeout, configurationPath, debugSession));
     }
 
     private static ApplicationResult<AgentRequest> Invalid()

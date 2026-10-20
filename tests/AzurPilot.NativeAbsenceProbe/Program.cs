@@ -146,6 +146,22 @@ if (args.Length == 1 && string.Equals(args[0], "--abi-missing-match", StringComp
     }
 }
 
+if (args.Length == 1 && string.Equals(args[0], "--abi-missing-preview", StringComparison.Ordinal))
+{
+    using NativeFrame frame = AzurPilotNativeBridge.DecodePng([1]);
+    try
+    {
+        using NativeFrame preview = frame.CreatePreview(640, 360);
+        Console.Error.WriteLine("Проба: превью создано без обязательного экспорта.");
+        return 1;
+    }
+    catch (NativeAbiMismatchException exception) when (exception.Message.Contains("azurpilot_native_frame_create_preview", StringComparison.Ordinal))
+    {
+        Console.WriteLine("Проба: preview export отклонён до вызова: " + exception.Message);
+        return ReportMappedFailure(exception);
+    }
+}
+
 if (args.Length == 1 && string.Equals(args[0], "--disposed-frame", StringComparison.Ordinal))
 {
     return RunDisposedFrameProbe();

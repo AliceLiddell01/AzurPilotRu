@@ -11,7 +11,7 @@ internal sealed record AgentArgumentType(
     string? Platform = null, bool? FullyQualified = null,
     string? AutomaticValue = null, string? IdentityPrefix = null, string? Index = null)
 {
-    public int MaximumLength { get; } = AgentRequest.MaximumArgumentLength;
+    public int MaximumLength { get; init; } = AgentRequest.MaximumArgumentLength;
 }
 
 /// <summary>Общий реестр описаний и проверок реально поддерживаемых типов CLI.</summary>
@@ -29,6 +29,11 @@ internal static class AgentArgumentTypes
                 value => int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int parsed)
                     && parsed is >= AgentRequest.MinimumTimeoutMilliseconds and <= AgentRequest.MaximumTimeoutMilliseconds,
                 AgentRequest.MinimumTimeoutMilliseconds, AgentRequest.MaximumTimeoutMilliseconds, "^[0-9]+$"),
+            ["debug-session"] = new("string", "Безопасный идентификатор сессии debug-отчёта: 1..64 строчных ASCII-букв, цифр и дефисов без дефиса по краям и имён устройств Windows.",
+                AgentDebugRun.IsValidSession, Pattern: AgentDebugRun.SessionPattern)
+            {
+                MaximumLength = AgentDebugRun.MaximumSessionLength,
+            },
             ["absolute-path"] = new("string", "Полностью квалифицированный путь Windows: корень диска либо UNC; существование файла не требуется. Относительные пути и пути от текущего диска отклоняются.",
                 Path.IsPathFullyQualified, Platform: "windows", FullyQualified: true),
         };

@@ -46,6 +46,37 @@ public sealed class NativeInteropTests
         Assert.Equal(expected, AzurPilotNativeBridge.GetMaximumPngBytes());
     }
 
+    [Fact(DisplayName = "Managed-пределы превью совпадают с макросами нормативного заголовка ABI")]
+    public void PreviewLimitsMatchNormativeHeader()
+    {
+        string header = File.ReadAllText(Path.Combine(PinnedVersions.RepositoryRoot, "native", "include", "azurpilot_native_abi.h"));
+        long Limit(string name)
+        {
+            System.Text.RegularExpressions.Match value = System.Text.RegularExpressions.Regex.Match(
+                header,
+                @"#define\s+" + name + @"\s+(?:U?INT32_C\()?(\d+)",
+                System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+                TimeSpan.FromSeconds(1));
+            Assert.True(value.Success, $"В нормативном заголовке не найден макрос {name}.");
+            return long.Parse(value.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        Assert.Equal(AzurPilotNativeBridge.MaximumPreviewDimension, Limit("AZURPILOT_NATIVE_MAX_PREVIEW_DIMENSION"));
+        Assert.Equal(AzurPilotNativeBridge.MaximumAnnotations, Limit("AZURPILOT_NATIVE_MAX_ANNOTATIONS"));
+        Assert.Equal(AzurPilotNativeBridge.MinimumJpegQuality, Limit("AZURPILOT_NATIVE_MIN_JPEG_QUALITY"));
+        Assert.Equal(AzurPilotNativeBridge.MaximumJpegQuality, Limit("AZURPILOT_NATIVE_MAX_JPEG_QUALITY"));
+        Assert.Equal(AzurPilotNativeBridge.MaximumJpegBytes, Limit("AZURPILOT_NATIVE_MAX_JPEG_BYTES"));
+        Assert.Equal(AzurPilotNativeBridge.AnnotationTextBytes, Limit("AZURPILOT_NATIVE_ANNOTATION_TEXT_BYTES"));
+        Assert.Equal(AzurPilotNativeBridge.SolidAnnotationStyle, Limit("AZURPILOT_NATIVE_ANNOTATION_SOLID"));
+        Assert.Equal(AzurPilotNativeBridge.DashedAnnotationStyle, Limit("AZURPILOT_NATIVE_ANNOTATION_DASHED"));
+        Assert.Equal((uint)NativeAnnotationKind.Rectangle, Limit("AZURPILOT_NATIVE_ANNOTATION_RECT"));
+        Assert.Equal((uint)NativeAnnotationKind.FilledRectangle, Limit("AZURPILOT_NATIVE_ANNOTATION_FILLED_RECT"));
+        Assert.Equal((uint)NativeAnnotationKind.Circle, Limit("AZURPILOT_NATIVE_ANNOTATION_CIRCLE"));
+        Assert.Equal((uint)NativeAnnotationKind.FilledCircle, Limit("AZURPILOT_NATIVE_ANNOTATION_FILLED_CIRCLE"));
+        Assert.Equal((uint)NativeAnnotationKind.Cross, Limit("AZURPILOT_NATIVE_ANNOTATION_CROSS"));
+        Assert.Equal((uint)NativeAnnotationKind.Text, Limit("AZURPILOT_NATIVE_ANNOTATION_TEXT"));
+    }
+
     [Fact(DisplayName = "Native библиотека реально загружается и сообщает ожидаемую версию ABI")]
     public void NativeLibraryReportsExpectedAbiVersion()
     {

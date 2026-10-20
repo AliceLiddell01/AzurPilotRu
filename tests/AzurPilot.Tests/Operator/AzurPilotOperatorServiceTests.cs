@@ -692,10 +692,15 @@ public sealed partial class AzurPilotOperatorServiceTests
     private static OperatorFixture CreateFixtureWithGameUi(IGameUiHost gameUi, params MuMuInstance[] instances)
         => CreateFixtureCore(null, gameUi, instances);
 
+    // Debug-композиция повторяет ApplyAgentDebug: те же production adapters, обёрнутые наблюдателями прогона.
+    private static OperatorFixture CreateDebugFixture(AzurPilot.App.Agent.AgentDebugRun? debug, params MuMuInstance[] instances)
+        => CreateFixtureCore(null, null, instances, debug);
+
     private static OperatorFixture CreateFixtureCore(
         IAndroidScreenshotHost? screenshotHost,
         IGameUiHost? gameUi,
-        params MuMuInstance[] instances)
+        MuMuInstance[] instances,
+        AzurPilot.App.Agent.AgentDebugRun? debug = null)
     {
         MuMuInstallation installation = AndroidTestContext.Installation;
         TestMuMuHost muMuHost = new()
@@ -711,7 +716,9 @@ public sealed partial class AzurPilotOperatorServiceTests
             MuMuLifecycleTimings.Default,
             NullLogger<MuMuLifecycleService>.Instance);
         FakeWindowsProcessRunner runner = new();
-        AndroidWindowsHost androidHost = new(runner, timeProvider);
+        AndroidWindowsHost androidHost = debug is null
+            ? new(runner, timeProvider)
+            : new(new AzurPilot.App.Agent.AgentDebugProcessRunner(runner, debug, "android"), timeProvider, debug.Frames);
         AndroidReadinessService readiness = new(
             androidHost,
             AndroidLifecycleTimings.Default,
@@ -756,7 +763,11 @@ public sealed partial class AzurPilotOperatorServiceTests
             activeScreenshotHost,
             configuration,
             timeProvider,
-            gameUi: gameUi ?? new AzurPilot.Windows.Game.GameUiWindowsHost(activeScreenshotHost, androidHost));
+            gameUi: gameUi ?? (debug is null
+                ? new AzurPilot.Windows.Game.GameUiWindowsHost(activeScreenshotHost, androidHost)
+                : new AzurPilot.App.Agent.AgentDebugGameUiHost(
+                    new AzurPilot.Windows.Game.GameUiWindowsHost(activeScreenshotHost, androidHost), debug)),
+            gameUiTrace: debug?.GameUiTrace);
 
         return new OperatorFixture(muMuHost, runner, observingScreenshotHost, service);
     }

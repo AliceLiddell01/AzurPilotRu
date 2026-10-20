@@ -66,6 +66,9 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <summary>Результат превышает ограничение машинного ответа.</summary>
     public const string AgentOutputLimitExceeded = "agent_output_limit_exceeded";
 
+    /// <summary>Запрошенный отчёт Debug Mode Agent CLI нельзя создать; операция отклонена до runtime.</summary>
+    public const string DebugReportUnavailable = "debug_report_unavailable";
+
     /// <summary>Код отказа: существующий файл конфигурации не читается или не соответствует своей схеме.</summary>
     public const string ConfigurationInvalid = "configuration_invalid";
 
@@ -170,6 +173,7 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
             MutationCoordinationUnavailable,
             AgentDeadlineExceeded,
             AgentOutputLimitExceeded,
+            DebugReportUnavailable,
             ConfigurationInvalid,
             ConfigurationSchemaUnsupported,
             NativeUnavailable,

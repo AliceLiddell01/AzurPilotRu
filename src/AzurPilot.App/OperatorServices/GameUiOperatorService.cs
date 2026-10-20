@@ -85,7 +85,7 @@ public sealed partial class AzurPilotOperatorService
 
             try
             {
-                GameUiActionRunner runner = new(_gameUi, _timeProvider);
+                GameUiActionRunner runner = new(_gameUi, _timeProvider, _gameUiTrace);
                 GameActionOutcome open = await runner.RunAsync(instanceId, target.Value!.Endpoint,
                     GameAssetCatalog.Default.GetAction("dock.open"), progress, cancellationToken).ConfigureAwait(false);
                 if (!open.ChangeProven)

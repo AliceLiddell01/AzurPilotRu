@@ -47,6 +47,7 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
     private readonly AndroidEndpointResolver _endpointResolver;
     private readonly TimeSpan _commandTimeout;
     private readonly TimeProvider _timeProvider;
+    private readonly IAndroidScreenshotObserver? _screenshotObserver;
     private AndroidAdbExecutable? _adbExecutable;
 
     /// <summary>Создаёт host-side поверхность Android с дедлайном команды по умолчанию и общими часами.</summary>
@@ -60,6 +61,19 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
     {
     }
 
+    /// <summary>Создаёт host с дедлайном команды по умолчанию и необязательным наблюдателем capture.</summary>
+    /// <param name="processRunner">Общая граница запуска процесса.</param>
+    /// <param name="timeProvider">Общий источник времени процесса.</param>
+    /// <param name="screenshotObserver">Диагностический наблюдатель; null — без наблюдения.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="processRunner"/> или <paramref name="timeProvider"/> равны <see langword="null"/>.
+    /// </exception>
+    public AndroidWindowsHost(IWindowsProcessRunner processRunner, TimeProvider timeProvider,
+        IAndroidScreenshotObserver? screenshotObserver)
+        : this(processRunner, AdbClient.DefaultCommandTimeout, timeProvider, screenshotObserver)
+    {
+    }
+
     /// <summary>Создаёт host-side поверхность Android с явным дедлайном команды.</summary>
     /// <param name="processRunner">Общая граница запуска процесса.</param>
     /// <param name="commandTimeout">Дедлайн одной команды ADB и одной команды чтения сведений.</param>
@@ -69,6 +83,21 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">Дедлайн команды не положителен.</exception>
     public AndroidWindowsHost(IWindowsProcessRunner processRunner, TimeSpan commandTimeout, TimeProvider timeProvider)
+        : this(processRunner, commandTimeout, timeProvider, null)
+    {
+    }
+
+    /// <summary>Создаёт host с необязательным наблюдателем реальных screenshot capture.</summary>
+    /// <param name="processRunner">Общая граница запуска процесса.</param>
+    /// <param name="commandTimeout">Дедлайн одной команды ADB и одной команды чтения сведений.</param>
+    /// <param name="timeProvider">Общий источник времени процесса.</param>
+    /// <param name="screenshotObserver">Диагностический наблюдатель; null — без наблюдения.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="processRunner"/> или <paramref name="timeProvider"/> равны <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">Дедлайн команды не положителен.</exception>
+    public AndroidWindowsHost(IWindowsProcessRunner processRunner, TimeSpan commandTimeout, TimeProvider timeProvider,
+        IAndroidScreenshotObserver? screenshotObserver)
     {
         ArgumentNullException.ThrowIfNull(processRunner);
         ArgumentNullException.ThrowIfNull(timeProvider);
@@ -83,6 +112,7 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
         _endpointResolver = new AndroidEndpointResolver(processRunner, commandTimeout);
         _commandTimeout = commandTimeout;
         _timeProvider = timeProvider;
+        _screenshotObserver = screenshotObserver;
     }
 
     /// <inheritdoc />
@@ -135,6 +165,63 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
         AndroidEndpoint endpoint,
         CancellationToken cancellationToken)
     {
+        IAndroidScreenshotObserver? observer = _screenshotObserver;
+        if (observer is null)
+        {
+            return await CaptureScreenshotCoreAsync(instanceId, endpoint, null, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Наблюдатель видит тот же единственный захват; отказ наблюдателя на захват не влияет.
+        long started = 0;
+        ApplicationResult<CapturedAndroidScreenshot> result;
+        try
+        {
+            result = await CaptureScreenshotCoreAsync(instanceId, endpoint, timestamp =>
+            {
+                started = timestamp;
+                Observe(() => observer.CaptureStarted(instanceId, endpoint, timestamp));
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            Observe(() => observer.CaptureFailed(instanceId, endpoint, started, new ApplicationFailure
+            {
+                Code = ApplicationFailure.OperationCancelled,
+                Message = "Захват отменён.",
+            }));
+            throw;
+        }
+
+        if (result.IsFailure)
+        {
+            Observe(() => observer.CaptureFailed(instanceId, endpoint, started, result.FailureInfo!));
+        }
+        else
+        {
+            Observe(() => observer.CaptureCompleted(result.Value!.Info));
+        }
+
+        return result;
+    }
+
+    private static void Observe(Action notify)
+    {
+        try
+        {
+            notify();
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Наблюдатель диагностический: его отказ не меняет исход захвата.
+        }
+    }
+
+    private async Task<ApplicationResult<CapturedAndroidScreenshot>> CaptureScreenshotCoreAsync(
+        MuMuInstanceId instanceId,
+        AndroidEndpoint endpoint,
+        Action<long>? started,
+        CancellationToken cancellationToken)
+    {
         if (string.IsNullOrWhiteSpace(instanceId.Index))
         {
             return ScreenshotFailure("instance_invalid", instanceId, endpoint);
@@ -167,6 +254,7 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
 
         DateTimeOffset captureStartedAtUtc = _timeProvider.GetUtcNow();
         long captureStartedTimestamp = _timeProvider.GetTimestamp();
+        started?.Invoke(captureStartedTimestamp);
         ApplicationResult<WindowsProcessOutcome> command = await client.RunBinaryAsync(
             AdbCommandBuilder.BuildScreenshotArguments(endpoint),
             maximumPngBytes,
@@ -219,7 +307,8 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
                 {
                     CaptureStartedAtUtc = captureStartedAtUtc,
                     CaptureStartedTimestamp = captureStartedTimestamp,
-                });
+                },
+                _screenshotObserver);
             frame = null;
             return ApplicationResult<CapturedAndroidScreenshot>.Success(screenshot);
         }

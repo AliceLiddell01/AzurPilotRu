@@ -5,13 +5,13 @@ using AzurPilot.Core.MuMu;
 namespace AzurPilot.Core.Game;
 
 /// <summary>Одно действие: свежее распознавание → проверка ввода → нажатие → отдельное наблюдение эффекта с ограничением времени.</summary>
-public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
+public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock, IGameUiTrace? trace = null)
 {
     private static readonly TimeSpan PostconditionInterval = TimeSpan.FromMilliseconds(150);
     private readonly TimeProvider _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     private GameUiMeter? _meter;
 
-    internal GameUiActionRunner(GameUiMeter meter, IGameUiHost host) : this(host, meter.Clock)
+    internal GameUiActionRunner(GameUiMeter meter, IGameUiHost host) : this(host, meter.Clock, meter.Trace)
     {
         _meter = meter;
     }
@@ -33,7 +33,8 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
     {
         ArgumentNullException.ThrowIfNull(action);
         ArgumentNullException.ThrowIfNull(progress);
-        GameUiMeter meter = _meter ??= new(host, _clock, _clock.GetTimestamp());
+        GameUiMeter meter = _meter ??= new(host, _clock, _clock.GetTimestamp(), trace);
+        IGameUiTrace? sink = meter.Trace;
         long actionStarted = _clock.GetTimestamp();
         meter.BeginAction();
         GameUiObservation? before = null;
@@ -47,6 +48,18 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
         IReadOnlyList<string> required = action.RequiredAssetIds ?? [];
         string[] posts = [action.PostconditionAssetId, .. action.AlternativePostconditionAssetIds ?? []];
         string[] assets = [.. new[] { action.SourceAssetId }.Concat(posts).Concat(excluded).Concat(required).Distinct(StringComparer.Ordinal)];
+        sink.Emit(() => new("action_started", actionStarted)
+        {
+            ActionId = action.Id,
+            AssetId = action.SourceAssetId,
+            Details = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["source"] = action.SourceAssetId,
+                ["required"] = string.Join(',', required),
+                ["excluded"] = string.Join(',', excluded),
+                ["postconditions"] = string.Join(',', posts),
+            },
+        });
         double? At(long? timestamp)
         {
             return timestamp is long value ? GameUiMeter.Milliseconds(_clock, actionStarted, value) : null;
@@ -54,6 +67,14 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
 
         GameActionOutcome Result(ApplicationFailure? failure)
         {
+            sink.Emit(() => new("action_completed", _clock.GetTimestamp())
+            {
+                ActionId = action.Id,
+                FrameId = (after ?? before)?.Frame.FrameId,
+                State = proven ? "change_proven" : attempted ? "change_unproven" : "not_attempted",
+                Reason = failure is null ? null
+                    : failure.Details?.TryGetValue("reason", out string? detail) == true ? detail : failure.Code,
+            });
             return new(action.Id, before, after, point, attempted, proven, failure, sourceObservations, postconditionObservations)
             {
                 Timing = new(GameUiMeter.Milliseconds(_clock, actionStarted, _clock.GetTimestamp()), At(tapCompleted),
@@ -63,6 +84,13 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
 
         GameActionOutcome Rejected(string reason)
         {
+            sink.Emit(() => new("action_rejected", _clock.GetTimestamp())
+            {
+                ActionId = action.Id,
+                FrameId = (after ?? before)?.Frame.FrameId,
+                Reason = reason,
+                State = attempted ? "after_tap" : "before_tap",
+            });
             return Result(Failure(reason, attempted));
         }
 
@@ -72,6 +100,12 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
             if (classified is not null && assets.All(id => classified.Find(id) is not null))
             {
                 before = classified;
+                sink.Emit(() => new("action_source", _clock.GetTimestamp())
+                {
+                    ActionId = action.Id,
+                    FrameId = classified.Frame.FrameId,
+                    Reason = "reused_classified_frame",
+                });
             }
             else
             {
@@ -85,6 +119,13 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
                 }
 
                 before = observed.Value!;
+                Guid sourceFrame = before.Frame.FrameId;
+                sink.Emit(() => new("action_source", _clock.GetTimestamp())
+                {
+                    ActionId = action.Id,
+                    FrameId = sourceFrame,
+                    Reason = "new_capture",
+                });
                 if (before.Frame.CaptureStartedTimestamp < requestedAt)
                 {
                     return Rejected("source_frame_invalid");
@@ -141,6 +182,16 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
                 }
 
                 point = geometry.Center(safe);
+                GamePixelRect planned = safe;
+                Guid plannedFrame = before.Frame.FrameId;
+                sink.Emit(() => new("tap_planned", _clock.GetTimestamp())
+                {
+                    ActionId = action.Id,
+                    FrameId = plannedFrame,
+                    AssetId = action.SourceAssetId,
+                    Region = planned,
+                    Point = point,
+                });
             }
             catch (ArgumentOutOfRangeException)
             {
@@ -169,7 +220,16 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
             attempted = true;
             progress.MutationAttempted = true;
             progress.TapAttempts++;
-            GameTap permit = new(before.Frame, action.SourceAssetId, safe, point.Value, action.MaximumObservationAge);
+            GameTap permit = new(before.Frame, action.Id, action.SourceAssetId, safe, point.Value, action.MaximumObservationAge);
+            sink.Emit(() => new("tap_permitted", _clock.GetTimestamp())
+            {
+                ActionId = action.Id,
+                FrameId = permit.Frame.FrameId,
+                AssetId = permit.AssetId,
+                Region = permit.SafeBounds,
+                Point = permit.Point,
+                Value = Math.Round(age.TotalMilliseconds, 1),
+            });
             ApplicationResult<AndroidCommandOutcome> tap = await meter.TapAsync(permit, cancellationToken).ConfigureAwait(false);
             tapCompleted = _clock.GetTimestamp();
             if (tap.IsFailure)
@@ -242,11 +302,25 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock)
                     }
 
                     proven = true;
+                    Guid proofFrame = after.Frame.FrameId;
+                    sink.Emit(() => new("postcondition_frame", _clock.GetTimestamp())
+                    {
+                        ActionId = action.Id,
+                        FrameId = proofFrame,
+                        Reason = "proven",
+                    });
                     progress.ChangeProven = true;
                     return Result(null);
                 }
 
                 lastUnchanged = after.Frame.CaptureStartedTimestamp;
+                Guid unchangedFrame = after.Frame.FrameId;
+                sink.Emit(() => new("postcondition_frame", _clock.GetTimestamp())
+                {
+                    ActionId = action.Id,
+                    FrameId = unchangedFrame,
+                    Reason = "unchanged",
+                });
             }
 
             return Rejected("postcondition_unknown");

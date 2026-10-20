@@ -10,4 +10,7 @@
   Deadline кооперативный: незавершённая mutation не бросается с освобождением аренды.
 - Discovery не загружает config/runtime; runtime-команды не открывают log viewer и пишут presentation
   только одним JSON в raw stdout после shutdown. Логи остаются в stderr.
-- Контракт, ограничения координации и evidence: [Agent CLI](../../docs/reference/agent-cli.md).
+- `--debug-report` только наблюдает: не меняет stdout/envelope/effect, не разрешает mutation, не
+  делает повторных capture или команд. Сбой учёта debug изолируется (`AgentDebugRun.Guard`) и делает
+  отчёт `incomplete`; отказ создания отчёта — до runtime. Без флага debug-композиция не регистрируется.
+- Контракт, ограничения координации, Debug Mode и evidence: [Agent CLI](../../docs/reference/agent-cli.md).

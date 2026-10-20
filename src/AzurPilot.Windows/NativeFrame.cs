@@ -99,6 +99,38 @@ public sealed class NativeFrame : IDisposable
         }
     }
 
+    /// <summary>
+    /// Создаёт отдельный уменьшенный кадр DLL для диагностики; пропорции обязаны совпадать точно.
+    /// Превью — самостоятельный владелец, исходный кадр не изменяется и может быть освобождён раньше.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">Кадр уже освобождён.</exception>
+    /// <exception cref="NativeAbiMismatchException">Экспорт превью недоступен.</exception>
+    /// <exception cref="AzurPilotNativeBoundaryException">Native операция отвергла размер или кадр.</exception>
+    public NativeFrame CreatePreview(int width, int height)
+    {
+        lock (_lifetimeLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return AzurPilotNativeBridge.CreatePreview(_handle, width, height);
+        }
+    }
+
+    /// <summary>
+    /// Кодирует копию кадра с аннотациями в JPEG без metadata. Допустимы только кадры не больше
+    /// предела превью; кадр больше предела (например, 4K) так не экспортируется. Байты JPEG не владеют кадром.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">Кадр уже освобождён.</exception>
+    /// <exception cref="ArgumentException">Аннотация нарушает контракт ABI.</exception>
+    /// <exception cref="AzurPilotNativeBoundaryException">Native операция отвергла кадр или аннотации.</exception>
+    public byte[] EncodeJpeg(int quality, ReadOnlySpan<NativeFrameAnnotation> annotations)
+    {
+        lock (_lifetimeLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return AzurPilotNativeBridge.EncodeJpeg(_handle, quality, annotations);
+        }
+    }
+
     /// <summary>Освобождает кадр; повторный вызов безопасен.</summary>
     public void Dispose()
     {
