@@ -36,6 +36,14 @@ CI не зависит от MuMu: `nemu_ipc`, helper-ы и scrcpy в нём пр
 
 Кадры, UID и чаты остаются в `.codex/local/reports/` и системном TEMP и не попадают в PR.
 
+## Границы доказательства
+
+| Категория | Что входит |
+| --- | --- |
+| Проверено на MuMu (ниже) | `nemu_ipc`, `uiautomator2`, `DroidCast_raw` — PASS; `ADB_nc`, `DroidCast` — PARTIAL по сроку; `ADB` — эталон и bootstrap; калибровка `auto` и её использование observe/ready/scan/Dock; Debug Mode ON/OFF; интервалы normal (`MACHINE_PROVEN`) и combat (`USER_CONFIRMED`); preview и apply профиля |
+| Неприменимо на этой конфигурации (UNSUPPORTED) | `aScreenCap`, `aScreenCap_nc` — бинарник SDK ≤ 28 на Android 15; `scrcpy` — программный кодер не принимает 4K |
+| Не испытывалось вживую | `scrcpy` и `aScreenCap(_nc)` на совместимых target; разрешения кроме 4K; смена версии MuMu/Android и инвалидация калибровки на живом эмуляторе (покрыто тестами); apply пользовательского `config.yaml` (проверен на копии); combat-фаза с привязкой `formatVersion` 2; `downstreamRecognitionDelay` |
+
 ## Зафиксированное evidence
 
 MuMu 6.8.5.0, Android 15 (SDK 35, x86_64), 3840×2160 в landscape (физический буфер 2160×3840, `mRotation=1`).
