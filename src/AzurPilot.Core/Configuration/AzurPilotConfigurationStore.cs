@@ -7,6 +7,8 @@ namespace AzurPilot.Core.Configuration;
 /// <summary>Явное сохранение настроек в YAML с валидацией, backup и атомарной заменой.</summary>
 public static class AzurPilotConfigurationStore
 {
+    private static readonly byte[] Utf8ByteOrderMark = [0xEF, 0xBB, 0xBF];
+
     /// <summary>Сохраняет настройки, если источник не изменился с момента последнего чтения.</summary>
     /// <param name="yamlPath">Абсолютный путь канонического YAML.</param>
     /// <param name="jsonPath">Абсолютный путь legacy JSON.</param>
@@ -36,6 +38,98 @@ public static class AzurPilotConfigurationStore
         }
     }
 
+    /// <summary>
+    /// Точечно задаёт интервалы секции <c>screenshot</c> канонического YAML: комментарии, форматирование и
+    /// остальные ключи файла сохраняются. Запись атомарна, с backup, и только если SHA-256 файла совпадает с
+    /// ожидаемым.
+    /// </summary>
+    /// <param name="yamlPath">Абсолютный путь канонического YAML.</param>
+    /// <param name="jsonPath">
+    /// Абсолютный путь legacy JSON для runtime-политики двух источников либо null, если источник задан явно одним
+    /// файлом (как <c>--config</c>).
+    /// </param>
+    /// <param name="expectedSourceVersion">SHA-256 файла, на котором основано решение, либо null, если файла не было.</param>
+    /// <param name="normalIntervalMilliseconds">Новый <c>screenshot.normalIntervalMs</c>.</param>
+    /// <param name="combatIntervalMilliseconds">Новый <c>screenshot.combatIntervalMs</c> либо null — значение не меняется.</param>
+    /// <param name="backupPath">Путь резервной копии вытесненного файла.</param>
+    /// <returns>Повторно прочитанный snapshot либо отказ; исходный файл при отказе не меняется.</returns>
+    public static ApplicationResult<AzurPilotConfigurationSnapshot> SaveScreenshotIntervals(
+        string yamlPath, string? jsonPath, string? expectedSourceVersion, int normalIntervalMilliseconds,
+        int? combatIntervalMilliseconds, out string? backupPath)
+        => SaveScreenshotIntervals(yamlPath, jsonPath, expectedSourceVersion, normalIntervalMilliseconds,
+            combatIntervalMilliseconds, out backupPath, ConfigurationFileOperations.System);
+
+    internal static ApplicationResult<AzurPilotConfigurationSnapshot> SaveScreenshotIntervals(
+        string yamlPath, string? jsonPath, string? expectedSourceVersion, int normalIntervalMilliseconds,
+        int? combatIntervalMilliseconds, out string? backupPath, ConfigurationFileOperations files)
+    {
+        lock (ConfigurationFileOperations.WriteGate)
+        {
+            backupPath = null;
+            ApplicationResult<AzurPilotConfigurationSnapshot> current = Read(yamlPath, jsonPath);
+            if (current.IsFailure)
+            {
+                return current;
+            }
+
+            AzurPilotConfigurationSnapshot snapshot = current.Value!;
+            if (snapshot.SourceVersion != expectedSourceVersion)
+            {
+                return Invalid("Конфигурация изменилась после проверки; исходный файл сохранён.", yamlPath);
+            }
+
+            if (snapshot.SourceFormat == AzurPilotConfigurationFormat.Json)
+            {
+                return Invalid("Источник — legacy JSON; сначала выполните явную миграцию в YAML.", yamlPath);
+            }
+
+            AzurPilotConfiguration desired = snapshot.Configuration with
+            {
+                Screenshot = snapshot.Configuration.Screenshot with
+                {
+                    NormalIntervalMilliseconds = normalIntervalMilliseconds,
+                    CombatIntervalMilliseconds = combatIntervalMilliseconds ?? snapshot.Configuration.Screenshot.CombatIntervalMilliseconds,
+                },
+            };
+            if (snapshot.SourceFormat == AzurPilotConfigurationFormat.None)
+            {
+                // Файла нет — сохранять нечего, пишется канонический документ, но только по YAML-пути.
+                return (Path.GetExtension(yamlPath).Equals(".yaml", StringComparison.OrdinalIgnoreCase)
+                        || Path.GetExtension(yamlPath).Equals(".yml", StringComparison.OrdinalIgnoreCase))
+                    ? Replace(yamlPath, jsonPath, snapshot, snapshot,
+                        new UTF8Encoding(false).GetBytes(AzurPilotConfigurationYamlWriter.Write(desired)), desired, out backupPath, files)
+                    : Invalid("Путь настроек не является YAML; запись невозможна.", yamlPath);
+            }
+
+            byte[] original;
+            try
+            {
+                original = File.ReadAllBytes(yamlPath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException)
+            {
+                return Invalid("Не удалось прочитать настройки: " + exception.Message, yamlPath);
+            }
+
+            if (ConfigurationFileOperations.Version(original) != expectedSourceVersion)
+            {
+                return Invalid("Конфигурация изменилась после проверки; исходный файл сохранён.", yamlPath);
+            }
+
+            int bom = original.AsSpan().StartsWith(Utf8ByteOrderMark) ? Utf8ByteOrderMark.Length : 0;
+            string? edited = AzurPilotConfigurationYamlEdit.SetScreenshotIntervals(
+                Encoding.UTF8.GetString(original, bom, original.Length - bom), normalIntervalMilliseconds,
+                combatIntervalMilliseconds, out string? editFailure);
+            if (edited is null)
+            {
+                return Invalid("Точечная правка YAML невозможна: " + editFailure, yamlPath);
+            }
+
+            byte[] candidate = [.. original.AsSpan(0, bom), .. new UTF8Encoding(false).GetBytes(edited)];
+            return Replace(yamlPath, jsonPath, snapshot, snapshot, candidate, desired, out backupPath, files);
+        }
+    }
+
     private static ApplicationResult<AzurPilotConfigurationSnapshot> SaveCore(
         string yamlPath, string jsonPath, AzurPilotConfigurationSnapshot expected,
         AzurPilotConfiguration configuration, out string? backupPath, ConfigurationFileOperations files)
@@ -52,7 +146,7 @@ public static class AzurPilotConfigurationStore
 
         if (!current.Value!.HasSameSource(expected))
         {
-            return Invalid("Конфигурация изменилась вне приложения. Перезапустите приложение перед сохранением.");
+            return Invalid("Конфигурация изменилась вне приложения. Перезапустите приложение перед сохранением.", yamlPath);
         }
 
         if (current.Value.SourceFormat == AzurPilotConfigurationFormat.Json)
@@ -68,13 +162,24 @@ public static class AzurPilotConfigurationStore
             return ApplicationResult<AzurPilotConfigurationSnapshot>.Success(migrated.Value.Snapshot);
         }
 
+        return Replace(yamlPath, jsonPath, current.Value, expected,
+            new UTF8Encoding(false).GetBytes(AzurPilotConfigurationYamlWriter.Write(configuration)), configuration,
+            out backupPath, files);
+    }
+
+    /// <summary>Атомарно заменяет YAML проверенным кандидатом с backup и обнаружением конкурентной записи.</summary>
+    private static ApplicationResult<AzurPilotConfigurationSnapshot> Replace(
+        string yamlPath, string? jsonPath, AzurPilotConfigurationSnapshot current, AzurPilotConfigurationSnapshot expected,
+        byte[] candidate, AzurPilotConfiguration configuration, out string? backupPath, ConfigurationFileOperations files)
+    {
+        backupPath = null;
         string? directory = Path.GetDirectoryName(yamlPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         string temporary = Path.Combine(directory, $".config-{Guid.NewGuid():N}.yaml");
         try
         {
             _ = Directory.CreateDirectory(directory);
-            File.WriteAllText(temporary, AzurPilotConfigurationYamlWriter.Write(configuration), new UTF8Encoding(false));
+            File.WriteAllBytes(temporary, candidate);
             ApplicationResult<AzurPilotConfigurationSnapshot> validated = AzurPilotConfigurationLoader.Load(temporary);
             if (validated.IsFailure || validated.Value!.Configuration != configuration)
             {
@@ -82,13 +187,13 @@ public static class AzurPilotConfigurationStore
             }
 
             // Повторное чтение обнаруживает изменения во время подготовки кандидата.
-            ApplicationResult<AzurPilotConfigurationSnapshot> latest = AzurPilotConfigurationLoader.LoadFromSources(yamlPath, jsonPath);
+            ApplicationResult<AzurPilotConfigurationSnapshot> latest = Read(yamlPath, jsonPath);
             if (latest.IsFailure || !latest.Value!.HasSameSource(expected))
             {
                 return Invalid("Конфигурация изменилась во время сохранения; исходный файл сохранён.");
             }
 
-            if (current.Value.SourceFormat == AzurPilotConfigurationFormat.Yaml)
+            if (current.SourceFormat == AzurPilotConfigurationFormat.Yaml)
             {
                 // Запрещаем запись в открытый файл, разрешая атомарную замену имени. Чужая замена
                 // имени всё ещё возможна: File.Replace сохраняет именно вытесненные байты в backup.
@@ -119,7 +224,7 @@ public static class AzurPilotConfigurationStore
                 files.Move(temporary, yamlPath);
             }
 
-            ApplicationResult<AzurPilotConfigurationSnapshot> final = AzurPilotConfigurationLoader.LoadFromSources(yamlPath, jsonPath);
+            ApplicationResult<AzurPilotConfigurationSnapshot> final = Read(yamlPath, jsonPath);
             return final.IsSuccess && final.Value!.SourceVersion == validated.Value.SourceVersion
                 ? final : Invalid("Источники изменились после записи. Проверьте YAML и резервную копию перед повтором.");
         }
@@ -146,4 +251,11 @@ public static class AzurPilotConfigurationStore
                 AzurPilotConfigurationFailures.Invalid(message, yamlPath));
         }
     }
+
+    // Явный файл читается так же, как его читает host с --config; иначе действует политика двух источников.
+    private static ApplicationResult<AzurPilotConfigurationSnapshot> Read(string yamlPath, string? jsonPath)
+        => jsonPath is null ? AzurPilotConfigurationLoader.Load(yamlPath) : AzurPilotConfigurationLoader.LoadFromSources(yamlPath, jsonPath);
+
+    private static ApplicationResult<AzurPilotConfigurationSnapshot> Invalid(string message, string yamlPath)
+        => ApplicationResult<AzurPilotConfigurationSnapshot>.Failure(AzurPilotConfigurationFailures.Invalid(message, yamlPath));
 }

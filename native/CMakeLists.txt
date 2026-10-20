@@ -26,6 +26,7 @@ endif()
 # Каждый configure проверяет hash, в том числе для кэшированного CI артефакта.
 include(cmake/OpenCvDependency.cmake)
 find_package(OpenCV "${AZURPILOT_OPENCV_VERSION}" EXACT REQUIRED CONFIG)
+include(cmake/CaptureDependencies.cmake)
 
 if(TARGET OpenCV::opencv_world)
   set(AZURPILOT_OPENCV_WORLD_TARGET OpenCV::opencv_world)
@@ -53,11 +54,13 @@ function(azurpilot_native_apply_compile_options target)
 endfunction()
 
 add_library(AzurPilot.Native SHARED src/azurpilot_native.cpp src/native_frame.cpp src/opencv_probe.cpp src/game_match.cpp
-  src/frame_preview.cpp)
+  src/frame_preview.cpp src/frame_sources.cpp src/nemu_ipc.cpp src/video_decoder.cpp)
 target_include_directories(AzurPilot.Native
   PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_link_libraries(AzurPilot.Native PRIVATE "${AZURPILOT_OPENCV_WORLD_TARGET}")
+# Media Foundation H.264 decoder — системный компонент Windows; отдельной зависимости не скачивается.
+set(AZURPILOT_NATIVE_SYSTEM_LIBRARIES mfplat mfuuid wmcodecdspuuid strmiids ole32)
+target_link_libraries(AzurPilot.Native PRIVATE "${AZURPILOT_OPENCV_WORLD_TARGET}" ${AZURPILOT_NATIVE_SYSTEM_LIBRARIES})
 azurpilot_native_apply_compile_options(AzurPilot.Native)
 set_target_properties(AzurPilot.Native PROPERTIES
   OUTPUT_NAME "AzurPilot.Native"
@@ -125,6 +128,23 @@ set_target_properties(AzurPilot.Native.FramePreviewTest PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_OUTPUT_DIR}/$<CONFIG>")
 add_test(NAME native_frame_preview COMMAND AzurPilot.Native.FramePreviewTest)
 set_tests_properties(native_frame_preview PROPERTIES TIMEOUT 120 FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
+
+# Источники кадров захвата (ABI v6) проверяются через C ABI: известные цвета каналов, переворот,
+# отрицательные размеры/данные, BMZ1/LZ4, JPEG и H.264, закодированный системным MFT в самом тесте.
+add_executable(AzurPilot.Native.FrameSourcesTest tests/frame_sources_test.cpp)
+target_compile_definitions(AzurPilot.Native.FrameSourcesTest PRIVATE AZURPILOT_NATIVE_IMPORT)
+target_link_libraries(AzurPilot.Native.FrameSourcesTest PRIVATE AzurPilot.Native "${AZURPILOT_OPENCV_WORLD_TARGET}"
+  ${AZURPILOT_NATIVE_SYSTEM_LIBRARIES})
+azurpilot_native_apply_compile_options(AzurPilot.Native.FrameSourcesTest)
+add_dependencies(AzurPilot.Native.FrameSourcesTest AzurPilot.Native.Runtime)
+set_target_properties(AzurPilot.Native.FrameSourcesTest PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${AZURPILOT_NATIVE_OUTPUT_DIR}/$<CONFIG>")
+add_test(NAME native_frame_sources COMMAND AzurPilot.Native.FrameSourcesTest sources)
+set_tests_properties(native_frame_sources PROPERTIES TIMEOUT 120 FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")
+add_test(NAME native_video_decoder COMMAND AzurPilot.Native.FrameSourcesTest video)
+# Код 77 — честный пропуск, если в образе Windows нет системных H.264 MFT Media Foundation.
+set_tests_properties(native_video_decoder PROPERTIES TIMEOUT 120 FAIL_REGULAR_EXPRESSION "\\[FAIL\\]"
+  SKIP_RETURN_CODE 77)
 
 add_test(NAME native_abi_smoke COMMAND AzurPilot.Native.SmokeTest)
 set_tests_properties(native_abi_smoke PROPERTIES TIMEOUT 300 FAIL_REGULAR_EXPRESSION "\\[FAIL\\]")

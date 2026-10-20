@@ -8,6 +8,9 @@
 - Превью/JPEG (ABI v5) — диагностическая операция: превью — новый независимый кадр со своим release,
   JPEG рисует на копии и не меняет источник; кадр больше предела превью не кодируется. Exports превью
   проверяются лениво при первом вызове и не влияют на readiness production-пути.
+- Источники кадров транспортов (ABI v6: сырые форматы, BMZ1, JPEG, поворот, `nemu_ipc`, H.264) создают
+  такой же RGB8-кадр с тем же release и проверкой геометрии; транспортная семантика —
+  [`screenshot-transports.md`](screenshot-transports.md).
 - Поддерживаемое подмножество PNG и политика обработки прозрачности — часть контракта. Не расширяй декодер молча и не считай каналы RGB выходом OpenCV по умолчанию: сохраняй проверку порядка каналов.
 - Подробная политика декодирования, времени жизни и проверки: [`docs/architecture/native-frame-ownership.md`](../../docs/architecture/native-frame-ownership.md).
 - Logical-to-physical mapping и named-region owner находятся в диагностическом слое: [`screenshot-diagnostics.md`](screenshot-diagnostics.md).

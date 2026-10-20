@@ -39,9 +39,11 @@ public sealed class AndroidScreenshotCaptureTests
         Assert.Equal(Endpoint, screenshot.Info.Endpoint);
         Assert.Equal(TimeSpan.Zero, screenshot.Info.CapturedAtUtc.Offset);
         Assert.InRange(screenshot.Info.CapturedAtUtc, before, after);
-        Assert.Equal(TimeSpan.FromMilliseconds(17), screenshot.Info.CommandDuration);
-        Assert.Equal(png.Length, screenshot.Info.EncodedPngByteCount);
-        Assert.Equal(0, screenshot.Info.ProcessExitCode);
+        Assert.Equal(Core.Capture.ScreenshotMethod.Adb, screenshot.Info.Method);
+        Assert.Equal(new AdbPngCaptureFacts(TimeSpan.FromMilliseconds(17), png.Length, 0), screenshot.Info.AdbPng);
+        Assert.True(screenshot.Info.Timing.Acquisition >= TimeSpan.Zero && screenshot.Info.Timing.EndToEnd >= screenshot.Info.Timing.Acquisition);
+        Assert.Equal(png.Length, screenshot.Info.PayloadByteCount);
+        Assert.Null(screenshot.Info.Stream);
         Assert.Equal(new NativeFrameInfo(2, 1, 6, 6, AzurPilotNativeBridge.PixelFormatRgb8), screenshot.Info.FrameInfo);
         Assert.Equal(screenshot.Info.FrameInfo, screenshot.Frame.GetInfo());
 

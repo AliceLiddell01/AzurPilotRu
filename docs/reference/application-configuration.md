@@ -73,6 +73,10 @@ logging:
 | `logging` | да | блочный mapping | — |
 | `logging.viewer` | да | блочный mapping | — |
 | `logging.viewer.enabled` | да | булево: ровно `true` или `false` без кавычек | — |
+| `screenshot` | нет | блочный mapping | `AzurPilotConfigurationDefaults` |
+| `screenshot.method` | нет | `auto` или точное имя транспорта из `ScreenshotMethodNames` | `AzurPilotConfigurationDefaults` |
+| `screenshot.normalIntervalMs` | нет | целое число в границах `ScreenshotConfiguration` | `AzurPilotConfigurationDefaults` |
+| `screenshot.combatIntervalMs` | нет | целое число в границах `ScreenshotConfiguration` | `AzurPilotConfigurationDefaults` |
 
 Смысл ключей:
 
@@ -90,6 +94,12 @@ logging:
 - `logging.viewer.enabled` — включает отдельный просмотрщик журнала. Настройка **не дублирует**
   минимальный уровень: уровень определяет, что вообще попадает в журнал, а просмотрщик — только
   отображение уже записанного;
+- `screenshot` — транспорт снимков и интервалы наблюдения
+  ([транспорты снимков](../architecture/screenshot-transports.md)). `auto` использует ADB до калибровки
+  `capture-benchmark`, явный метод не подменяется при отказе. Секция не входит в канонический документ:
+  writer записывает её только при отличии от defaults, а изменение настройки — действие пользователя.
+  Интервалы из измерения записывает только `agent capture-profile-apply` после preview и кода пользователя;
+  запись точечная и сохраняет комментарии и форматирование файла;
 - имена JSON-свойств заданы явно в camelCase и совпадают с ключами YAML. Строгий YAML-ридер отдельно
   перечисляет допустимые ключи, writer записывает их литералами, а тесты схемы проверяют согласованность;
 - метаданные JSON-типов приходят из source-generated контекста; reflection-based десериализация

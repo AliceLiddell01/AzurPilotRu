@@ -29,6 +29,8 @@ internal sealed class AgentDebugFrameRecord
     internal required int Height { get; init; }
     internal required int PngBytes { get; init; }
     internal required double CommandMs { get; init; }
+    internal string Method { get; init; } = "ADB";
+    internal long PayloadBytes { get; init; }
     internal required double CaptureMs { get; init; }
     internal required double CapturedAtMs { get; init; }
     internal Guid? FrameId { get; set; }
@@ -175,8 +177,10 @@ internal sealed class AgentDebugFrames : IAndroidScreenshotObserver, IDisposable
                 CaptureStartedAtUtc = info.CaptureStartedAtUtc.ToUniversalTime(),
                 Width = checked((int)info.FrameInfo.Width),
                 Height = checked((int)info.FrameInfo.Height),
-                PngBytes = info.EncodedPngByteCount,
-                CommandMs = Math.Round(info.CommandDuration.TotalMilliseconds, 1),
+                PngBytes = info.AdbPng?.EncodedPngByteCount ?? 0,
+                CommandMs = Math.Round(info.Timing.Acquisition.TotalMilliseconds, 1),
+                Method = Core.Capture.ScreenshotMethodNames.ToName(info.Method),
+                PayloadBytes = info.PayloadByteCount,
                 CaptureMs = Math.Round(_run.Clock.GetElapsedTime(info.CaptureStartedTimestamp, now).TotalMilliseconds, 1),
                 CapturedAtMs = _run.Trace.ElapsedMs(now),
             };
@@ -190,9 +194,12 @@ internal sealed class AgentDebugFrames : IAndroidScreenshotObserver, IDisposable
             width = record.Width,
             height = record.Height,
             format = "rgb8",
+            method = record.Method,
             pngBytes = record.PngBytes,
+            payloadBytes = record.PayloadBytes,
             captureStartedAtMs = _run.Trace.ElapsedMs(info.CaptureStartedTimestamp),
             commandMs = record.CommandMs,
+            streamSequence = info.Stream?.Sequence,
             captureMs = record.CaptureMs,
             decodeAndValidateMs = Math.Round(Math.Max(0, record.CaptureMs - record.CommandMs), 1),
             captureStartedAtUtc = info.CaptureStartedAtUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
@@ -688,7 +695,7 @@ internal static class AgentDebugAnnotations
         }
 
         List<string> header = [.. Wrap(string.Create(CultureInfo.InvariantCulture,
-            $"#{record.Sequence:0000} {record.Reference} frame={(record.FrameId?.ToString("N")[..8] ?? "-")} t=+{record.CapturedAtMs:0.0}ms {record.Width}x{record.Height} capture={record.CaptureMs:0}ms adb={record.CommandMs:0}ms"))];
+            $"#{record.Sequence:0000} {record.Reference} frame={(record.FrameId?.ToString("N")[..8] ?? "-")} t=+{record.CapturedAtMs:0.0}ms {record.Width}x{record.Height} capture={record.CaptureMs:0}ms {record.Method}={record.CommandMs:0}ms"))];
         header.AddRange(Wrap($"state={record.StateRule ?? "-"}/{record.State ?? "-"} viewport={record.Viewport ?? "not_checked"} op={record.OperationLabel()}"));
         foreach (AgentDebugFrameMark mark in record.Marks.Where(m => m.Label is not null
             && m.Kind is "action_rejected" or "postcondition" or "action_source").Take(3))

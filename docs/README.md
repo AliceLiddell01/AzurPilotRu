@@ -12,6 +12,7 @@ verification/acceptance, troubleshooting и других деталей, кот�
 - `architecture/mumu-lifecycle.md` — подробная архитектура MuMu integration/lifecycle.
 - `architecture/android-game-lifecycle.md` — Android/ADB readiness и lifecycle Azur Lane Global/EN.
 - `architecture/screenshot-diagnostics.md` — точный Android PNG capture, geometry named regions и native RGB scan.
+- `architecture/screenshot-transports.md` — девять транспортов снимков, выбор `auto`, helper-ы, бенчмарк и интервалы.
 - `architecture/game-ui.md` — игровая геометрия, проверенные ассеты, native matching и безопасный ввод.
 - `architecture/operator-tui.md` — устройство интерактивной операторской поверхности AzurPilot.
 - `reference/application-configuration.md` — схема и загрузка пользовательской конфигурации.
@@ -21,6 +22,7 @@ verification/acceptance, troubleshooting и других деталей, кот�
 - `testing/verification.md` — что доказывают CI, native/managed tests и real acceptance.
 - `testing/android-acceptance.md` — подробности real/managed проверки Android/game lifecycle.
 - `testing/screenshot-acceptance.md` — локальные PNG samples и read-only live screenshot acceptance.
+- `testing/screenshot-transports.md` — проверки и live-приёмка транспортов снимков, зафиксированное evidence.
 - `testing/game-ui.md` — fixture/native/managed проверки и безопасная живая проверка игрового перехода.
 - `testing/operator-tui-acceptance.md` — приёмка самого TUI на Windows и live MuMu.
 - `testing/tui-harness.md` — постоянный ConPTY/xterm.js CLI, воспроизводимые PNG, ячейки и границы точности воспроизведения.

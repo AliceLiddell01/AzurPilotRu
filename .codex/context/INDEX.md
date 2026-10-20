@@ -26,6 +26,7 @@
 | Application failures | `application-failures.md` | `src/AzurPilot.Core/Failures/**`, `src/AzurPilot.App/AzurPilotExitCode.cs` |
 | Native PNG frame и ownership | `native-frame.md` | `native/include/azurpilot_native_abi.h`, `docs/architecture/native-frame-ownership.md`, native/managed tests |
 | Screenshot capture, geometry и RGB region scan | `screenshot-diagnostics.md` | `docs/architecture/screenshot-diagnostics.md`, `docs/testing/screenshot-acceptance.md`, production code/tests |
+| Транспорты снимков, выбор `auto`, helper-ы и измерения | `screenshot-transports.md` | `docs/architecture/screenshot-transports.md`, `docs/testing/screenshot-transports.md`, `native/capture-dependencies.json` |
 | Игровая геометрия, UI assets, native recognition и безопасный input | `game-ui.md` | `assets/game/catalog.json`, `docs/architecture/game-ui.md`, `docs/testing/game-ui.md` |
 | Runtime logging и diagnostics | `runtime-diagnostics.md` | `src/AzurPilot.App/**`, `docs/getting-started.md` |
 | MuMu lifecycle | `mumu-lifecycle.md` | production code + relevant tests/acceptance |

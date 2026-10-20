@@ -29,7 +29,8 @@ public static class AzurPilotConfigurationDefaults
     /// <remarks>
     /// <para>
     /// Значения по умолчанию: <c>ui.mode = normal</c>, <c>mumu.instance = "auto"</c>,
-    /// <c>diagnostics.minimumLevel = Information</c>, <c>logging.viewer.enabled = false</c>.
+    /// <c>diagnostics.minimumLevel = Information</c>, <c>logging.viewer.enabled = false</c>,
+    /// <c>screenshot.method = auto</c>, <c>screenshot.normalIntervalMs = 150</c>, <c>screenshot.combatIntervalMs = 1000</c>.
     /// </para>
     /// <para>
     /// <c>mumu.instance = "auto"</c> не означает «взять первый попавшийся экземпляр»: разрешение выбора
@@ -60,6 +61,14 @@ public static class AzurPilotConfigurationDefaults
                 {
                     Enabled = false,
                 },
+            },
+            // auto начинает с ADB и переходит на метод, выбранный измерением на доказанном главном экране.
+            // 150 мс — прежний период наблюдения постусловия действия; 1000 мс — консервативный боевой.
+            Screenshot = new ScreenshotConfiguration
+            {
+                Method = Capture.ScreenshotMethodNames.Auto,
+                NormalIntervalMilliseconds = 150,
+                CombatIntervalMilliseconds = 1000,
             },
         };
     }

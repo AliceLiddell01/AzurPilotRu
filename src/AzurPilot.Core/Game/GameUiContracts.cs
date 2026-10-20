@@ -28,8 +28,15 @@ public sealed record GameUiMatch(string AssetId, string? VariantId, GameMatchSta
     GamePixelRect? Bounds, GamePixelRect? SafeTapBounds, double Score, double RunnerUpScore,
     double MeanAbsoluteError, string Reason);
 
-/// <summary>Стоимость одного наблюдения на стороне host; захват включает ADB-команду и декодирование PNG.</summary>
-public sealed record GameObservationCost(TimeSpan Capture, TimeSpan CaptureCommand, TimeSpan Match);
+/// <summary>
+/// Стоимость одного наблюдения на стороне host: весь захват, получение данных транспортом
+/// (<paramref name="CaptureCommand"/>; для ADB — команда) и распознавание.
+/// </summary>
+public sealed record GameObservationCost(TimeSpan Capture, TimeSpan CaptureCommand, TimeSpan Match)
+{
+    /// <summary>Внешнее имя транспорта, выполнившего захват.</summary>
+    public string? CaptureMethod { get; init; }
+}
 
 /// <summary>Один кадр и результаты поиска в нём.</summary>
 public sealed record GameUiObservation(GameFrameProvenance Frame, IReadOnlyList<GameUiMatch> Matches)

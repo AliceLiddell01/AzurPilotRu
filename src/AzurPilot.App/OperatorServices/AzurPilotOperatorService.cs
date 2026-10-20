@@ -335,25 +335,48 @@ public sealed partial class AzurPilotOperatorService
     public ApplicationResult<AzurPilotConfigurationSnapshot> SaveConfiguration(
         AzurPilotConfigurationSnapshot expected, AzurPilotConfiguration configuration, out string? backupPath)
     {
+        (string yamlPath, string jsonPath) = ConfigurationFilePaths();
+        ApplicationResult isolation = ValidateConfigurationIsolation();
+        if (isolation.IsFailure)
+        {
+            backupPath = null;
+            return ApplicationResult<AzurPilotConfigurationSnapshot>.Failure(isolation.FailureInfo!);
+        }
+
+        return AzurPilotConfigurationStore.Save(yamlPath, jsonPath, expected, configuration, out backupPath);
+    }
+
+    /// <summary>
+    /// Точечно задаёт интервалы screenshot следующего запуска в источнике вызова с сохранением остального текста
+    /// файла; запись выполняется, только если SHA-256 источника совпадает с ожидаемым. DI снимок не меняется.
+    /// </summary>
+    public ApplicationResult<AzurPilotConfigurationSnapshot> SaveScreenshotIntervals(string yamlPath, string? jsonPath,
+        string? expectedSourceVersion, int normalIntervalMilliseconds, int? combatIntervalMilliseconds, out string? backupPath)
+    {
+        ApplicationResult isolation = ValidateConfigurationIsolation();
+        if (isolation.IsFailure)
+        {
+            backupPath = null;
+            return ApplicationResult<AzurPilotConfigurationSnapshot>.Failure(isolation.FailureInfo!);
+        }
+
+        return AzurPilotConfigurationStore.SaveScreenshotIntervals(yamlPath, jsonPath, expectedSourceVersion,
+            normalIntervalMilliseconds, combatIntervalMilliseconds, out backupPath);
+    }
+
+    private (string YamlPath, string JsonPath) ConfigurationFilePaths()
+    {
         string defaultYamlPath = AzurPilotConfigurationPath.GetDefaultRuntimePath();
         string defaultJsonPath = AzurPilotConfigurationPath.GetLegacyJsonRuntimePath();
         string configurationDirectory = _configuration.FilePath is string source
             ? Path.GetDirectoryName(source)!
             : Path.GetDirectoryName(defaultYamlPath)!;
-        string yamlPath = Path.Combine(configurationDirectory, Path.GetFileName(defaultYamlPath));
-        string jsonPath = Path.Combine(configurationDirectory, Path.GetFileName(defaultJsonPath));
-        if (ExternalMutationsDisabled)
-        {
-            ApplicationResult validation = WindowsConfigurationIsolation.TryValidate(_configuration.FilePath);
-            if (validation.IsFailure)
-            {
-                backupPath = null;
-                return ApplicationResult<AzurPilotConfigurationSnapshot>.Failure(validation.FailureInfo!);
-            }
-        }
-
-        return AzurPilotConfigurationStore.Save(yamlPath, jsonPath, expected, configuration, out backupPath);
+        return (Path.Combine(configurationDirectory, Path.GetFileName(defaultYamlPath)),
+            Path.Combine(configurationDirectory, Path.GetFileName(defaultJsonPath)));
     }
+
+    private ApplicationResult ValidateConfigurationIsolation()
+        => ExternalMutationsDisabled ? WindowsConfigurationIsolation.TryValidate(_configuration.FilePath) : ApplicationResult.Success();
 
     /// <summary>Повторно собирает снимок диагностики без изменения состояния.</summary>
     /// <returns>Фактически наблюдённое состояние приложения, конфигурации, native, MuMu, Android и игры.</returns>

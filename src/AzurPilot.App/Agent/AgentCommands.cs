@@ -42,6 +42,21 @@ internal static class AgentCommands
             (c, t) => c.GameUiReadyAsync(false, t)),
         new("game-ui-ready-ensure", true, true, "Подготовить точное окружение и обеспечить главный UI через известные bounded переходы под одной арендой.",
             (c, t) => c.GameUiReadyAsync(true, t)),
+        new("capture-methods", false, true, "Матрица девяти транспортов снимков, настройка, калибровка auto и проверка закреплённых зависимостей без захвата.",
+            (c, t) => c.CaptureMethodsAsync(t)),
+        new(Capture.CaptureWorker.ProbeCommand, true, true, "Worker измерения одного транспорта: эталон ADB, серия подряд и освобождение ресурсов. Сцену не проверяет; используется capture-benchmark.",
+            (c, t) => c.CaptureProbeAsync(t), [AgentCaptureArguments.Method, AgentCaptureArguments.Samples]),
+        new(Capture.CaptureBenchmark.Topic, true, true, "Измерить транспорты на доказанном главном экране в отдельных worker-процессах, выбрать по корректности и p95, откалибровать auto и записать локальный отчёт.",
+            (c, t) => c.CaptureBenchmarkAsync(t),
+            [AgentCaptureArguments.Methods, AgentCaptureArguments.Profile, AgentCaptureArguments.Samples,
+                AgentCaptureArguments.Calibrate, AgentCaptureArguments.DebugOverhead]),
+        new(Capture.CaptureIntervals.Topic, true, true, "Измерить интервалы снимков: normal на доказанном главном экране, затем combat только после ручного входа пользователя в бой и его явного подтверждения.",
+            (c, t) => c.CaptureIntervalsAsync(t),
+            [AgentCaptureArguments.Scene, AgentCaptureArguments.Session, AgentCaptureArguments.Confirm,
+                AgentCaptureArguments.Grid, AgentCaptureArguments.IntervalMethod]),
+        new(Capture.CaptureProfileApply.Command, true, true, "Применить профиль интервалов из сессии capture-intervals: без --confirm — preview текущих и новых значений с одноразовым кодом; с кодом — проверка условий и точечная запись screenshot в конфигурацию.",
+            (c, t) => c.CaptureProfileApplyAsync(t),
+            [AgentCaptureArguments.ApplySession, AgentCaptureArguments.IntervalProfile, AgentCaptureArguments.ApplyConfirm]),
     ]);
 
     internal static object Describe()

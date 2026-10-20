@@ -7,6 +7,7 @@ using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Windows;
 using AzurPilot.Windows.Android;
+using AzurPilot.Windows.Capture;
 using AzurPilot.Windows.MuMu;
 using AzurPilot.Windows.Processes;
 using Microsoft.Extensions.DependencyInjection;
@@ -621,15 +622,21 @@ public static class AzurPilotHost
         _ = builder.Services.AddSingleton<AndroidWindowsHost>(
             static services => new AndroidWindowsHost(
                 services.GetRequiredKeyedService<IWindowsProcessRunner>(AndroidProcessRunnerKey),
-                services.GetRequiredService<TimeProvider>(),
-                // Наблюдатель регистрируется только явным Debug Mode Agent CLI.
-                services.GetService<IAndroidScreenshotObserver>()));
-        // Lifecycle и захват снимка экрана используют один и тот же host, ADB discovery cache и process
+                services.GetRequiredService<TimeProvider>()));
+        // Lifecycle и транспорты снимков используют один и тот же host, ADB discovery cache и process
         // boundary. Отдельная реализация под новым интерфейсом могла бы незаметно завести второй ADB cache.
         _ = builder.Services.AddSingleton<IAndroidHost>(
             static services => services.GetRequiredService<AndroidWindowsHost>());
+        // Единственный владелец захвата: выбор транспорта (auto или явный), сессии и их освобождение при
+        // остановке host. Наблюдатель регистрируется только явным Debug Mode Agent CLI.
+        _ = builder.Services.AddSingleton(static services => new ScreenshotCaptureRouter(
+            services.GetRequiredService<AndroidWindowsHost>(),
+            services.GetRequiredService<TimeProvider>(),
+            services.GetRequiredService<AzurPilotConfigurationSnapshot>().Configuration.Screenshot.MethodSetting,
+            new ScreenshotCalibrationStore(),
+            services.GetService<IAndroidScreenshotObserver>()));
         _ = builder.Services.AddSingleton<IAndroidScreenshotHost>(
-            static services => services.GetRequiredService<AndroidWindowsHost>());
+            static services => services.GetRequiredService<ScreenshotCaptureRouter>());
 
         _ = builder.Services.AddSingleton<IAndroidGameInputHost>(
             static services => services.GetRequiredService<AndroidWindowsHost>());

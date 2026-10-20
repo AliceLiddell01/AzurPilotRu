@@ -9,18 +9,21 @@ internal sealed record AgentArgument(string Name, string Type, bool Required, st
 
 internal sealed record AgentCommand(
     string Name, bool Mutation, bool Target, string Description,
-    Func<AgentContext, CancellationToken, Task<AgentPayload>> Handler)
+    Func<AgentContext, CancellationToken, Task<AgentPayload>> Handler,
+    IReadOnlyList<AgentArgument>? Options = null)
 {
     public IReadOnlyList<AgentArgument> Arguments => Target
         ? [new("--target", "MuMuInstanceValue", false, "Exact identity либо однозначный auto; по умолчанию mumu.instance."),
-            AgentRequest.ConfigurationArgument, AgentRequest.TimeoutArgument, AgentRequest.DebugReportArgument]
+            AgentRequest.ConfigurationArgument, AgentRequest.TimeoutArgument, AgentRequest.DebugReportArgument, .. Options ?? []]
         : Name == "discover" ? [AgentRequest.TimeoutArgument]
-        : [AgentRequest.ConfigurationArgument, AgentRequest.TimeoutArgument, AgentRequest.DebugReportArgument];
+        : [AgentRequest.ConfigurationArgument, AgentRequest.TimeoutArgument, AgentRequest.DebugReportArgument, .. Options ?? []];
 }
 
 internal sealed record AgentRequest(AgentCommand Command, string? Target, int TimeoutMilliseconds, string? ConfigurationPath,
-    string? DebugSession = null)
+    string? DebugSession = null, IReadOnlyDictionary<string, string>? Options = null)
 {
+    /// <summary>Наибольшее число токенов запроса: «agent», команда и пары ключ-значение.</summary>
+    internal const int MaximumArguments = 24;
     internal const int DefaultTimeoutMilliseconds = 180_000;
     internal const int MinimumTimeoutMilliseconds = 1;
     internal const int MaximumTimeoutMilliseconds = 300_000;
@@ -35,7 +38,7 @@ internal sealed record AgentRequest(AgentCommand Command, string? Target, int Ti
 
     internal static ApplicationResult<AgentRequest> Parse(string[] args)
     {
-        if (args.Length < 2 || args[0] != "agent" || args.Length > 10 || args.Any(a => a.Length > MaximumArgumentLength))
+        if (args.Length < 2 || args[0] != "agent" || args.Length > MaximumArguments || args.Any(a => a.Length > MaximumArgumentLength))
         {
             return Invalid();
         }
@@ -49,6 +52,7 @@ internal sealed record AgentRequest(AgentCommand Command, string? Target, int Ti
         string? target = null;
         string? configurationPath = null;
         string? debugSession = null;
+        Dictionary<string, string> options = new(StringComparer.Ordinal);
         int timeout = DefaultTimeoutMilliseconds;
         HashSet<string> seen = new(StringComparer.Ordinal);
         for (int index = 2; index < args.Length; index += 2)
@@ -82,13 +86,17 @@ internal sealed record AgentRequest(AgentCommand Command, string? Target, int Ti
             {
                 debugSession = value;
             }
+            else if (command.Options?.Any(option => option.Name == key) == true)
+            {
+                options[key] = value;
+            }
             else
             {
                 return Invalid();
             }
         }
 
-        return ApplicationResult<AgentRequest>.Success(new(command, target, timeout, configurationPath, debugSession));
+        return ApplicationResult<AgentRequest>.Success(new(command, target, timeout, configurationPath, debugSession, options));
     }
 
     private static ApplicationResult<AgentRequest> Invalid()

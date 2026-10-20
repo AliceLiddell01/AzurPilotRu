@@ -331,6 +331,10 @@ public static partial class AzurPilotNativeBridge
         StatusUnsupportedPng => "тип или свойства PNG не поддерживаются",
         StatusImageTooLarge => "PNG превышает допустимый размер frame",
         StatusOutOfMemory => "native стороне не хватило памяти",
+        StatusProviderUnavailable => "провайдер захвата недоступен",
+        StatusProviderFailure => "провайдер захвата вернул отказ",
+        StatusNotReady => "новых данных ещё нет",
+        StatusInvalidData => "данные источника повреждены или противоречат геометрии",
         _ => "неизвестный код возврата",
     };
 

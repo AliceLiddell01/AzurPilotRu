@@ -24,4 +24,9 @@ public interface IAndroidScreenshotObserver
 
     /// <summary>Кадр ещё жив и будет освобождён сразу после возврата; ссылку на него сохранять запрещено.</summary>
     void FrameReleasing(NativeFrame frame, AndroidScreenshotCaptureInfo info);
+
+    /// <summary>Маршрутизатор выбрал транспорт захвата или откатился на другой; причина машинная.</summary>
+    void MethodSelected(Capture.ScreenshotSelection selection)
+    {
+    }
 }

@@ -358,7 +358,7 @@ public sealed class OperatorUiController : IDisposable
                     analysis =>
                     (
                         $"Снимок MuMu {analysis.Capture.InstanceId} получен; FullFrame и Center проверены.",
-                        $"Адрес подключения: {analysis.Capture.Endpoint}\nPNG: {analysis.Capture.EncodedPngByteCount} байт\n"
+                        $"Адрес подключения: {analysis.Capture.Endpoint}\nТранспорт: {Core.Capture.ScreenshotMethodNames.ToName(analysis.Capture.Method)}, PNG: {analysis.Capture.AdbPng?.EncodedPngByteCount ?? 0} байт\n"
                         + $"Время захвата UTC: {analysis.Capture.CapturedAtUtc:O}\n"
                         + string.Join('\n', analysis.Regions.Select(DescribeRegion))
                     ));

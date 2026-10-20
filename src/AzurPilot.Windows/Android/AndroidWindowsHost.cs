@@ -1,5 +1,6 @@
 using System.Globalization;
 using AzurPilot.Core.Android;
+using AzurPilot.Core.Capture;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.MuMu;
 using AzurPilot.Windows.Processes;
@@ -49,6 +50,7 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
     private readonly TimeProvider _timeProvider;
     private readonly IAndroidScreenshotObserver? _screenshotObserver;
     private AndroidAdbExecutable? _adbExecutable;
+    private MuMuInstallation? _installation;
 
     /// <summary>Создаёт host-side поверхность Android с дедлайном команды по умолчанию и общими часами.</summary>
     /// <param name="processRunner">Общая граница запуска процесса.</param>
@@ -146,6 +148,7 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
         }
 
         AndroidAdbExecutable discovered = new(executablePath, versionEvidence);
+        Volatile.Write(ref _installation, installation);
         Volatile.Write(ref _adbExecutable, discovered);
 
         return ApplicationResult<AndroidAdbExecutable>.Success(discovered);
@@ -287,6 +290,8 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
         NativeFrame? frame = null;
         try
         {
+            long decodeStarted = _timeProvider.GetTimestamp();
+            TimeSpan acquisition = _timeProvider.GetElapsedTime(captureStartedTimestamp, decodeStarted);
             frame = AzurPilotNativeBridge.DecodePng(outcome.StandardOutputBytes);
             NativeFrameInfo info = frame.GetInfo();
             if (!IsValidRgb8FrameInfo(info))
@@ -294,19 +299,22 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
                 return ScreenshotFailure("frame_metadata_invalid", instanceId, endpoint, outcome);
             }
 
+            long completed = _timeProvider.GetTimestamp();
             CapturedAndroidScreenshot screenshot = new(
                 frame,
                 new AndroidScreenshotCaptureInfo(
                     instanceId,
                     endpoint,
                     _timeProvider.GetUtcNow(),
-                    outcome.Duration,
-                    outcome.StandardOutputBytes.Length,
-                    outcome.ExitCode,
+                    ScreenshotMethod.Adb,
+                    new ScreenshotCaptureTiming(acquisition, _timeProvider.GetElapsedTime(decodeStarted, completed),
+                        _timeProvider.GetElapsedTime(captureStartedTimestamp, completed)),
                     info)
                 {
                     CaptureStartedAtUtc = captureStartedAtUtc,
                     CaptureStartedTimestamp = captureStartedTimestamp,
+                    PayloadByteCount = outcome.StandardOutputBytes.Length,
+                    AdbPng = new AdbPngCaptureFacts(outcome.Duration, outcome.StandardOutputBytes.Length, outcome.ExitCode),
                 },
                 _screenshotObserver);
             frame = null;
@@ -546,6 +554,19 @@ public sealed partial class AndroidWindowsHost : IAndroidHost, IAndroidScreensho
             .RunAsync(arguments, cancellationToken)
             .GetAwaiter()
             .GetResult();
+
+    /// <summary>
+    /// Target транспортов снимков из той же цепочки обнаружения: bundled ADB и установка MuMu, подтверждённые
+    /// <see cref="DiscoverAdbExecutable"/>. До обнаружения — null.
+    /// </summary>
+    internal Capture.ScreenshotTarget? GetScreenshotTarget(MuMuInstanceId instanceId, AndroidEndpoint endpoint)
+    {
+        AndroidAdbExecutable? adb = Volatile.Read(ref _adbExecutable);
+        return adb is null ? null : new Capture.ScreenshotTarget(instanceId, endpoint, adb.Path, Volatile.Read(ref _installation));
+    }
+
+    /// <summary>Граница процессов этого host; транспорты снимков используют ту же регистрацию ADB.</summary>
+    internal IWindowsProcessRunner ProcessRunner => _processRunner;
 
     private AdbClient GetAdbClient()
     {

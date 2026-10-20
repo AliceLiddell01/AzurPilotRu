@@ -171,7 +171,10 @@ public sealed partial class AzurPilotOperatorService
     {
         GameAssetCatalog catalog = GameAssetCatalog.Default;
         return new(new ExactGameUiHost(this, instanceId, endpoint), catalog.Readiness, catalog.GetAction, _timeProvider,
-            _gameUiTrace);
+            _gameUiTrace)
+        {
+            ActionPostconditionInterval = NormalScreenshotInterval,
+        };
     }
 
     // Повторное разрешение exact identity/endpoint закрывает исчезновение target между кадрами.

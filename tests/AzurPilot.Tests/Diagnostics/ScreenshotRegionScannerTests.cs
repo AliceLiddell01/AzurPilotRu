@@ -61,10 +61,12 @@ public sealed class ScreenshotRegionScannerTests
             new MuMuInstanceId("3"),
             new AndroidEndpoint("127.0.0.1", 16384),
             capturedAtUtc,
-            TimeSpan.FromMilliseconds(47),
-            png.Length,
-            0,
-            new NativeFrameInfo(16, 9, 48, 432, AzurPilotNativeBridge.PixelFormatRgb8));
+            Core.Capture.ScreenshotMethod.Adb,
+            new ScreenshotCaptureTiming(TimeSpan.FromMilliseconds(47), TimeSpan.Zero, TimeSpan.FromMilliseconds(47)),
+            new NativeFrameInfo(16, 9, 48, 432, AzurPilotNativeBridge.PixelFormatRgb8))
+        {
+            AdbPng = new AdbPngCaptureFacts(TimeSpan.FromMilliseconds(47), png.Length, 0),
+        };
         ScreenshotAnalysisSource source = ScreenshotAnalysisSource.ForCapture(captureInfo);
 
         ApplicationResult<ScreenshotRegionScanResult> result = ScreenshotRegionScanner.Scan(
@@ -173,10 +175,12 @@ public sealed class ScreenshotRegionScannerTests
             new MuMuInstanceId("3"),
             new AndroidEndpoint("127.0.0.1", 16384),
             new DateTimeOffset(2026, 10, 11, 12, 30, 0, TimeSpan.Zero),
-            TimeSpan.FromMilliseconds(47),
-            encodedByteCount,
-            0,
-            frameInfo);
+            Core.Capture.ScreenshotMethod.Adb,
+            new ScreenshotCaptureTiming(TimeSpan.FromMilliseconds(47), TimeSpan.Zero, TimeSpan.FromMilliseconds(47)),
+            frameInfo)
+        {
+            AdbPng = new AdbPngCaptureFacts(TimeSpan.FromMilliseconds(47), encodedByteCount, 0),
+        };
 
     private static void AssertClose(double expected, double actual)
         => Assert.InRange(Math.Abs(expected - actual), 0, 0.000001);
