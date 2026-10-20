@@ -195,6 +195,7 @@ Agent CLI до запуска хоста перенаправляет fd 1 и `S
 | `capture-probe` | да | Worker одного транспорта (`--method`, `--samples`): эталон ADB, серия, освобождение. Сцену не проверяет; используется `capture-benchmark`. |
 | `capture-benchmark` | да | Все или `--methods` транспорты на доказанном главном экране в отдельных worker-процессах, выбор, калибровка `auto` (`--calibrate`, по умолчанию `true`), опционально `--debug-overhead`. |
 | `capture-intervals` | да | `--scene normal` на главном экране → `AWAITING_USER_COMBAT_CONFIRMATION` с кодом; `--scene combat --confirm <код>` той же `--session` после ручного входа пользователя в бой. |
+| `capture-profile-apply` | да | `--session --profile` → `PREVIEW` с текущими и новыми значениями и одноразовым кодом; `--confirm <код>` после явного согласия пользователя → точечная запись `screenshot` в конфигурацию (`effect` = `changed`). |
 
 Mutation-эффект измерений — временные helper-ы, forward/reverse и файлы в `/data/local/tmp/azurpilot-capture`;
 helper-ы и порты освобождаются, поэтому `effect` = `mayHaveChanged` для не-ADB методов. Ввода в игру нет.

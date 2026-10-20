@@ -54,6 +54,9 @@ internal static class AgentCommands
             (c, t) => c.CaptureIntervalsAsync(t),
             [AgentCaptureArguments.Scene, AgentCaptureArguments.Session, AgentCaptureArguments.Confirm,
                 AgentCaptureArguments.Grid, AgentCaptureArguments.IntervalMethod]),
+        new(Capture.CaptureProfileApply.Command, true, true, "Применить профиль интервалов из сессии capture-intervals: без --confirm — preview текущих и новых значений с одноразовым кодом; с кодом — проверка условий и точечная запись screenshot в конфигурацию.",
+            (c, t) => c.CaptureProfileApplyAsync(t),
+            [AgentCaptureArguments.ApplySession, AgentCaptureArguments.IntervalProfile, AgentCaptureArguments.ApplyConfirm]),
     ]);
 
     internal static object Describe()

@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using AzurPilot.App.Agent;
 using AzurPilot.App.OperatorServices;
 using AzurPilot.Core.Capture;
+using AzurPilot.Core.Configuration;
 using AzurPilot.Core.Failures;
 using AzurPilot.Core.Game;
 using AzurPilot.Windows.Android;
@@ -21,10 +22,35 @@ namespace AzurPilot.App.Capture;
 /// <param name="Grid">Собственная сетка либо null для эталонной.</param>
 /// <param name="Method">Явный транспорт либо null для текущего выбора приложения.</param>
 /// <param name="Timeout">Общий срок команды.</param>
-/// <param name="CurrentNormalMs">Текущий screenshot.normalIntervalMs.</param>
-/// <param name="CurrentCombatMs">Текущий screenshot.combatIntervalMs.</param>
+/// <param name="Settings">Действующая секция screenshot конфигурации.</param>
+/// <param name="ConfigurationPath">Файл, в который сохраняются настройки текущего источника.</param>
+/// <param name="ConfigurationSha256">SHA-256 источника конфигурации либо null для встроенных defaults.</param>
 internal sealed record CaptureIntervalRequest(ScreenshotIntervalScene Scene, string Session, string? Confirmation,
-    IReadOnlyList<double>? Grid, ScreenshotMethod? Method, TimeSpan Timeout, double CurrentNormalMs, double CurrentCombatMs);
+    IReadOnlyList<double>? Grid, ScreenshotMethod? Method, TimeSpan Timeout, ScreenshotConfiguration Settings,
+    string ConfigurationPath, string? ConfigurationSha256);
+
+/// <summary>Условия, при которых измерены интервалы; применение профиля требует их совпадения.</summary>
+/// <param name="Fingerprint">Отпечаток target маршрутизатора: identity, версии MuMu/Android, ABI, зависимости.</param>
+/// <param name="MuMuVersion">Версия MuMu.</param>
+/// <param name="AndroidVersion">Версия Android.</param>
+/// <param name="Width">Ширина кадров измерения.</param>
+/// <param name="Height">Высота кадров измерения.</param>
+/// <param name="MethodReason">Причина выбора транспорта.</param>
+/// <param name="CalibrationRunId">Прогон калибровки auto, определивший транспорт, либо null.</param>
+/// <param name="ConfigurationPath">Файл настроек.</param>
+/// <param name="ConfigurationSha256">SHA-256 файла настроек на момент измерения либо null.</param>
+/// <param name="Screenshot">Действующая секция screenshot на момент измерения.</param>
+internal sealed record CaptureIntervalBinding(
+    [property: JsonPropertyName("fingerprint")] string Fingerprint,
+    [property: JsonPropertyName("muMuVersion")] string MuMuVersion,
+    [property: JsonPropertyName("androidVersion")] string AndroidVersion,
+    [property: JsonPropertyName("width")] int Width,
+    [property: JsonPropertyName("height")] int Height,
+    [property: JsonPropertyName("methodReason")] string MethodReason,
+    [property: JsonPropertyName("calibrationRunId")] string? CalibrationRunId,
+    [property: JsonPropertyName("configurationPath")] string ConfigurationPath,
+    [property: JsonPropertyName("configurationSha256")] string? ConfigurationSha256,
+    [property: JsonPropertyName("screenshot")] ScreenshotConfiguration Screenshot);
 
 /// <summary>Состояние сессии интервалов между фазами normal и combat.</summary>
 internal sealed record CaptureIntervalSessionState(
@@ -35,10 +61,15 @@ internal sealed record CaptureIntervalSessionState(
     [property: JsonPropertyName("confirmationCode")] string ConfirmationCode,
     [property: JsonPropertyName("issuedAtUtc")] DateTimeOffset IssuedAtUtc,
     [property: JsonPropertyName("expiresAtUtc")] DateTimeOffset ExpiresAtUtc,
-    [property: JsonPropertyName("combatCompleted")] bool CombatCompleted);
+    [property: JsonPropertyName("combatCompleted")] bool CombatCompleted,
+    [property: JsonPropertyName("formatVersion")] int FormatVersion = 0,
+    [property: JsonPropertyName("binding")] CaptureIntervalBinding? Binding = null,
+    [property: JsonPropertyName("normalVerdict")] string? NormalVerdict = null,
+    [property: JsonPropertyName("combatVerdict")] string? CombatVerdict = null);
 
-/// <summary>Измерение одного интервала: сводка и возраст кадра потока.</summary>
-internal sealed record CaptureIntervalPoint(ScreenshotIntervalResult Result, SampleStatistics? SourceFrameAgeMs);
+/// <summary>Измерение одного интервала: сводка, возраст кадра потока и разрешение кадров.</summary>
+internal sealed record CaptureIntervalPoint(ScreenshotIntervalResult Result, SampleStatistics? SourceFrameAgeMs,
+    (int Width, int Height)? Resolution);
 
 /// <summary>
 /// Измерение интервалов выбранного транспорта start→start. Фаза normal — только на доказанном главном экране и
@@ -49,11 +80,16 @@ internal static class CaptureIntervals
 {
     internal const string Topic = "capture-intervals";
     internal const string AwaitingConfirmation = "AWAITING_USER_COMBAT_CONFIRMATION";
+    internal const int StateFormatVersion = 2;
+    internal const string StateFile = "state.json";
+    internal const string NormalFile = "normal.json";
+    internal const string CombatFile = "combat.json";
     internal const int Warmup = 2;
     internal static readonly TimeSpan PointDuration = TimeSpan.FromSeconds(2);
     internal static readonly TimeSpan ConfirmationLifetime = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan PostcheckReserve = TimeSpan.FromSeconds(30);
-    private const string CodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private const string CalibratedReasonPrefix = "calibrated:";
+    internal const string CodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
     internal static async Task<CaptureCommandOutcome> RunAsync(AzurPilotOperatorService service,
         CaptureMeasurementTarget target, CaptureIntervalRequest request, CancellationToken cancellationToken)
@@ -66,7 +102,7 @@ internal static class CaptureIntervals
             return Rejected(router is null ? "capture_router_unavailable" : reportFailure!, CaptureVerdict.Blocked);
         }
 
-        string statePath = Path.Combine(writer.Directory, "state.json");
+        string statePath = Path.Combine(writer.Directory, StateFile);
         CaptureIntervalSessionState? state = ReadState(statePath);
         bool combat = request.Scene == ScreenshotIntervalScene.Combat;
         ScreenshotMethod method;
@@ -99,6 +135,19 @@ internal static class CaptureIntervals
             (method, methodReason) = await ChooseMethodAsync(router, target, request, cancellationToken).ConfigureAwait(false);
         }
 
+        ApplicationResult<string> fingerprint = await router.FingerprintAsync(target.InstanceId, target.Endpoint,
+            cancellationToken).ConfigureAwait(false);
+        if (fingerprint.IsFailure)
+        {
+            return Rejected("fingerprint_unavailable", CaptureVerdict.Blocked);
+        }
+
+        if (combat && state!.Binding is { } bound && bound.Fingerprint != fingerprint.Value)
+        {
+            // Эмулятор, Android, ABI или зависимости изменились между фазами: результаты не сопоставимы.
+            return Rejected("environment_changed", CaptureVerdict.Blocked);
+        }
+
         SceneCheck before = await SceneCheck.ObserveAsync(service, target, cancellationToken).ConfigureAwait(false);
         if (combat && before.Ready)
         {
@@ -115,7 +164,7 @@ internal static class CaptureIntervals
 
         IReadOnlyList<double> grid = ScreenshotIntervalAnalysis.NormalizeGrid(
             request.Grid ?? (combat ? ScreenshotIntervalAnalysis.DefaultCombatGrid : ScreenshotIntervalAnalysis.DefaultNormalGrid),
-            request.Scene, combat ? request.CurrentCombatMs : request.CurrentNormalMs);
+            request.Scene, combat ? request.Settings.CombatIntervalMilliseconds : request.Settings.NormalIntervalMilliseconds);
         TimeSpan deadline = request.Timeout - PostcheckReserve;
         ApplicationResult<MeasuredGrid> measured = await service.WithCaptureLeaseAsync(target.InstanceId,
             () => MeasureAsync(router, target, method, grid, () => deadline - Stopwatch.GetElapsedTime(started), cancellationToken),
@@ -128,19 +177,28 @@ internal static class CaptureIntervals
         SceneCheck after = await SceneCheck.ObserveAsync(service, target, cancellationToken).ConfigureAwait(false);
         MeasuredGrid points = measured.Value!;
         bool complete = points.NotTested.Count == 0 && points.Failure is null;
+        (int Width, int Height)[] resolutions = [.. points.Points.Where(p => p.Resolution is not null)
+            .Select(p => p.Resolution!.Value).Distinct()];
+        int width = resolutions.Length == 1 ? resolutions[0].Width : 0;
+        int height = resolutions.Length == 1 ? resolutions[0].Height : 0;
+        bool resolutionChanged = resolutions.Length > 1 || (combat && state!.Binding is { } phaseBinding
+            && resolutions.Length == 1 && (width != phaseBinding.Width || height != phaseBinding.Height));
         CaptureVerdict verdict;
         string reason;
         if (!combat)
         {
-            verdict = !after.Ready ? CaptureVerdict.Blocked : complete ? CaptureVerdict.Pass : CaptureVerdict.Partial;
-            reason = !after.Ready ? "main_not_ready_after" : complete ? "measured" : points.Failure ?? "time_budget_exhausted";
+            verdict = !after.Ready ? CaptureVerdict.Blocked : resolutionChanged ? CaptureVerdict.Failed
+                : complete ? CaptureVerdict.Pass : CaptureVerdict.Partial;
+            reason = !after.Ready ? "main_not_ready_after" : resolutionChanged ? "resolution_changed"
+                : complete ? "measured" : points.Failure ?? "time_budget_exhausted";
         }
         else
         {
             // Распознавателя боя нет: сцена доказана только подтверждением пользователя. Возврат на главный экран
             // означает, что бой закончился во время либо до конца измерения.
-            verdict = after.Ready || !complete ? CaptureVerdict.Partial : CaptureVerdict.UnverifiedScene;
-            reason = after.Ready ? "interrupted_scene_returned_to_main" : complete ? "unverified_scene" : points.Failure ?? "time_budget_exhausted";
+            verdict = after.Ready || !complete || resolutionChanged ? CaptureVerdict.Partial : CaptureVerdict.UnverifiedScene;
+            reason = resolutionChanged ? "resolution_changed" : after.Ready ? "interrupted_scene_returned_to_main"
+                : complete ? "unverified_scene" : points.Failure ?? "time_budget_exhausted";
         }
 
         object phase = new
@@ -168,30 +226,37 @@ internal static class CaptureIntervals
             downstreamRecognitionDelay = "not_measured",
             totalMs = Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1),
         };
-        writer.WriteJson(combat ? "combat.json" : "normal.json", phase);
+        writer.WriteJson(combat ? CombatFile : NormalFile, phase);
 
-        IReadOnlyList<ScreenshotIntervalResult>? normalResults = combat ? ReadResults(Path.Combine(writer.Directory, "normal.json"))
+        IReadOnlyList<ScreenshotIntervalResult>? normalResults = combat ? ReadResults(Path.Combine(writer.Directory, NormalFile))
             : [.. points.Points.Select(p => p.Result)];
         IReadOnlyList<ScreenshotIntervalResult>? combatResults = combat ? [.. points.Points.Select(p => p.Result)] : null;
+        ScreenshotConfiguration measuredSettings = state?.Binding?.Screenshot ?? request.Settings;
         IReadOnlyList<ScreenshotIntervalProfile> profiles = ScreenshotIntervalAnalysis.RecommendProfiles(normalResults ?? [],
-            combatResults, request.CurrentNormalMs, request.CurrentCombatMs);
+            combatResults, measuredSettings.NormalIntervalMilliseconds, measuredSettings.CombatIntervalMilliseconds);
         writer.WriteJson("profiles.json", new { session = request.Session, combat = combat ? "measured" : "NOT_TESTED", profiles });
         writer.WriteText("summary.md", Markdown(request.Session, ScreenshotMethodNames.ToName(method), normalResults,
             combatResults, profiles));
 
         string? code = null;
         DateTimeOffset? expires = null;
-        if (!combat && verdict != CaptureVerdict.Blocked)
+        bool awaiting = !combat && verdict is CaptureVerdict.Pass or CaptureVerdict.Partial;
+        if (awaiting)
         {
             code = RandomNumberGenerator.GetString(CodeAlphabet, 8);
             DateTimeOffset now = DateTimeOffset.UtcNow;
             expires = now + ConfirmationLifetime;
+            CaptureIntervalBinding binding = new(fingerprint.Value!, target.MuMuVersion, target.AndroidVersion,
+                width, height, methodReason,
+                methodReason.StartsWith(CalibratedReasonPrefix, StringComparison.Ordinal) ? methodReason[CalibratedReasonPrefix.Length..] : null,
+                request.ConfigurationPath, request.ConfigurationSha256, request.Settings);
             WriteState(statePath, new(request.Session, target.InstanceId.ToString(), target.Endpoint.ToString(),
-                ScreenshotMethodNames.ToName(method), code, now, expires.Value, false));
+                ScreenshotMethodNames.ToName(method), code, now, expires.Value, false, StateFormatVersion, binding,
+                CaptureVerdictNames.ToName(verdict)));
         }
         else if (combat)
         {
-            WriteState(statePath, state! with { CombatCompleted = true });
+            WriteState(statePath, state! with { CombatCompleted = true, CombatVerdict = CaptureVerdictNames.ToName(verdict) });
         }
 
         object data = new
@@ -199,7 +264,7 @@ internal static class CaptureIntervals
             session = request.Session,
             report = writer.RelativeDirectory,
             scene = combat ? "combat" : "normal",
-            status = !combat && verdict != CaptureVerdict.Blocked ? AwaitingConfirmation : CaptureVerdictNames.ToName(verdict),
+            status = awaiting ? AwaitingConfirmation : CaptureVerdictNames.ToName(verdict),
             verdict = CaptureVerdictNames.ToName(verdict),
             reason,
             method = ScreenshotMethodNames.ToName(method),
@@ -217,7 +282,8 @@ internal static class CaptureIntervals
                     + "агент не открывает бой и не считает своё сообщение подтверждением.",
             },
         };
-        ApplicationFailure? failure = verdict == CaptureVerdict.Blocked ? after.Failure ?? GameUiActionRunner.Failure("ui_not_ready") : null;
+        ApplicationFailure? failure = verdict == CaptureVerdict.Blocked ? after.Failure ?? GameUiActionRunner.Failure("ui_not_ready")
+            : verdict == CaptureVerdict.Failed ? Rejected(reason, verdict).Failure : null;
         return new(data, failure, method == ScreenshotMethod.Adb ? "none" : "mayHaveChanged");
     }
 
@@ -262,7 +328,7 @@ internal static class CaptureIntervals
             cancellationToken).ConfigureAwait(false);
         ScreenshotCalibration? calibration = fingerprint.IsSuccess ? router.Calibration.Find(fingerprint.Value!) : null;
         return calibration is not null && ScreenshotMethodNames.TryParse(calibration.Method, out ScreenshotMethod calibrated)
-            ? (calibrated, "calibrated:" + calibration.RunId)
+            ? (calibrated, CalibratedReasonPrefix + calibration.RunId)
             : (ScreenshotMethod.Adb, "bootstrap_calibration_missing");
     }
 
@@ -309,6 +375,7 @@ internal static class CaptureIntervals
         int fresh = 0;
         ulong? lastSequence = null;
         string? error = null;
+        (int Width, int Height)? resolution = null;
         long origin = Stopwatch.GetTimestamp();
         long period = (long)(interval * Stopwatch.Frequency / 1000.0);
         long next = origin;
@@ -325,6 +392,14 @@ internal static class CaptureIntervals
                 break;
             }
 
+            (int Width, int Height) size = ((int)frame.Info.FrameInfo.Width, (int)frame.Info.FrameInfo.Height);
+            if (resolution is { } first && first != size)
+            {
+                error = "resolution_changed";
+                break;
+            }
+
+            resolution = size;
             starts.Add(Stopwatch.GetElapsedTime(origin, start).TotalMilliseconds);
             ends.Add(Stopwatch.GetElapsedTime(origin, end).TotalMilliseconds);
             if (frame.Info.Stream is { } stream)
@@ -343,7 +418,7 @@ internal static class CaptureIntervals
         }
 
         ScreenshotIntervalResult result = ScreenshotIntervalAnalysis.Summarize(new(interval, starts, ends, fresh, error));
-        return new(result, ages.Count == 0 ? null : SampleStatistics.From(ages));
+        return new(result, ages.Count == 0 ? null : SampleStatistics.From(ages), resolution);
     }
 
     // Длинный интервал получает время хотя бы на минимум кадров: иначе 750–1000 мс за 2 с неизбежно «неустойчивы».
@@ -425,7 +500,7 @@ internal static class CaptureIntervals
             },
         }, "none");
 
-    private static CaptureIntervalSessionState? ReadState(string path)
+    internal static CaptureIntervalSessionState? ReadState(string path)
     {
         try
         {
@@ -437,10 +512,10 @@ internal static class CaptureIntervals
         }
     }
 
-    private static void WriteState(string path, CaptureIntervalSessionState state)
+    internal static void WriteState(string path, CaptureIntervalSessionState state)
         => File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(state));
 
-    private static IReadOnlyList<ScreenshotIntervalResult>? ReadResults(string path)
+    internal static IReadOnlyList<ScreenshotIntervalResult>? ReadResults(string path)
     {
         try
         {

@@ -41,6 +41,8 @@ internal static class AgentArgumentTypes
                 value => Core.Capture.ScreenshotMethodNames.TryParse(value, out _), Pattern: "^[A-Za-z0-9_]+$"),
             ["benchmark-profile"] = new("string", "short (20–30 снимков), full (100–300), stress (до 1000).",
                 value => value is "short" or "full" or "stress", Pattern: "^(short|full|stress)$"),
+            ["interval-profile"] = new("string", "fast, balanced, low_load — из устойчивых измерений; current — восстановление значений на момент измерения.",
+                value => Capture.CaptureProfileApply.Profiles.Contains(value), Pattern: "^(fast|balanced|low_load|current)$"),
             ["capture-scene"] = new("string", "normal — доказанный главный экран; combat — бой, открытый пользователем вручную.",
                 value => value is "normal" or "combat", Pattern: "^(normal|combat)$"),
             ["sample-count"] = new("integer", "Число снимков серии: 1..1000.",

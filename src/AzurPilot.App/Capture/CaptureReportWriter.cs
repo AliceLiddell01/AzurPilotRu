@@ -31,6 +31,13 @@ internal sealed class CaptureReportWriter
 
     /// <summary>Создаёт каталог прогона либо возвращает null с причиной; ссылки в пути отвергаются.</summary>
     internal static CaptureReportWriter? Create(string topic, string runId, out string? reason)
+        => Open(topic, runId, create: true, out reason);
+
+    /// <summary>Открывает каталог существующего прогона без создания; отсутствие — <c>session_not_found</c>.</summary>
+    internal static CaptureReportWriter? OpenExisting(string topic, string runId, out string? reason)
+        => Open(topic, runId, create: false, out reason);
+
+    private static CaptureReportWriter? Open(string topic, string runId, bool create, out string? reason)
     {
         reason = null;
         string? root = AgentDebugRun.FindCheckoutRoot(Environment.CurrentDirectory)
@@ -51,6 +58,12 @@ internal sealed class CaptureReportWriter
                 if (System.IO.Directory.Exists(current) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
                 {
                     reason = "report_path_reparse_point";
+                    return null;
+                }
+
+                if (!create && !System.IO.Directory.Exists(current))
+                {
+                    reason = "session_not_found";
                     return null;
                 }
 

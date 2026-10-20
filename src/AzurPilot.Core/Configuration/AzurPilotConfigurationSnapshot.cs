@@ -74,7 +74,8 @@ public sealed class AzurPilotConfigurationSnapshot
     /// <summary>Признак того, что источником был legacy-документ, нормализованный к текущей схеме.</summary>
     public bool IsLegacySchemaNormalized => SourceSchemaVersion != EffectiveSchemaVersion;
 
-    internal string? SourceVersion { get; }
+    /// <summary>SHA-256 исходных байтов файла (hex) либо <see langword="null"/> для встроенных defaults.</summary>
+    public string? SourceVersion { get; }
 
     internal AzurPilotConfigurationSnapshot WithSourceVersion(string version)
         => new(Configuration, Source, SourceFormat, FilePath, SourceSchemaVersion, version);

@@ -28,6 +28,12 @@ internal static class AgentCaptureArguments
         "Код, выданный фазой normal; обязателен для combat и запрещён для normal. Передаётся только после явного подтверждения пользователя, что бой открыт вручную.");
     internal static readonly AgentArgument Grid = new("--grid", "interval-grid", false,
         "Собственная сетка интервалов сцены, мс.");
+    internal static readonly AgentArgument ApplySession = new("--session", "debug-session", true,
+        "Завершённая сессия capture-intervals, из которой берётся профиль.");
+    internal static readonly AgentArgument IntervalProfile = new("--profile", "interval-profile", true,
+        "Профиль интервалов; current восстанавливает значения, действовавшие при измерении.");
+    internal static readonly AgentArgument ApplyConfirm = new("--confirm", "confirmation-code", false,
+        "Код из preview той же сессии и профиля. Без него выполняется только preview; передаётся только после явного согласия пользователя на запись.");
 
     internal static bool IsValidMethods(string value)
         => value == "all" || (value.Split(',') is { Length: > 0 and <= 9 } parts

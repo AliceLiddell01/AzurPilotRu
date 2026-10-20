@@ -170,10 +170,10 @@ internal sealed partial class AgentContext
             && ScreenshotMethodNames.TryParse(name, out ScreenshotMethod parsed) ? parsed : null;
         IReadOnlyList<double>? grid = Options.TryGetValue(AgentCaptureArguments.Grid.Name, out string? values)
             ? AgentCaptureArguments.ParseGrid(values) : null;
-        ScreenshotConfiguration settings = Service.Configuration.Configuration.Screenshot;
         CaptureIntervalRequest request = new(combat ? ScreenshotIntervalScene.Combat : ScreenshotIntervalScene.Normal,
             session, confirmation, grid, method, TimeSpan.FromMilliseconds(TimeoutMilliseconds),
-            settings.NormalIntervalMilliseconds, settings.CombatIntervalMilliseconds);
+            Service.Configuration.Configuration.Screenshot, Service.ConfigurationFilePaths().YamlPath,
+            Service.Configuration.SourceVersion);
         CaptureCommandOutcome outcome;
         try
         {
@@ -185,6 +185,31 @@ internal sealed partial class AgentContext
             return new(null, MissingArgument(AgentCaptureArguments.Grid.Name));
         }
 
+        Effect = outcome.Effect;
+        return new(outcome.Data, outcome.Failure, outcome.Effect);
+    }
+
+    internal async Task<AgentPayload> CaptureProfileApplyAsync(CancellationToken token)
+    {
+        Stage = CaptureProfileApply.Command;
+        if (!Options.TryGetValue(AgentCaptureArguments.ApplySession.Name, out string? session))
+        {
+            return new(null, MissingArgument(AgentCaptureArguments.ApplySession.Name));
+        }
+
+        if (!Options.TryGetValue(AgentCaptureArguments.IntervalProfile.Name, out string? profile))
+        {
+            return new(null, MissingArgument(AgentCaptureArguments.IntervalProfile.Name));
+        }
+
+        ApplicationResult<CaptureMeasurementTarget> target = Service.ResolveCaptureTarget(Target!.Value);
+        if (target.IsFailure)
+        {
+            return new(null, target.FailureInfo);
+        }
+
+        CaptureCommandOutcome outcome = await CaptureProfileApply.RunAsync(Service, target.Value!, session, profile,
+            Options.GetValueOrDefault(AgentCaptureArguments.ApplyConfirm.Name), token).ConfigureAwait(false);
         Effect = outcome.Effect;
         return new(outcome.Data, outcome.Failure, outcome.Effect);
     }
