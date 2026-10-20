@@ -129,9 +129,10 @@ internal abstract class ScreenshotSession : IAsyncDisposable
         Context.Ledger.Add(resource);
     }
 
-    protected async Task<int> StartTrackedHelperAsync(string command, string marker, CancellationToken cancellationToken)
+    protected async Task<int> StartTrackedHelperAsync(string classPath, string command, string marker,
+        CancellationToken cancellationToken)
     {
-        int pid = await Context.Adb.StartHelperAsync(command, cancellationToken).ConfigureAwait(false);
+        int pid = await Context.Adb.StartHelperAsync(classPath, command, cancellationToken).ConfigureAwait(false);
         Track(CaptureHelperLedger.Create("helper", pid, marker));
         return pid;
     }

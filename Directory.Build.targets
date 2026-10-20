@@ -32,9 +32,11 @@
     <!-- Закреплённые device-side зависимости транспортов снимков; runtime сверяет их SHA256 с manifest. -->
     <Error Condition="!Exists('$(_AzurPilotCaptureDirectory)/capture-dependencies.json')"
            Text="Не найдены зависимости транспортов снимков: $(_AzurPilotCaptureDirectory). Выполните CMake workflow preset native-x64-release или native-x64-debug из каталога native." />
+    <!-- Метаданные квалифицированы типом элемента: иначе batching внутри target затронет все Content. -->
     <ItemGroup>
-      <Content Include="$(_AzurPilotCaptureDirectory)/*"
-               Link="capture/%(Filename)%(Extension)"
+      <_AzurPilotCaptureFile Include="$(_AzurPilotCaptureDirectory)/*" />
+      <Content Include="@(_AzurPilotCaptureFile)"
+               Link="capture/%(_AzurPilotCaptureFile.Filename)%(_AzurPilotCaptureFile.Extension)"
                CopyToOutputDirectory="PreserveNewest"
                CopyToPublishDirectory="PreserveNewest"
                Visible="false" />

@@ -184,7 +184,8 @@ internal static class AgentRunner
     {
         // Сохраняем поток stdout до подавления стороннего консольного вывода. Записываем ответ один раз,
         // после остановки и освобождения ресурсов хоста. При сборке хоста структурированные логи направляются в stderr.
-        using Stream output = Console.OpenStandardOutput();
+        // Native-компоненты, пишущие в CRT stdout, после этого пишут в NUL, а не в envelope.
+        using Stream output = AgentStandardOutput.Isolate();
         Console.SetOut(TextWriter.Null);
         using CancellationTokenSource cancellation = new();
         void handler(object? _, ConsoleCancelEventArgs e) { e.Cancel = true; cancellation.Cancel(); }

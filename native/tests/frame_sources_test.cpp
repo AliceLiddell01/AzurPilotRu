@@ -144,6 +144,40 @@ void test_raw_formats() {
         "NULL out_frame отвергается");
 }
 
+void test_rotate() {
+    const std::vector<uint8_t> rgba = raw(AZURPILOT_NATIVE_SOURCE_RGBA8888, 16u);
+    AzurPilotNativeFrameHandle source = nullptr;
+    check(azurpilot_native_frame_create_from_pixels(rgba.data(), 32u, 4u, 2u, 16u,
+        AZURPILOT_NATIVE_SOURCE_RGBA8888, 0u, &source) == AZURPILOT_NATIVE_OK, "Поворот: исходный кадр");
+    if (source == nullptr) {
+        return;
+    }
+    // Зелёный пиксель (3,0) исходного кадра 4×2 после поворота по часовой оказывается в (1,3),
+    // после 180° — в (0,1), после 270° — в (0,0); красная верхняя строка задаёт направление.
+    struct Case { uint32_t turns; uint32_t width; uint32_t height; int green_x; int green_y; int red_x; int red_y; };
+    const std::array<Case, 3> cases{{{1u, 2u, 4u, 1, 3, 1, 0}, {2u, 4u, 2u, 0, 1, 3, 1}, {3u, 2u, 4u, 0, 0, 0, 3}}};
+    for (const Case& value : cases) {
+        const std::string name = "поворот " + std::to_string(value.turns);
+        AzurPilotNativeFrameHandle rotated = nullptr;
+        check(azurpilot_native_frame_rotate(source, value.turns, &rotated) == AZURPILOT_NATIVE_OK && rotated != nullptr, name);
+        if (rotated == nullptr) {
+            continue;
+        }
+        const AzurPilotNativeFrameInfo meta = info(rotated);
+        check(meta.width == value.width && meta.height == value.height && meta.stride_bytes == value.width * 3u, name + ": геометрия");
+        check(close_to(pixel(rotated, value.green_x, value.green_y), 0, 255, 0, 0.0), name + ": зелёный пиксель");
+        check(close_to(pixel(rotated, value.red_x, value.red_y), 250, 10, 5, 0.0), name + ": красный угол");
+        check(azurpilot_native_frame_release(rotated) == AZURPILOT_NATIVE_OK, name + ": release");
+    }
+
+    AzurPilotNativeFrameHandle rejected = reinterpret_cast<AzurPilotNativeFrameHandle>(1);
+    check(azurpilot_native_frame_rotate(source, 0u, &rejected) == AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT && rejected == nullptr,
+        "Поворот 0 отвергается и обнуляет out_frame");
+    check(azurpilot_native_frame_rotate(source, 4u, &rejected) == AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT, "Поворот 4 отвергается");
+    check(azurpilot_native_frame_rotate(nullptr, 1u, &rejected) == AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT, "NULL кадр отвергается");
+    check(azurpilot_native_frame_rotate(source, 1u, nullptr) == AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT, "NULL out_frame отвергается");
+    check(azurpilot_native_frame_release(source) == AZURPILOT_NATIVE_OK, "Поворот: release исходного кадра");
+}
 void append_u32(std::vector<uint8_t>& bytes, uint32_t value) {
     for (int shift = 0; shift < 32; shift += 8) bytes.push_back(static_cast<uint8_t>(value >> shift));
 }
@@ -455,6 +489,7 @@ int main(int argc, char** argv) {
     test_raw_formats();
     test_bmz1();
     test_jpeg();
+    test_rotate();
     test_nemu_arguments();
     if (failures != 0) return 1;
     std::cout << "[PASS] Источники кадров ABI v6\n";

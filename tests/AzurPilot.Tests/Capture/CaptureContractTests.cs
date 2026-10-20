@@ -53,6 +53,34 @@ public sealed class CaptureContractTests
         Assert.Equal(ScreenshotMethodNames.All, CaptureCompatibility.All.Select(entry => entry.Method));
     }
 
+    [Theory(DisplayName = "Длительность точки интервала вмещает минимум кадров")]
+    [InlineData(10, 2000)]
+    [InlineData(300, 2000)]
+    [InlineData(750, 3375)]
+    [InlineData(1000, 4500)]
+    public void IntervalPointDurationFitsMinimumFrames(double interval, double expected)
+    {
+        TimeSpan duration = CaptureIntervals.Duration(interval);
+        Assert.Equal(expected, duration.TotalMilliseconds, 3);
+        Assert.True(Math.Floor(duration.TotalMilliseconds / interval) + 1 >= ScreenshotIntervalAnalysis.MinimumFrames);
+    }
+
+    [Fact(DisplayName = "Закреплённые зависимости транспортов лежат рядом с приложением и совпадают по SHA-256")]
+    public void PinnedDependenciesAreStagedAndVerified()
+    {
+        IReadOnlyList<CaptureDependencyInfo> dependencies = CaptureDependencies.Describe();
+
+        Assert.Equal(15, dependencies.Count);
+        Assert.All(dependencies, dependency =>
+        {
+            Assert.Null(dependency.VerificationFailure);
+            Assert.Matches("^[0-9A-Fa-f]{64}$", dependency.Sha256);
+            Assert.NotEmpty(dependency.License);
+        });
+        Assert.All(CaptureCompatibility.All.SelectMany(entry => entry.Dependencies),
+            id => Assert.Contains(dependencies, dependency => dependency.Id == id));
+    }
+
     [Fact(DisplayName = "Envelope worker-а разбирается в итог серии; busy и мусор — BLOCKED и FAILED")]
     public void WorkerEnvelopeIsParsed()
     {

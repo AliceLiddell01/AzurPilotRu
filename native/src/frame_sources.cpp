@@ -373,3 +373,28 @@ int32_t azurpilot_native_frame_decode_jpeg(
         return decode_jpeg(jpeg_bytes, size, frame);
     });
 }
+
+int32_t azurpilot_native_frame_rotate(
+    AzurPilotNativeFrameHandle frame, uint32_t quarter_turns_clockwise,
+    AzurPilotNativeFrameHandle* out_frame) AZURPILOT_NATIVE_NOEXCEPT {
+    if (frame == nullptr || quarter_turns_clockwise < 1u || quarter_turns_clockwise > 3u) {
+        if (out_frame != nullptr) {
+            *out_frame = nullptr;
+        }
+        return AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT;
+    }
+    return guarded_frame_call(out_frame, [&](AzurPilotNativeFrameOpaque** rotated) {
+        AzurPilotNativeFrameInfo info{};
+        const std::int32_t status = azurpilot::native::detail::get_frame_info(frame, &info);
+        if (status != AZURPILOT_NATIVE_OK) {
+            return status;
+        }
+        static constexpr int codes[] = {cv::ROTATE_90_CLOCKWISE, cv::ROTATE_180, cv::ROTATE_90_COUNTERCLOCKWISE};
+        cv::Mat result;
+        cv::rotate(frame->rgb, result, codes[quarter_turns_clockwise - 1u]);
+        if (!result.isContinuous()) {
+            result = result.clone();
+        }
+        return azurpilot::native::detail::adopt_rgb_frame(std::move(result), rotated);
+    });
+}

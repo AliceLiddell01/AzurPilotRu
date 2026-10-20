@@ -42,6 +42,19 @@ internal sealed class AScreenCapSession(ScreenshotSessionContext context, bool n
         Facts["sdk_pinned_range"] = "21-28";
         await Context.Adb.PushVerifiedAsync(dependency, RemoteName, executable: true, cancellationToken).ConfigureAwait(false);
         _remote = CaptureAdb.DeviceDirectory + "/" + RemoteName;
+        if (_beyondPinnedSdk)
+        {
+            // Capability probe: на Android новее закреплённых сборок динамический компоновщик может отвергнуть
+            // бинарник (удалённые символы SurfaceComposerClient). Это наблюдённая неприменимость, а не сбой.
+            string probe = await Context.Adb.ShellAsync(_remote + " --help 2>&1 | head -c 512", "ascreencap_probe_failed",
+                cancellationToken).ConfigureAwait(false);
+            if (probe.Contains("CANNOT LINK EXECUTABLE", StringComparison.Ordinal))
+            {
+                throw new CaptureBackendException("binary_cannot_link", unsupported: true,
+                    detail: "sdk=" + CaptureAdb.Number(facts.SdkLevel));
+            }
+        }
+
         if (_channel is not null)
         {
             _ = await _channel.OpenAsync(ReverseTrackedAsync, cancellationToken).ConfigureAwait(false);
@@ -102,7 +115,16 @@ internal sealed class AScreenCapSession(ScreenshotSessionContext context, bool n
         }
 
         long acquired = Clock.GetTimestamp();
-        NativeFrame frame = AzurPilotNativeBridge.DecodeBmz1(data);
+        NativeFrame frame;
+        try
+        {
+            frame = AzurPilotNativeBridge.DecodeBmz1(data);
+        }
+        catch (NativeCaptureSourceException exception) when (_beyondPinnedSdk && exception.IsDataFailure)
+        {
+            throw Rejected("bmz1_decode_failed");
+        }
+
         return Complete(frame, started, acquired, data.Length);
     }
 

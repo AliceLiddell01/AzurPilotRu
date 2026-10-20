@@ -32,6 +32,7 @@ internal sealed class ScrcpySession(ScreenshotSessionContext context) : Screensh
     private const string Marker = "com.genymobile.scrcpy.Server";
     private const uint CodecH264 = 0x68323634;
     private static readonly TimeSpan FrameTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan FirstFrameTimeout = TimeSpan.FromSeconds(8);
 
     private readonly CancellationTokenSource _stop = new();
     private readonly Lock _gate = new();
@@ -41,6 +42,7 @@ internal sealed class ScrcpySession(ScreenshotSessionContext context) : Screensh
     private TaskCompletionSource _frameSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long _lastArrival;
     private ulong _decodedFrames;
+    private ulong _mediaPackets;
     private ulong _returnedSequence;
     private int _width;
     private int _height;
@@ -65,7 +67,7 @@ internal sealed class ScrcpySession(ScreenshotSessionContext context) : Screensh
         int hostPort = await ForwardTrackedAsync("localabstract:scrcpy_" + scid, cancellationToken).ConfigureAwait(false);
         // Аудио, управление и очистка экрана отключены: сервер только кодирует дисплей. Понижение разрешения
         // при ошибке кодера запрещено, чтобы не получить кадр другого размера незаметно.
-        _ = await StartTrackedHelperAsync("CLASSPATH=" + CaptureAdb.DeviceDirectory + "/scrcpy-server.jar app_process / "
+        _ = await StartTrackedHelperAsync(CaptureAdb.DeviceDirectory + "/scrcpy-server.jar", "app_process / "
             + Marker + " " + ServerVersion + " scid=" + scid + " log_level=warn tunnel_forward=true audio=false "
             + "control=false cleanup=true video_codec=h264 max_size=0 max_fps=60 downsize_on_error=false "
             + "send_device_meta=true send_dummy_byte=true send_stream_meta=true send_frame_meta=true",
@@ -83,6 +85,45 @@ internal sealed class ScrcpySession(ScreenshotSessionContext context) : Screensh
         }
 
         _reader = Task.Run(() => ReadLoopAsync(stream, _stop.Token), CancellationToken.None);
+        await AwaitFirstFrameAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    // Первый кадр входит в подготовку: поток, закрытый до первого медиапакета после пакета сессии, означает,
+    // что кодер устройства не принял разрешение. Без downsize_on_error это наблюдённая неприменимость.
+    private async Task AwaitFirstFrameAsync(CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(FirstFrameTimeout);
+        while (true)
+        {
+            Task wait;
+            lock (_gate)
+            {
+                if (_decodedFrames > 0)
+                {
+                    return;
+                }
+
+                if (_readerFailure is Exception failure)
+                {
+                    throw _mediaPackets == 0 && _width > 0
+                        ? new CaptureBackendException("encoder_rejected_resolution", unsupported: true,
+                            detail: CaptureAdb.Number(_width) + "x" + CaptureAdb.Number(_height), inner: failure)
+                        : failure as CaptureBackendException ?? new CaptureBackendException("scrcpy_stream_closed", inner: failure);
+                }
+
+                wait = _frameSignal.Task;
+            }
+
+            try
+            {
+                await wait.WaitAsync(deadline.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new CaptureBackendException("scrcpy_first_frame_timeout");
+            }
+        }
     }
 
     private async Task<NetworkStream> ConnectAsync(int port, CancellationToken cancellationToken)
@@ -138,6 +179,11 @@ internal sealed class ScrcpySession(ScreenshotSessionContext context) : Screensh
                 }
 
                 int size = (int)BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(8));
+                lock (_gate)
+                {
+                    _mediaPackets++;
+                }
+
                 if (size <= 0 || size > AzurPilotNativeBridge.MaximumVideoPacketBytes)
                 {
                     throw new CaptureBackendException("scrcpy_packet_invalid");

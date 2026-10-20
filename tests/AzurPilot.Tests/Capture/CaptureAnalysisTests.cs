@@ -59,16 +59,17 @@ public sealed class CaptureAnalysisTests
             Candidate(ScreenshotMethod.Adb, p95: 400),
             Candidate(ScreenshotMethod.NemuIpc, p95: 12),
             Candidate(ScreenshotMethod.Scrcpy, p95: 9, correct: false),
-            Candidate(ScreenshotMethod.DroidCastRaw, p95: 30, verdict: CaptureVerdict.Partial),
+            Candidate(ScreenshotMethod.DroidCastRaw, p95: 30, verdict: CaptureVerdict.Insufficient),
+            Candidate(ScreenshotMethod.Uiautomator2, p95: 300, verdict: CaptureVerdict.Partial),
             Candidate(ScreenshotMethod.AdbNc, p95: 5, failures: 1),
             Candidate(ScreenshotMethod.AScreenCap, p95: 1, verdict: CaptureVerdict.Unsupported),
         ]);
 
         Assert.Equal(ScreenshotMethod.NemuIpc, choice.Selected);
-        Assert.Equal([ScreenshotMethod.NemuIpc, ScreenshotMethod.Adb], choice.Ranking);
+        Assert.Equal([ScreenshotMethod.NemuIpc, ScreenshotMethod.Uiautomator2, ScreenshotMethod.Adb], choice.Ranking);
         Assert.Equal("lowest_p95_end_to_end", choice.Reason);
         Assert.Contains(new ScreenshotCandidateRejection(ScreenshotMethod.Scrcpy, "correctness_unproven"), choice.Rejections);
-        Assert.Contains(new ScreenshotCandidateRejection(ScreenshotMethod.DroidCastRaw, "verdict_partial"), choice.Rejections);
+        Assert.Contains(new ScreenshotCandidateRejection(ScreenshotMethod.DroidCastRaw, "verdict_insufficient"), choice.Rejections);
         Assert.Contains(new ScreenshotCandidateRejection(ScreenshotMethod.AdbNc, "errors_in_series"), choice.Rejections);
         Assert.Contains(new ScreenshotCandidateRejection(ScreenshotMethod.AScreenCap, "verdict_unsupported"), choice.Rejections);
     }

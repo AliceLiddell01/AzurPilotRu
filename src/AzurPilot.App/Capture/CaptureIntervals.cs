@@ -280,10 +280,9 @@ internal static class CaptureIntervals
         List<CaptureIntervalPoint> points = [];
         List<double> notTested = [];
         string? failure = null;
-        TimeSpan pointBudget = PointDuration + TimeSpan.FromSeconds(5);
         foreach (double interval in grid)
         {
-            if (failure is not null || remaining() < pointBudget || lease.Broken)
+            if (failure is not null || remaining() < Duration(interval) + TimeSpan.FromSeconds(5) || lease.Broken)
             {
                 notTested.Add(interval);
                 continue;
@@ -313,7 +312,8 @@ internal static class CaptureIntervals
         long origin = Stopwatch.GetTimestamp();
         long period = (long)(interval * Stopwatch.Frequency / 1000.0);
         long next = origin;
-        while (Stopwatch.GetElapsedTime(origin) < PointDuration)
+        TimeSpan duration = Duration(interval);
+        while (Stopwatch.GetElapsedTime(origin) < duration)
         {
             await WaitUntilAsync(next, cancellationToken).ConfigureAwait(false);
             long start = Stopwatch.GetTimestamp();
@@ -344,6 +344,13 @@ internal static class CaptureIntervals
 
         ScreenshotIntervalResult result = ScreenshotIntervalAnalysis.Summarize(new(interval, starts, ends, fresh, error));
         return new(result, ages.Count == 0 ? null : SampleStatistics.From(ages));
+    }
+
+    // Длинный интервал получает время хотя бы на минимум кадров: иначе 750–1000 мс за 2 с неизбежно «неустойчивы».
+    internal static TimeSpan Duration(double interval)
+    {
+        TimeSpan minimum = TimeSpan.FromMilliseconds(interval * (ScreenshotIntervalAnalysis.MinimumFrames - 0.5));
+        return minimum > PointDuration ? minimum : PointDuration;
     }
 
     private static object Compact(CaptureIntervalPoint point)

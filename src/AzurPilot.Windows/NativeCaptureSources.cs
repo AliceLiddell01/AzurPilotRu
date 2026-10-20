@@ -93,6 +93,29 @@ public static partial class AzurPilotNativeBridge
     private const uint SourceFlagFlipVertical = 1;
     private const uint VideoCodecH264 = 1;
 
+    /// <summary>Поворачивает кадр внутри DLL на четверть оборота по часовой стрелке (1..3).</summary>
+    internal static NativeFrame RotateFrame(NativeFrameSafeHandle frame, int quarterTurns)
+    {
+        EnsureFrameAbiVersion();
+        if (quarterTurns is < 1 or > 3)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quarterTurns), quarterTurns, "Поворот задаётся 1..3 четвертями.");
+        }
+
+        int status;
+        NativeFrameSafeHandle rotated;
+        try
+        {
+            status = RotateNative(frame, (uint)quarterTurns, out rotated);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            throw MissingFrameApi("azurpilot_native_frame_rotate");
+        }
+
+        return TakeFrame("azurpilot_native_frame_rotate", status, rotated);
+    }
+
     /// <summary>Создаёт RGB8-кадр DLL из сырых пикселей с явной геометрией.</summary>
     /// <exception cref="NativeCaptureSourceException">Геометрия или данные отвергнуты.</exception>
     internal static unsafe NativeFrame CreateFrameFromPixels(ReadOnlySpan<byte> pixels, int width, int height,
@@ -302,6 +325,9 @@ public static partial class AzurPilotNativeBridge
 
         return new NativeFrame(frame);
     }
+
+    [LibraryImport(LibraryName, EntryPoint = "azurpilot_native_frame_rotate")]
+    private static partial int RotateNative(NativeFrameSafeHandle frame, uint quarterTurns, out NativeFrameSafeHandle rotated);
 
     [LibraryImport(LibraryName, EntryPoint = "azurpilot_native_frame_create_from_pixels")]
     private static unsafe partial int CreateFromPixelsNative(byte* pixels, uint size, uint width, uint height,

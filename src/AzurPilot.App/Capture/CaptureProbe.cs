@@ -74,7 +74,8 @@ internal sealed record CaptureProbeResult
 internal static class CaptureProbe
 {
     internal const int DefaultWarmup = 3;
-    private static readonly TimeSpan CleanupReserve = TimeSpan.FromSeconds(20);
+    // Освобождение helper-ов и forward/reverse занимает секунды; остальное время отдаётся серии.
+    private static readonly TimeSpan CleanupReserve = TimeSpan.FromSeconds(8);
 
     internal static async Task<CaptureProbeResult> RunAsync(ScreenshotCaptureRouter router, MuMuInstanceId instanceId,
         AndroidEndpoint endpoint, ScreenshotMethod method, int samples, int warmup, TimeSpan budget,
@@ -201,15 +202,16 @@ internal static class CaptureProbe
             && correctness.All(c => c.Cells > 0) && width == first.Info.FrameInfo.Width
             && height == first.Info.FrameInfo.Height;
         int successes = endToEnd.Count;
+        // PARTIAL — только серия, урезанная сроком без отказов; сломанная сессия всегда сопровождается отказом.
         CaptureVerdict verdict = successes == 0 ? CaptureVerdict.Failed
             : successes < ScreenshotMethodSelection.MinimumSuccessfulSamples ? CaptureVerdict.Insufficient
-            : partial ? CaptureVerdict.Partial
             : failures > 0 || !proven ? CaptureVerdict.Failed
+            : partial ? CaptureVerdict.Partial
             : CaptureVerdict.Pass;
         string? reason = verdict switch
         {
             CaptureVerdict.Pass => null,
-            CaptureVerdict.Partial => candidate.Broken ? "session_broken" : "budget_exhausted",
+            CaptureVerdict.Partial => "budget_exhausted",
             CaptureVerdict.Insufficient => "insufficient_samples",
             CaptureVerdict.Failed or CaptureVerdict.Unsupported or CaptureVerdict.Blocked or CaptureVerdict.NotTested
                 or CaptureVerdict.UnverifiedScene or _ => failures > 0 ? reasons.OrderByDescending(p => p.Value).Select(p => p.Key).FirstOrDefault() ?? "capture_failed"

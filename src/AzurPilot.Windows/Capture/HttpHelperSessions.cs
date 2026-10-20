@@ -27,7 +27,8 @@ internal abstract class HttpHelperSession(ScreenshotMethod method, ScreenshotSes
     /// <summary>Маркер cmdline helper-а: остановка затрагивает только процесс с этим маркером.</summary>
     protected abstract string Marker { get; }
 
-    protected abstract string LaunchCommand(string remotePath, int devicePort);
+    /// <summary>Команда запуска helper-а; CLASSPATH задаёт вызывающая сторона.</summary>
+    protected abstract string LaunchCommand(int devicePort);
 
     /// <summary>Ответ, доказывающий готовность именно этого сервера.</summary>
     protected abstract Task<bool> IsReadyAsync(CancellationToken cancellationToken);
@@ -43,7 +44,7 @@ internal abstract class HttpHelperSession(ScreenshotMethod method, ScreenshotSes
         // Случайный порт устройства снижает вероятность столкновения со сторонним сервером; готовность
         // проверяется ответом протокола именно этого helper-а.
         int devicePort = Random.Shared.Next(30000, 40000);
-        _ = await StartTrackedHelperAsync(LaunchCommand(CaptureAdb.DeviceDirectory + "/" + RemoteName, devicePort), Marker,
+        _ = await StartTrackedHelperAsync(CaptureAdb.DeviceDirectory + "/" + RemoteName, LaunchCommand(devicePort), Marker,
             cancellationToken).ConfigureAwait(false);
         int hostPort = await ForwardTrackedAsync("tcp:" + CaptureAdb.Number(devicePort), cancellationToken)
             .ConfigureAwait(false);
@@ -132,8 +133,8 @@ internal sealed class Uiautomator2Session(ScreenshotSessionContext context)
 
     protected override string Marker => "com.wetest.uia2.Main";
 
-    protected override string LaunchCommand(string remotePath, int devicePort)
-        => "CLASSPATH=" + remotePath + " app_process / com.wetest.uia2.Main -p " + CaptureAdb.Number(devicePort);
+    protected override string LaunchCommand(int devicePort)
+        => "app_process / com.wetest.uia2.Main -p " + CaptureAdb.Number(devicePort);
 
     protected override async Task<bool> IsReadyAsync(CancellationToken cancellationToken)
     {
@@ -174,13 +175,15 @@ internal sealed class Uiautomator2Session(ScreenshotSessionContext context)
 
 /// <summary>
 /// <c>DroidCast</c> (PNG <c>/preview</c>) и <c>DroidCast_raw</c> (RGB565 <c>/screenshot</c>) закреплённого
-/// DroidCast_raw. Размер запроса — физический размер дисплея; сервер сам учитывает поворот.
+/// DroidCast_raw. Сервер снимает физический буфер дисплея без учёта поворота: размер запроса подбирается так,
+/// чтобы буфер пришёл без масштабирования, а поворот к ориентации ADB выполняет DLL по <c>mRotation</c>.
 /// </summary>
 internal sealed class DroidCastSession(ScreenshotSessionContext context, bool raw)
     : HttpHelperSession(raw ? ScreenshotMethod.DroidCastRaw : ScreenshotMethod.DroidCast, context)
 {
     private int _physicalWidth;
     private int _physicalHeight;
+    private int _rotation;
 
     protected override string DependencyId => "droidcast-raw";
 
@@ -188,18 +191,14 @@ internal sealed class DroidCastSession(ScreenshotSessionContext context, bool ra
 
     protected override string Marker => "ink.mol.droidcast_raw.Main";
 
-    /// <summary>Ожидаемая ориентированная геометрия кадра (по эталону ADB); задаёт маршрутизатор.</summary>
-    internal (int Width, int Height)? ExpectedSize { get; init; }
-
-    protected override string LaunchCommand(string remotePath, int devicePort)
-        => "CLASSPATH=" + remotePath + " app_process / ink.mol.droidcast_raw.Main --port=" + CaptureAdb.Number(devicePort);
+    protected override string LaunchCommand(int devicePort)
+        => "app_process / ink.mol.droidcast_raw.Main --port=" + CaptureAdb.Number(devicePort);
 
     internal override async Task OpenAsync(CancellationToken cancellationToken)
     {
         string size = await Context.Adb.ShellAsync("wm size", "display_size_unavailable", cancellationToken)
             .ConfigureAwait(false);
-        // Override size (если задан) действует вместо физического.
-        string? line = size.Split('\n').Select(l => l.Trim()).LastOrDefault(l => l.Contains("size:", StringComparison.Ordinal));
+        string? line = size.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith("Physical size:", StringComparison.Ordinal));
         string[] parts = line?[(line.IndexOf(':', StringComparison.Ordinal) + 1)..].Trim().Split('x') ?? [];
         if (parts.Length != 2 || !int.TryParse(parts[0], out _physicalWidth) || !int.TryParse(parts[1], out _physicalHeight)
             || _physicalWidth <= 0 || _physicalHeight <= 0)
@@ -207,6 +206,16 @@ internal sealed class DroidCastSession(ScreenshotSessionContext context, bool ra
             throw new CaptureBackendException("display_size_unrecognized");
         }
 
+        string rotation = await Context.Adb.ShellAsync("dumpsys window displays | grep -m1 -o 'mRotation=[0-3]'",
+            "display_rotation_unavailable", cancellationToken).ConfigureAwait(false);
+        string value = rotation.Trim();
+        if (!value.StartsWith("mRotation=", StringComparison.Ordinal) || !int.TryParse(value["mRotation=".Length..], out _rotation))
+        {
+            throw new CaptureBackendException("display_rotation_unrecognized");
+        }
+
+        Facts["physical_size"] = CaptureAdb.Number(_physicalWidth) + "x" + CaptureAdb.Number(_physicalHeight);
+        Facts["rotation"] = CaptureAdb.Number(_rotation);
         await base.OpenAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -220,38 +229,62 @@ internal sealed class DroidCastSession(ScreenshotSessionContext context, bool ra
 
     protected override async Task<CapturedAndroidScreenshot> CaptureCoreAsync(CancellationToken cancellationToken)
     {
-        string query = "?width=" + CaptureAdb.Number(_physicalWidth) + "&height=" + CaptureAdb.Number(_physicalHeight);
+        // При нечётном повороте сервер меняет стороны запроса местами: так буфер приходит в физическом размере.
+        (int requestWidth, int requestHeight) = _rotation % 2 == 1
+            ? (_physicalHeight, _physicalWidth) : (_physicalWidth, _physicalHeight);
+        string query = "?width=" + CaptureAdb.Number(requestWidth) + "&height=" + CaptureAdb.Number(requestHeight);
         CaptureMoment started = Now();
         using HttpRequestMessage request = new(HttpMethod.Get,
             new Uri(Method == ScreenshotMethod.DroidCastRaw ? "screenshot" + query : "preview" + query + "&format=png",
                 UriKind.Relative));
         byte[] body = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         long acquired = Clock.GetTimestamp();
+        NativeFrame physical;
         if (Method == ScreenshotMethod.DroidCast)
         {
             try
             {
-                return Complete(AzurPilotNativeBridge.DecodePng(body), started, acquired, body.Length);
+                physical = AzurPilotNativeBridge.DecodePng(body);
             }
             catch (NativeFrameDecodeException exception)
             {
                 throw new CaptureBackendException("droidcast_png_invalid", inner: exception) { SessionBroken = false };
             }
         }
-
-        (int width, int height) = ExpectedSize ?? (Math.Max(_physicalWidth, _physicalHeight), Math.Min(_physicalWidth, _physicalHeight));
-        if (body.LongLength != (long)width * height * 2)
+        else
         {
-            // Короткий ответ — текст ошибки сервера, а не bitmap.
-            throw new CaptureBackendException(body.Length < 500 ? "droidcast_server_error" : "droidcast_raw_size_mismatch",
-                detail: CaptureAdb.Number(body.LongLength))
+            if (body.LongLength != (long)_physicalWidth * _physicalHeight * 2)
+            {
+                // Короткий ответ — текст ошибки сервера, а не bitmap.
+                throw new CaptureBackendException(body.Length < 500 ? "droidcast_server_error" : "droidcast_raw_size_mismatch",
+                    detail: CaptureAdb.Number(body.LongLength))
+                {
+                    SessionBroken = false,
+                };
+            }
+
+            physical = AzurPilotNativeBridge.CreateFrameFromPixels(body, _physicalWidth, _physicalHeight, _physicalWidth * 2,
+                NativeSourcePixelFormat.Rgb565LittleEndian, false);
+        }
+
+        NativeFrameInfo info = physical.GetInfo();
+        if (info.Width != (uint)_physicalWidth || info.Height != (uint)_physicalHeight)
+        {
+            physical.Dispose();
+            throw new CaptureBackendException("droidcast_geometry_mismatch", detail: info.Width + "x" + info.Height)
             {
                 SessionBroken = false,
             };
         }
 
-        NativeFrame frame = AzurPilotNativeBridge.CreateFrameFromPixels(body, width, height, width * 2,
-            NativeSourcePixelFormat.Rgb565LittleEndian, false);
-        return Complete(frame, started, acquired, body.Length);
+        if (_rotation == 0)
+        {
+            return Complete(physical, started, acquired, body.Length);
+        }
+
+        using (physical)
+        {
+            return Complete(physical.RotateClockwise(_rotation), started, acquired, body.Length);
+        }
     }
 }

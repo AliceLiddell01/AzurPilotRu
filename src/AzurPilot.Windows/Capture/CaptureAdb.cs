@@ -127,9 +127,11 @@ internal sealed partial class CaptureAdb(IWindowsProcessRunner runner, string ad
     /// Запускает helper в фоне и возвращает его точный PID. Вывод helper-а не читается; процесс переживает
     /// завершение команды ADB и останавливается только <see cref="StopHelperAsync"/> по этому PID.
     /// </summary>
-    internal async Task<int> StartHelperAsync(string command, CancellationToken cancellationToken)
+    internal async Task<int> StartHelperAsync(string classPath, string command, CancellationToken cancellationToken)
     {
-        string output = await ShellAsync("nohup " + command + " >/dev/null 2>&1 </dev/null & echo $!",
+        // Присваивание окружения стоит перед nohup: иначе nohup пытается исполнить его как команду.
+        string output = await ShellAsync("CLASSPATH=" + Token(classPath) + " nohup " + command
+            + " >/dev/null 2>&1 </dev/null & echo $!",
             "helper_start_failed", cancellationToken).ConfigureAwait(false);
         return int.TryParse(output.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int pid) && pid > 1
             ? pid

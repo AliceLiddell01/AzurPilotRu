@@ -510,6 +510,14 @@ AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_decode_bmz1(
 AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_decode_jpeg(
     const uint8_t* jpeg_bytes, uint32_t size, AzurPilotNativeFrameHandle* out_frame) AZURPILOT_NATIVE_NOEXCEPT;
 
+/* Создаёт новый кадр, повёрнутый на quarter_turns_clockwise * 90° по часовой стрелке (1..3). Нужен
+ * транспортам, отдающим физический буфер дисплея без учёта поворота (DroidCast_raw). Исходный кадр не
+ * изменяется. NULL frame/out_frame и quarter_turns_clockwise вне 1..3 — INVALID_ARGUMENT; недостоверный
+ * кадр — INTERNAL. При ненулевом out_frame он сначала обнуляется. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_rotate(
+    AzurPilotNativeFrameHandle frame, uint32_t quarter_turns_clockwise,
+    AzurPilotNativeFrameHandle* out_frame) AZURPILOT_NATIVE_NOEXCEPT;
+
 /* Сессия nemu_ipc MuMu: DLL загружается только по полному пути из обнаруженной установки,
  * поиск зависимостей ограничен её каталогом и System32. Строки — UTF-16 с завершающим NUL,
  * не длиннее 32767 символов. instance_index — vmindex exact identity экземпляра. */

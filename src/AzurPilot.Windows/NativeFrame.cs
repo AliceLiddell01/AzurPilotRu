@@ -115,6 +115,18 @@ public sealed class NativeFrame : IDisposable
         }
     }
 
+    /// <summary>Новый кадр, повёрнутый на quarterTurns × 90° по часовой стрелке (1..3); исходный не изменяется.</summary>
+    /// <exception cref="ObjectDisposedException">Кадр уже освобождён.</exception>
+    /// <exception cref="NativeCaptureSourceException">Native операция отвергла кадр или аргумент.</exception>
+    internal NativeFrame RotateClockwise(int quarterTurns)
+    {
+        lock (_lifetimeLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return AzurPilotNativeBridge.RotateFrame(_handle, quarterTurns);
+        }
+    }
+
     /// <summary>
     /// Кодирует копию кадра с аннотациями в JPEG без metadata. Допустимы только кадры не больше
     /// предела превью; кадр больше предела (например, 4K) так не экспортируется. Байты JPEG не владеют кадром.

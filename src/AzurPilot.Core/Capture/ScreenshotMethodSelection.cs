@@ -2,7 +2,7 @@ namespace AzurPilot.Core.Capture;
 
 /// <summary>Измерение одного кандидата для выбора метода на точном target и одном разрешении.</summary>
 /// <param name="Method">Метод.</param>
-/// <param name="Verdict">Итог probe и серии; к выбору допускается только <see cref="CaptureVerdict.Pass"/>.</param>
+/// <param name="Verdict">Итог probe и серии; к выбору допускаются <see cref="CaptureVerdict.Pass"/> и серия, урезанная бюджетом (<see cref="CaptureVerdict.Partial"/>).</param>
 /// <param name="CorrectnessProven">Кадр совпал с эталоном ADB по геометрии и контрольной сигнатуре.</param>
 /// <param name="Width">Ширина кадров серии.</param>
 /// <param name="Height">Высота кадров серии.</param>
@@ -96,7 +96,8 @@ public static class ScreenshotMethodSelection
 
     private static string? RejectionReason(ScreenshotCandidateMeasurement candidate)
     {
-        if (candidate.Verdict != CaptureVerdict.Pass)
+        // PARTIAL означает серию, урезанную только бюджетом времени: без отказов и с доказанной корректностью.
+        if (candidate.Verdict is not (CaptureVerdict.Pass or CaptureVerdict.Partial))
         {
             return "verdict_" + CaptureVerdictNames.ToName(candidate.Verdict).ToLowerInvariant();
         }

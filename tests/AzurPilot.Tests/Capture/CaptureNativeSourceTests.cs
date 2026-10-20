@@ -47,6 +47,21 @@ public sealed class CaptureNativeSourceTests
         Assert.Equal((255d, 0d, 0d), (bottom.MeanRed, bottom.MeanGreen, bottom.MeanBlue));
     }
 
+    [Fact(DisplayName = "Поворот кадра в DLL: по часовой стрелке, исходный кадр не меняется")]
+    public void RotationIsClockwiseAndCopies()
+    {
+        // Столбец 2×1: красный сверху, синий снизу; после поворота по часовой красный справа.
+        byte[] data = [200, 0, 0, 0, 0, 200];
+        using NativeFrame source = AzurPilotNativeBridge.CreateFrameFromPixels(data, 1, 2, 3, NativeSourcePixelFormat.Rgb888, false);
+        using NativeFrame rotated = source.RotateClockwise(1);
+
+        Assert.Equal((2u, 1u), (rotated.GetInfo().Width, rotated.GetInfo().Height));
+        Assert.Equal(200, rotated.ScanRegion(new PixelRegion(1, 0, 2, 1)).MeanRed);
+        Assert.Equal(200, rotated.ScanRegion(new PixelRegion(0, 0, 1, 1)).MeanBlue);
+        Assert.Equal((1u, 2u), (source.GetInfo().Width, source.GetInfo().Height));
+        _ = Assert.Throws<ArgumentOutOfRangeException>(() => source.RotateClockwise(4));
+    }
+
     [Theory(DisplayName = "Неверная геометрия и короткий буфер отвергаются как INVALID_DATA")]
     [InlineData(0, 1, 4, 4)]
     [InlineData(1, 0, 4, 4)]
