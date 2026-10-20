@@ -17,7 +17,7 @@ public sealed class AndroidGameInputAdapterTests
         runner.EnqueueOutcome(0, "Android Debug Bridge version 1.0.41\nVersion 35.0.2-test\n");
         Assert.True(host.DiscoverAdbExecutable(AndroidTestContext.Installation).IsSuccess);
         GameFrameProvenance frame = GameUiRecognizerTests.ProvenanceForSize(3840, 2160);
-        GameTap tap = new(frame, "test", new(10, 20, 100, 80), new(50, 40), TimeSpan.FromSeconds(12));
+        GameTap tap = new(frame, "test.action", "test", new(10, 20, 100, 80), new(50, 40), TimeSpan.FromSeconds(12));
         runner.EnqueueOutcome(0, "");
         Assert.True((await host.TapGameAsync(tap, TestContext.Current.CancellationToken)).IsSuccess);
         Assert.True((await host.TapGameAsync(tap, TestContext.Current.CancellationToken)).IsFailure);
@@ -45,7 +45,7 @@ public sealed class AndroidGameInputAdapterTests
         };
         GameInputPoint point = scenario == "outside-frame" ? new(3840, 2160) : new(50, 40);
         GamePixelRect safe = scenario == "outside-safe" ? new(0, 0, 10, 10) : new(10, 20, 4000, 2200);
-        GameTap tap = new(frame, "test", safe, point, TimeSpan.FromSeconds(12));
+        GameTap tap = new(frame, "test.action", "test", safe, point, TimeSpan.FromSeconds(12));
         Assert.True((await host.TapGameAsync(tap, TestContext.Current.CancellationToken)).IsFailure);
         Assert.Empty(runner.Requests);
     }

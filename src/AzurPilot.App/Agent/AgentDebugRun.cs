@@ -39,6 +39,16 @@ internal sealed class AgentDebugMetrics
     }
 }
 
+/// <summary>
+/// Порог допуска сессии: если до запуска в каталоге сессии уже занято не меньше этих байтов или файлов, JPEG прогона
+/// отключаются. Это не жёсткий лимит всей сессии: оставшийся объём делится на бюджет JPEG одного прогона, а trace и
+/// итоговые файлы ограничены собственными пределами.
+/// </summary>
+internal sealed record AgentDebugSessionLimits(long AdmissionBytes, int AdmissionFiles)
+{
+    internal static AgentDebugSessionLimits Default { get; } = new(2L * 1024 * 1024 * 1024, 20_000);
+}
+
 /// <summary>Итог записи отчёта: относительный путь и полнота диагностики, независимые от результата команды.</summary>
 internal sealed record AgentDebugCompletion(string RelativeRunDirectory, string Status, IReadOnlyList<string> IncompleteReasons);
 
@@ -54,9 +64,7 @@ internal sealed class AgentDebugRun : IDisposable
     internal const string ArgumentName = "--debug-report";
     internal const string ReportsDirectory = ".codex/local/reports";
     internal const string SessionIndexFile = "runs.jsonl";
-    internal const long MaximumSessionBytes = 2L * 1024 * 1024 * 1024;
     internal const string SessionPattern = "^(?!(con|prn|aux|nul|com[0-9]|lpt[0-9])$)[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$(?![\\s\\S])";
-    private const int MaximumSessionFiles = 20_000;
     private static readonly string[] ReservedNames = ["con", "prn", "aux", "nul"];
     private static readonly string[] HashedFiles = ["AzurPilot.App.dll", "AzurPilot.Core.dll", "AzurPilot.Windows.dll", "AzurPilot.Native.dll"];
 
@@ -67,10 +75,14 @@ internal sealed class AgentDebugRun : IDisposable
     private readonly IReadOnlyList<string> _relatedRuns;
     private readonly AgentDebugActivityListener _activities;
     private readonly long _startedTicks = Stopwatch.GetTimestamp();
+    private readonly AgentDebugSessionLimits _limits;
+    private readonly long _sessionBytesAtStart;
+    private readonly long _frameByteBudget;
 
     private AgentDebugRun(string checkoutRoot, string sessionDirectory, string runId, string session, string correlationId,
         string operation, string? requestedTarget, IReadOnlyList<string> arguments, int timeoutMilliseconds,
-        TimeProvider clock, string? framesDisabledReason, IReadOnlyList<string> relatedRuns)
+        TimeProvider clock, string? framesDisabledReason, long frameByteBudget, AgentDebugSessionLimits limits,
+        long sessionBytesAtStart, IReadOnlyList<string> relatedRuns)
     {
         _checkoutRoot = checkoutRoot;
         SessionDirectory = sessionDirectory;
@@ -82,6 +94,9 @@ internal sealed class AgentDebugRun : IDisposable
         _arguments = arguments;
         _timeoutMilliseconds = timeoutMilliseconds;
         _relatedRuns = relatedRuns;
+        _limits = limits;
+        _sessionBytesAtStart = sessionBytesAtStart;
+        _frameByteBudget = frameByteBudget;
         Clock = clock;
         Origin = clock.GetTimestamp();
         StartedAtUtc = clock.GetUtcNow().ToUniversalTime();
@@ -91,7 +106,7 @@ internal sealed class AgentDebugRun : IDisposable
         _ = Directory.CreateDirectory(frames);
         _manifestPath = Path.Combine(RunDirectory, "manifest.json");
         Trace = new(Path.Combine(RunDirectory, "trace.jsonl"), clock, Origin);
-        Frames = new(this, frames, framesDisabledReason);
+        Frames = new(this, frames, framesDisabledReason, frameByteBudget);
         GameUiTrace = new(this);
         _activities = new(this, correlationId);
     }
@@ -159,8 +174,9 @@ internal sealed class AgentDebugRun : IDisposable
     /// </summary>
     internal static ApplicationResult<AgentDebugRun> Create(string session, string correlationId, string operation,
         string? requestedTarget, IReadOnlyList<string> arguments, int timeoutMilliseconds, TimeProvider clock,
-        string? workingDirectory = null)
+        string? workingDirectory = null, AgentDebugSessionLimits? sessionLimits = null)
     {
+        AgentDebugSessionLimits limits = sessionLimits ?? AgentDebugSessionLimits.Default;
         if (!IsValidSession(session))
         {
             return Unavailable("session_invalid");
@@ -203,10 +219,12 @@ internal sealed class AgentDebugRun : IDisposable
                 return Unavailable("run_directory_exists");
             }
 
-            (long sessionBytes, int sessionFiles) = MeasureSession(sessionDirectory);
-            string? disabled = sessionBytes >= MaximumSessionBytes || sessionFiles >= MaximumSessionFiles ? "session_limit" : null;
+            (long sessionBytes, int sessionFiles) = MeasureSession(sessionDirectory, limits.AdmissionFiles);
+            string? disabled = sessionBytes >= limits.AdmissionBytes || sessionFiles >= limits.AdmissionFiles ? "session_limit" : null;
+            // JPEG этого прогона не выходят за остаток порога сессии, измеренный при запуске.
+            long frameByteBudget = Math.Max(0, Math.Min(AgentDebugFrames.MaximumRunBytes, limits.AdmissionBytes - sessionBytes));
             AgentDebugRun run = new(root, sessionDirectory, runId, session, correlationId, operation, requestedTarget,
-                arguments, timeoutMilliseconds, clock, disabled, ReadRelatedRuns(sessionDirectory));
+                arguments, timeoutMilliseconds, clock, disabled, frameByteBudget, limits, sessionBytes, ReadRelatedRuns(sessionDirectory));
             try
             {
                 run.WriteManifest(null, null, ["run_in_progress"], null, FileMode.CreateNew);
@@ -388,14 +406,14 @@ internal sealed class AgentDebugRun : IDisposable
         return null;
     }
 
-    private static (long Bytes, int Files) MeasureSession(string sessionDirectory)
+    private static (long Bytes, int Files) MeasureSession(string sessionDirectory, int maximumFiles)
     {
         long bytes = 0;
         int files = 0;
         foreach (FileInfo file in new DirectoryInfo(sessionDirectory).EnumerateFiles("*", SearchOption.AllDirectories))
         {
             bytes += file.Length;
-            if (++files >= MaximumSessionFiles)
+            if (++files >= maximumFiles)
             {
                 break;
             }
@@ -587,7 +605,11 @@ internal sealed class AgentDebugRun : IDisposable
                 maximumFrames = AgentDebugFrames.MaximumFrames,
                 maximumRunBytes = AgentDebugFrames.MaximumRunBytes,
                 minimumFreeBytes = AgentDebugFrames.MinimumFreeBytes,
-                maximumSessionBytes = MaximumSessionBytes,
+                // Порог допуска, а не жёсткий лимит сессии: параллельные прогоны делят остаток без резервирования.
+                sessionAdmissionBytes = _limits.AdmissionBytes,
+                sessionAdmissionFiles = _limits.AdmissionFiles,
+                sessionBytesAtStart = _sessionBytesAtStart,
+                frameByteBudget = _frameByteBudget,
                 maximumTraceEvents = AgentDebugTrace.MaximumEvents,
                 maximumTraceBytes = AgentDebugTrace.MaximumBytes,
                 flushTimeoutMs = AgentDebugFrames.FlushTimeout.TotalMilliseconds,
@@ -630,6 +652,8 @@ internal sealed class AgentDebugRun : IDisposable
                 marks = f.Marks.Select(m => m.Kind),
             }),
             files = completed is null ? null : Files(),
+            // Манифест не может сообщить собственный итоговый размер, поэтому в инвентарь не входит.
+            filesExclude = completed is null ? null : new[] { "manifest.json" },
             relatedRuns = _relatedRuns,
         };
         string temporary = _manifestPath + ".tmp";
@@ -643,9 +667,14 @@ internal sealed class AgentDebugRun : IDisposable
     private IEnumerable<object> Files()
     {
         return [.. new DirectoryInfo(RunDirectory).EnumerateFiles("*", SearchOption.AllDirectories)
-            .Where(f => !f.Name.EndsWith(".tmp", StringComparison.Ordinal))
+            .Where(f => !f.Name.EndsWith(".tmp", StringComparison.Ordinal) && !IsManifest(f))
             .OrderBy(f => f.FullName, StringComparer.Ordinal)
             .Select(f => new { path = Path.GetRelativePath(RunDirectory, f.FullName).Replace('\\', '/'), bytes = f.Length })];
+    }
+
+    private bool IsManifest(FileInfo file)
+    {
+        return string.Equals(file.FullName, _manifestPath, StringComparison.OrdinalIgnoreCase);
     }
 
     private object Checkout()
@@ -819,9 +848,16 @@ internal sealed class AgentDebugRun : IDisposable
 
         _ = text.AppendLine(CultureInfo.InvariantCulture, $"- Диагностика в критическом пути: превью {counters.PreviewMs} ms ({counters.Previews} шт.), trace {Trace.WriteMs} ms; "
             + $"фон: рендер {counters.RenderMs} ms, запись {counters.WriteMs} ms. Подробно — `performance.json`.").AppendLine();
+        _ = text.AppendLine("## Легенда JPEG").AppendLine();
+        foreach (string line in AgentDebugAnnotations.Legend)
+        {
+            _ = text.AppendLine("- " + line);
+        }
+
+        _ = text.AppendLine();
         _ = text.AppendLine("## Ограничения").AppendLine();
         _ = text.AppendLine("- JPEG логического размера GameGeometry — иллюстрация реального кадра; распознавание и ввод использовали исходный кадр полного разрешения.");
-        _ = text.AppendLine("- Рамки показывают только Unique/Ambiguous; Absent и недоказанные признаки перечислены подписью.");
+        _ = text.AppendLine("- Рамки показывают только Unique/Ambiguous; Absent и недоказанные признаки перечислены подписью `no_box`.");
         _ = text.AppendLine("- Маскирование не выполнялось: файлы остаются локальными и не публикуются.");
         _ = text.AppendLine("- Вердикт PASS/FAIL/PARTIAL/NOT_RUN/BLOCKED ставит live-приёмка, а не этот отчёт.");
         return text.ToString();

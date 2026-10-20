@@ -80,11 +80,13 @@ internal sealed class AgentDebugGameUiHost(IGameUiHost inner, AgentDebugRun run)
         run.Guard("tap", () =>
         {
             record = run.Frames.Find(tap.Frame.FrameId);
-            Mark(record, new("tap_attempted", null, "attempted", tap.SafeBounds, tap.Point));
+            Mark(record, new("tap_attempted", tap.ActionId, "tap_attempted", tap.SafeBounds, tap.Point));
             run.Trace.Record("gameui-host", "tap_attempted", new { asset = tap.AssetId, point = tap.Point, safeBounds = tap.SafeBounds },
-                record?.Reference, tap.Frame.FrameId);
+                record?.Reference, tap.Frame.FrameId, tap.ActionId);
         });
         ApplicationResult<AndroidCommandOutcome> result;
+        // Область ввода связывает фактический запуск ADB именно с этим разрешением, кадром и действием.
+        AgentDebugTapContext.Current = new AgentDebugTapContext.Scope(tap, record?.Reference);
         try
         {
             result = await inner.TapAsync(tap, cancellationToken).ConfigureAwait(false);
@@ -94,11 +96,15 @@ internal sealed class AgentDebugGameUiHost(IGameUiHost inner, AgentDebugRun run)
             // Исключение после вызова границы: ввод мог состояться, эффект не доказан.
             run.Guard("tap", () =>
             {
-                Mark(record, new("tap_result_unproven", null, "TAP UNPROVEN", tap.SafeBounds, tap.Point));
+                Mark(record, new("tap_result_unproven", tap.ActionId, "tap_result_unproven", tap.SafeBounds, tap.Point));
                 run.Trace.Record("gameui-host", "tap_result_unproven", new { exception = exception.GetType().Name },
-                    record?.Reference, tap.Frame.FrameId);
+                    record?.Reference, tap.Frame.FrameId, tap.ActionId);
             });
             throw;
+        }
+        finally
+        {
+            AgentDebugTapContext.Current = null;
         }
 
         run.Guard("tap", () => TapCompleted(tap, record, result, Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1)));
@@ -158,18 +164,18 @@ internal sealed class AgentDebugGameUiHost(IGameUiHost inner, AgentDebugRun run)
         if (result.IsSuccess && result.Value!.ExitCode == 0)
         {
             kind = "tap_completed";
-            Mark(record, new(kind, null, "TAP ISSUED", tap.SafeBounds, tap.Point));
+            Mark(record, new(kind, tap.ActionId, "tap_completed", tap.SafeBounds, tap.Point));
         }
         else if (result.IsFailure && Reason(result.FailureInfo!) == "input_arguments_invalid")
         {
             // Адаптер отверг разрешение до запуска ADB: ввод не отправлялся.
             kind = "tap_not_issued";
-            Mark(record, new(kind, null, "TAP NOT ISSUED", tap.SafeBounds, tap.Point));
+            Mark(record, new(kind, tap.ActionId, "tap_not_issued", tap.SafeBounds, tap.Point));
         }
         else
         {
             kind = "tap_result_unproven";
-            Mark(record, new(kind, null, "TAP UNPROVEN", tap.SafeBounds, tap.Point));
+            Mark(record, new(kind, tap.ActionId, "tap_result_unproven", tap.SafeBounds, tap.Point));
         }
 
         run.Trace.Record("gameui-host", kind, new
@@ -177,7 +183,7 @@ internal sealed class AgentDebugGameUiHost(IGameUiHost inner, AgentDebugRun run)
             elapsedMs = elapsed,
             exitCode = result.IsSuccess ? result.Value!.ExitCode : (int?)null,
             failure = result.IsFailure ? AgentJson.Failure(result.FailureInfo) : null,
-        }, record?.Reference, tap.Frame.FrameId);
+        }, record?.Reference, tap.Frame.FrameId, tap.ActionId);
     }
 
     private void Mark(AgentDebugFrameRecord? record, AgentDebugFrameMark mark)
@@ -256,23 +262,23 @@ internal sealed class AgentDebugGameUiTrace(AgentDebugRun run) : IGameUiTrace
                 if (traceEvent.ActionId is not null)
                 {
                     record.Marks.Add(new("action_source", traceEvent.ActionId,
-                        traceEvent.Reason == "reused_classified_frame" ? "source: reused proven frame, no new capture" : "source frame"));
+                        traceEvent.Reason == "reused_classified_frame" ? "source=reused_classified_frame" : "source=frame"));
                 }
 
                 break;
             case "tap_planned":
-                record.Marks.Add(new("tap_planned", traceEvent.ActionId, "candidate", traceEvent.Region, traceEvent.Point));
+                record.Marks.Add(new("tap_planned", traceEvent.ActionId, "tap_planned", traceEvent.Region, traceEvent.Point));
                 break;
             case "tap_permitted":
                 record.Marks.Add(new("tap_permitted", traceEvent.ActionId, string.Create(System.Globalization.CultureInfo.InvariantCulture,
-                    $"permitted age={traceEvent.Value:0}ms"), traceEvent.Region, traceEvent.Point));
+                    $"tap_permitted age={traceEvent.Value:0}ms"), traceEvent.Region, traceEvent.Point));
                 break;
             case "postcondition_frame":
                 record.Marks.Add(new("postcondition", traceEvent.ActionId,
-                    traceEvent.Reason == "proven" ? "POSTCONDITION PROVEN" : "postcondition: unchanged"));
+                    traceEvent.Reason == "proven" ? "postcondition=proven" : "postcondition=unchanged"));
                 break;
             case "action_rejected":
-                record.Marks.Add(new("action_rejected", traceEvent.ActionId, "REJECTED " + traceEvent.Reason + " (" + traceEvent.State + ")"));
+                record.Marks.Add(new("action_rejected", traceEvent.ActionId, "rejected=" + traceEvent.Reason + " state=" + traceEvent.State));
                 break;
             default:
                 break;
@@ -282,6 +288,34 @@ internal sealed class AgentDebugGameUiTrace(AgentDebugRun run) : IGameUiTrace
         if (traceEvent.ActionId is string action && roles is not null)
         {
             _ = record.Actions.TryAdd(action, roles);
+        }
+    }
+}
+
+/// <summary>
+/// Область единственного разрешённого tap текущего асинхронного потока: только внутри неё запуск процесса ввода
+/// получает кадр и действие. Область расходует одну стадию issued, поэтому второй процесс не наследует связь.
+/// </summary>
+internal static class AgentDebugTapContext
+{
+    private static readonly AsyncLocal<Scope?> Holder = new();
+
+    internal static Scope? Current
+    {
+        get => Holder.Value;
+        set => Holder.Value = value;
+    }
+
+    internal sealed class Scope(GameTap tap, string? reference)
+    {
+        private int _issued;
+
+        internal GameTap Tap { get; } = tap;
+        internal string? Reference { get; } = reference;
+
+        internal bool TryClaimIssued()
+        {
+            return Interlocked.Exchange(ref _issued, 1) == 0;
         }
     }
 }
@@ -306,11 +340,6 @@ internal sealed class AgentDebugProcessRunner(IWindowsProcessRunner inner, Agent
                 mode = request.StandardOutputMode,
                 timeoutMs = Math.Round(request.Timeout.TotalMilliseconds),
             });
-            if (request.Arguments.Contains("input", StringComparer.Ordinal) && request.Arguments.Contains("tap", StringComparer.Ordinal))
-            {
-                // Стадия issued: команда ввода передаётся процессу ADB; исполнение подтверждает только tap_completed.
-                run.Trace.Record("process", "tap_issued", new { owner, argumentCount = request.Arguments.Count });
-            }
         });
 
         ApplicationResult<WindowsProcessOutcome> result;
@@ -325,8 +354,46 @@ internal sealed class AgentDebugProcessRunner(IWindowsProcessRunner inner, Agent
             throw;
         }
 
-        run.Guard("process", () => Completed(tool, result, Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1)));
+        run.Guard("process", () =>
+        {
+            if (IsTapCommand(request))
+            {
+                TapIssued(result);
+            }
+
+            Completed(tool, result, Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1));
+        });
         return result;
+    }
+
+    private static bool IsTapCommand(WindowsProcessRequest request)
+    {
+        return request.Arguments.Contains("input", StringComparer.Ordinal) && request.Arguments.Contains("tap", StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Стадия issued фиксируется только после того, как процесс ввода действительно запущен и вернул итог: отказ
+    /// запуска или проекции процесса её не порождает. Связь с кадром и действием берётся из области ввода
+    /// единственного разрешения; без неё или при повторном запуске внутри той же области связь не выдумывается.
+    /// Координаты и прочие аргументы процесса не записываются.
+    /// </summary>
+    private void TapIssued(ApplicationResult<WindowsProcessOutcome> result)
+    {
+        if (result.IsFailure)
+        {
+            return;
+        }
+
+        int exitCode = result.Value!.ExitCode;
+        AgentDebugTapContext.Scope? scope = AgentDebugTapContext.Current;
+        if (scope is not null && scope.TryClaimIssued())
+        {
+            run.Trace.Record("process", "tap_issued", new { owner, exitCode, asset = scope.Tap.AssetId, correlation = "tap_permit" },
+                scope.Reference, scope.Tap.Frame.FrameId, scope.Tap.ActionId);
+            return;
+        }
+
+        run.Trace.Record("process", "tap_issued", new { owner, exitCode, correlation = "none" });
     }
 
     private void Completed(string tool, ApplicationResult<WindowsProcessOutcome> result, double elapsed)

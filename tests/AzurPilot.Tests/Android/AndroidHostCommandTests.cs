@@ -49,7 +49,7 @@ public sealed class AndroidHostCommandTests
         GameFrameProvenance frame = new(
             Guid.NewGuid(), MuMuInstanceId.FromIndex("3"), Endpoint,
             timeProvider.GetUtcNow(), timeProvider.GetTimestamp(), 200, 100);
-        GameTap tap = new(frame, "test", new(10, 20, 100, 80), new(50, 40), TimeSpan.FromSeconds(12));
+        GameTap tap = new(frame, "test.action", "test", new(10, 20, 100, 80), new(50, 40), TimeSpan.FromSeconds(12));
 
         ApplicationResult<AndroidCommandOutcome> result = await fixture.Host.TapGameAsync(
             tap, CancellationToken.None);

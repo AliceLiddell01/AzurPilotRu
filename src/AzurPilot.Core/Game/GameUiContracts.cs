@@ -61,9 +61,10 @@ public sealed record GameUiAction(string Id, string SourceAssetId, string Postco
 public sealed class GameTap
 {
     private int _consumed;
-    internal GameTap(GameFrameProvenance frame, string assetId, GamePixelRect safeBounds, GameInputPoint point, TimeSpan maximumAge)
+    internal GameTap(GameFrameProvenance frame, string actionId, string assetId, GamePixelRect safeBounds, GameInputPoint point, TimeSpan maximumAge)
     {
         Frame = frame;
+        ActionId = actionId;
         AssetId = assetId;
         SafeBounds = safeBounds;
         Point = point;
@@ -72,6 +73,8 @@ public sealed class GameTap
 
     /// <summary>Кадр, который разрешил действие.</summary>
     public GameFrameProvenance Frame { get; }
+    /// <summary>Действие каталога, которое получило это разрешение.</summary>
+    public string ActionId { get; }
     /// <summary>Распознанный ассет.</summary>
     public string AssetId { get; }
     /// <summary>Проверенная безопасная область.</summary>

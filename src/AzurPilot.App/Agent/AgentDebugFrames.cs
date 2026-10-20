@@ -85,6 +85,7 @@ internal sealed class AgentDebugFrames : IAndroidScreenshotObserver, IDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _writer;
     private readonly string? _disabledReason;
+    private readonly long _byteBudget;
     private int _captureFailures;
     private int _rendered;
     private long _renderedBytes;
@@ -96,9 +97,10 @@ internal sealed class AgentDebugFrames : IAndroidScreenshotObserver, IDisposable
     private long _queueTicks;
     private int _lateEvents;
 
-    internal AgentDebugFrames(AgentDebugRun run, string framesDirectory, string? disabledReason)
+    internal AgentDebugFrames(AgentDebugRun run, string framesDirectory, string? disabledReason, long byteBudget = MaximumRunBytes)
     {
         _run = run;
+        _byteBudget = Math.Min(byteBudget, MaximumRunBytes);
         _framesDirectory = framesDirectory;
         _disabledReason = disabledReason;
         _writer = Task.Run(WriteFramesAsync);
@@ -433,9 +435,9 @@ internal sealed class AgentDebugFrames : IAndroidScreenshotObserver, IDisposable
             {
                 limit = "frame_limit";
             }
-            else if (_renderedBytes >= MaximumRunBytes)
+            else if (_renderedBytes >= _byteBudget)
             {
-                limit = "byte_limit";
+                limit = BudgetReason();
             }
 
             annotationFailed = limit?.StartsWith("annotation_failed", StringComparison.Ordinal) == true;
@@ -464,6 +466,21 @@ internal sealed class AgentDebugFrames : IAndroidScreenshotObserver, IDisposable
             long renderStarted = Stopwatch.GetTimestamp();
             byte[] jpeg = preview.EncodeJpeg(JpegQuality, annotations.ToArray());
             long rendered = Stopwatch.GetTimestamp() - renderStarted;
+            // Размер известен только после кодирования: бюджет не превышается и последним кадром.
+            lock (_gate)
+            {
+                if (_renderedBytes + jpeg.Length > _byteBudget)
+                {
+                    limit = BudgetReason();
+                }
+            }
+
+            if (limit is not null)
+            {
+                Skip(record, limit);
+                return;
+            }
+
             string name = record.Sequence.ToString("0000", CultureInfo.InvariantCulture) + "_"
                 + (record.FrameId?.ToString("N") ?? "capture") + ".jpg";
             long writeStarted = Stopwatch.GetTimestamp();
@@ -510,6 +527,12 @@ internal sealed class AgentDebugFrames : IAndroidScreenshotObserver, IDisposable
         {
             preview.Dispose();
         }
+    }
+
+    // Бюджет меньше предела прогона только из-за остатка порога сессии: причина должна называть её, а не лимит прогона.
+    private string BudgetReason()
+    {
+        return _byteBudget < MaximumRunBytes ? "session_limit" : "byte_limit";
     }
 
     private bool FreeSpaceBelowLimit()
@@ -588,10 +611,23 @@ internal sealed record AgentDebugFrameCounters(int Captured, int Rendered, int S
 /// <summary>
 /// Аннотации debug-JPEG из наблюдённых production-фактов кадра. Координаты переводятся из физических
 /// полуоткрытых границ через <see cref="GameGeometry.ToLogical(GamePixelRect)"/>; Absent не рисуется рамкой.
-/// Подписи — ASCII, потому что native шрифт кадра поддерживает только его.
+/// Подписи — короткие технические метки ASCII, потому что native шрифт кадра поддерживает только его;
+/// русская легенда цветов и меток находится в <c>summary.md</c> (<see cref="Legend"/>).
 /// </summary>
 internal static class AgentDebugAnnotations
 {
+    /// <summary>Русская легенда меток JPEG для <c>summary.md</c>: на самом изображении кириллица недоступна.</summary>
+    internal static readonly IReadOnlyList<string> Legend =
+    [
+        "зелёная рамка — `Unique`; оранжевая пунктирная — `Ambiguous` (подпись: ассет, статус, score `s`, margin `m`, mae `e`)",
+        "серая пунктирная рамка — ROI ассетов действия; голубая рамка — безопасная область ввода",
+        "жёлтый кружок и пунктир — `tap_planned` (кандидат); оранжевый крест — `tap_permitted` и `tap_attempted`",
+        "красная точка — `tap_completed` (ADB вернул exit 0, переход UI не доказан); пурпурный крест — `tap_not_issued` или `tap_result_unproven`",
+        "`no_box: <ассет>:<статус>` — ассеты без рамки: `Absent` и недоказанные признаки не считаются наблюдённым объектом",
+        "шапка: номер кадра, `frameId`, время, размер, длительность capture/ADB, `state=<правило>/<состояние>`, `viewport`, `op`; "
+            + "`source=…`, `postcondition=proven|unchanged` и `rejected=…` показывают роль кадра в действии",
+    ];
+
     private const int TextScale = 38;
     private const int LineHeight = 15;
 
@@ -667,12 +703,10 @@ internal static class AgentDebugAnnotations
         if (unobserved.Count > 0)
         {
             // Absent/недоказанное перечисляется подписью: геометрически наблюдённым объектом оно не является.
-            footer.AddRange(Wrap("not drawn: " + string.Join(" ", unobserved)).Take(4));
+            footer.AddRange(Wrap("no_box: " + string.Join(" ", unobserved)).Take(4));
         }
 
-        footer.Add("legend: green=Unique orange-dash=Ambiguous gray-dash=ROI");
-        footer.Add("cyan=safe area yellow-o=candidate orange-x=permitted/attempted");
-        footer.Add("red-dot=TAP ISSUED magenta-x=tap not issued/unproven");
+        footer.Add("legend=summary.md");
         AddPanel(panels, footer, GameGeometry.LogicalHeight - 6 - (footer.Count * LineHeight), 230, 230, 230);
         List<NativeFrameAnnotation> ordered = [.. panels, .. result];
         return ordered.Count > AzurPilotNativeBridge.MaximumAnnotations

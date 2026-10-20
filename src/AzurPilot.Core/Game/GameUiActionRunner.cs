@@ -220,7 +220,7 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock, IGa
             attempted = true;
             progress.MutationAttempted = true;
             progress.TapAttempts++;
-            GameTap permit = new(before.Frame, action.SourceAssetId, safe, point.Value, action.MaximumObservationAge);
+            GameTap permit = new(before.Frame, action.Id, action.SourceAssetId, safe, point.Value, action.MaximumObservationAge);
             sink.Emit(() => new("tap_permitted", _clock.GetTimestamp())
             {
                 ActionId = action.Id,

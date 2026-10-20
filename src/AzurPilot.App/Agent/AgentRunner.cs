@@ -21,8 +21,15 @@ internal static class AgentRunner
     }
 
     // Тестовая граница получает debug-прогон до сборки хоста; workingDirectory заменяет только поиск корня checkout.
-    internal static async Task<AgentRunResult> RunWithDebugAsync(string[] args, Func<AgentDebugRun?, HostRunner>? hostFactory,
+    internal static Task<AgentRunResult> RunWithDebugAsync(string[] args, Func<AgentDebugRun?, HostRunner>? hostFactory,
         string? workingDirectory = null, CancellationToken cancellationToken = default)
+    {
+        return RunWithDebugAsync(args, hostFactory, workingDirectory, null, cancellationToken);
+    }
+
+    // Пороги сессии заменяют значения по умолчанию только в тестах границ допуска.
+    internal static async Task<AgentRunResult> RunWithDebugAsync(string[] args, Func<AgentDebugRun?, HostRunner>? hostFactory,
+        string? workingDirectory, AgentDebugSessionLimits? sessionLimits, CancellationToken cancellationToken)
     {
         string correlationId = Guid.NewGuid().ToString("N");
         string? operation = null;
@@ -50,7 +57,7 @@ internal static class AgentRunner
             {
                 // Отчёт создаётся только по явному аргументу и до runtime: отказ записи не порождает эффектов.
                 ApplicationResult<AgentDebugRun> created = AgentDebugRun.Create(session, correlationId, operation, requestedTarget,
-                    ManifestArguments(args), request.TimeoutMilliseconds, TimeProvider.System, workingDirectory);
+                    ManifestArguments(args), request.TimeoutMilliseconds, TimeProvider.System, workingDirectory, sessionLimits);
                 if (created.IsFailure)
                 {
                     return new(AgentJson.Envelope(correlationId, operation, null, new(null, created.FailureInfo), requestedTarget), null);
