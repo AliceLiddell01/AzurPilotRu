@@ -83,6 +83,8 @@ public sealed class AzurPilotConfigurationScreenshotIntervalsTests
             directory.YamlConfigurationFilePath, directory.LegacyJsonConfigurationFilePath, version, 75, 300, out string? backupPath);
 
         Assert.True(saved.IsFailure);
+        Assert.Equal(ApplicationFailure.ConfigurationInvalid, saved.FailureInfo!.Code);
+        Assert.Contains("изменилась после проверки", saved.FailureInfo.Message, StringComparison.Ordinal);
         Assert.Null(backupPath);
         Assert.Equal(changed, File.ReadAllText(directory.YamlConfigurationFilePath));
     }
@@ -103,6 +105,7 @@ public sealed class AzurPilotConfigurationScreenshotIntervalsTests
             75, 300, out _, files);
 
         Assert.True(saved.IsFailure);
+        Assert.Equal(ApplicationFailure.ConfigurationInvalid, saved.FailureInfo!.Code);
         Assert.Contains("диск недоступен", saved.FailureInfo!.Message, StringComparison.Ordinal);
         Assert.Equal(original, File.ReadAllBytes(directory.YamlConfigurationFilePath));
         Assert.Equal(["config.yaml"], directory.FileNames());
@@ -126,6 +129,8 @@ public sealed class AzurPilotConfigurationScreenshotIntervalsTests
         ApplicationResult<AzurPilotConfigurationSnapshot> rejected = AzurPilotConfigurationStore.SaveScreenshotIntervals(
             legacy.YamlConfigurationFilePath, legacy.LegacyJsonConfigurationFilePath, snapshot.Value!.SourceVersion, 75, 300, out _);
         Assert.True(rejected.IsFailure);
+        Assert.Equal(ApplicationFailure.ConfigurationInvalid, rejected.FailureInfo!.Code);
+        Assert.Contains("legacy JSON", rejected.FailureInfo.Message, StringComparison.Ordinal);
         Assert.False(File.Exists(legacy.YamlConfigurationFilePath));
     }
 

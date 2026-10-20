@@ -75,8 +75,8 @@ logging:
 | `logging.viewer.enabled` | да | булево: ровно `true` или `false` без кавычек | — |
 | `screenshot` | нет | блочный mapping | `AzurPilotConfigurationDefaults` |
 | `screenshot.method` | нет | `auto` или точное имя транспорта из `ScreenshotMethodNames` | `AzurPilotConfigurationDefaults` |
-| `screenshot.normalIntervalMs` | нет | целое число в границах `ScreenshotConfiguration` (1…300) | `AzurPilotConfigurationDefaults` |
-| `screenshot.combatIntervalMs` | нет | целое число в границах `ScreenshotConfiguration` (1…1000) | `AzurPilotConfigurationDefaults` |
+| `screenshot.normalIntervalMs` | нет | целое число в границах `ScreenshotConfiguration` | `AzurPilotConfigurationDefaults` |
+| `screenshot.combatIntervalMs` | нет | целое число в границах `ScreenshotConfiguration` | `AzurPilotConfigurationDefaults` |
 
 Смысл ключей:
 
