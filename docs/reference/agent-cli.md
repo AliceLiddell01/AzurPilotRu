@@ -177,8 +177,30 @@ OCR, распознавание игрового экрана или UI readines
 дополнительных ADB-команд и скрытого connect диагностика не выполняет.
 
 PNG-export этим интерфейсом не реализован. Encoded PNG и native RGB frame не передаются в
-JSON/base64/stdout. Единственный файловый артефакт — явно запрошенный debug-отчёт (ниже); discovery
-описывает его в `artifacts`.
+JSON/base64/stdout. Файловые артефакты — явно запрошенный debug-отчёт (ниже; discovery описывает его в
+`artifacts`) и локальные отчёты команд измерения транспортов.
+
+Native-компоненты (например, DLL эмулятора для `nemu_ipc`) могут писать диагностику в CRT stdout. Процесс
+Agent CLI до запуска хоста перенаправляет fd 1 и `STD_OUTPUT_HANDLE` в NUL и пишет envelope в сохранённый
+дубликат исходного stdout, поэтому stdout по-прежнему содержит ровно один JSON.
+
+## Транспорты снимков
+
+Выбор транспорта захвата прозрачен для остальных команд; архитектура, статусы и правила выбора —
+[транспорты снимков](../architecture/screenshot-transports.md).
+
+| Команда | Mutation | Назначение |
+| --- | --- | --- |
+| `capture-methods` | нет | Матрица девяти транспортов, настройка `screenshot`, калибровка `auto` для отпечатка target, проверка SHA-256 закреплённых зависимостей. Без захвата. |
+| `capture-probe` | да | Worker одного транспорта (`--method`, `--samples`): эталон ADB, серия, освобождение. Сцену не проверяет; используется `capture-benchmark`. |
+| `capture-benchmark` | да | Все или `--methods` транспорты на доказанном главном экране в отдельных worker-процессах, выбор, калибровка `auto` (`--calibrate`, по умолчанию `true`), опционально `--debug-overhead`. |
+| `capture-intervals` | да | `--scene normal` на главном экране → `AWAITING_USER_COMBAT_CONFIRMATION` с кодом; `--scene combat --confirm <код>` той же `--session` после ручного входа пользователя в бой. |
+
+Mutation-эффект измерений — временные helper-ы, forward/reverse и файлы в `/data/local/tmp/azurpilot-capture`;
+helper-ы и порты освобождаются, поэтому `effect` = `mayHaveChanged` для не-ADB методов. Ввода в игру нет.
+Отчёты пишутся в `.codex/local/reports/capture-benchmark/<run-id>/` и
+`.codex/local/reports/capture-intervals/<session>/` текущего checkout; кадры в них не сохраняются. В envelope —
+краткая сводка, полный набор измерений — в отчёте. Аргументы и типы публикует `discover`.
 
 ## Debug Mode
 
