@@ -440,7 +440,7 @@ public sealed partial class AzurPilotOperatorServiceTests
         AzurPilotOperatorScreenshotAnalysis analysis = result.Value!;
         Assert.Equal(selectedId, analysis.Capture.InstanceId);
         Assert.Equal(selectedEndpoint, analysis.Capture.Endpoint);
-        Assert.Equal(png.Length, analysis.Capture.EncodedPngByteCount);
+        Assert.Equal(png.Length, analysis.Capture.AdbPng!.EncodedPngByteCount);
         Assert.Equal(
             new NativeFrameInfo(16, 9, 48, 432, AzurPilotNativeBridge.PixelFormatRgb8),
             analysis.Capture.FrameInfo);

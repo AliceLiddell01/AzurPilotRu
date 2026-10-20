@@ -41,6 +41,28 @@ std::int32_t decode_png_frame(
     AzurPilotNativeFrameOpaque** out_frame,
     std::uint64_t maximum_pixels = AZURPILOT_NATIVE_MAX_FRAME_PIXELS);
 
+/* Проверяет пределы кадра RGB8 и вычисляет его шаг строки и длину буфера. */
+bool rgb8_size_is_bounded(
+    std::uint32_t width,
+    std::uint32_t height,
+    std::uint32_t& stride_bytes,
+    std::uint32_t& byte_length) noexcept;
+
+/* Передаёт непрерывный CV_8UC3 RGB в новый кадр DLL после проверки размеров и пределов.
+ * Не перехватывает исключения C++: это делает граница C ABI. */
+std::int32_t adopt_rgb_frame(cv::Mat rgb, AzurPilotNativeFrameOpaque** out_frame);
+
+/* Преобразует сырые пиксели AZURPILOT_NATIVE_SOURCE_* в новый кадр RGB8 (frame_sources.cpp). */
+std::int32_t convert_pixels_to_frame(
+    const std::uint8_t* pixels,
+    std::uint32_t size,
+    std::uint32_t width,
+    std::uint32_t height,
+    std::uint32_t stride_bytes,
+    std::uint32_t source_format,
+    std::uint32_t flags,
+    AzurPilotNativeFrameOpaque** out_frame);
+
 /* Возвращает OK только при согласованности пикселей и неизменяемых метаданных. */
 std::int32_t get_frame_info(
     AzurPilotNativeFrameHandle frame,

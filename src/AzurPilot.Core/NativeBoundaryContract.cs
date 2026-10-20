@@ -38,10 +38,10 @@ public sealed record NativeBoundaryCompatibility(bool IsCompatible, string Reaso
 public sealed class NativeBoundaryContract
 {
     /// <summary>Ожидаемая версия ABI native библиотеки.</summary>
-    public const uint ExpectedAbiVersion = 5;
+    public const uint ExpectedAbiVersion = 6;
 
     /// <summary>Строковое представление ожидаемой версии ABI — значение из заголовка ABI.</summary>
-    public const string ExpectedAbiVersionString = "5";
+    public const string ExpectedAbiVersionString = "6";
 
     /// <summary>Канонический экземпляр контракта фундамента.</summary>
     public static NativeBoundaryContract Canonical { get; } = new();

@@ -7,7 +7,8 @@ namespace AzurPilot.Core.Game;
 /// <summary>Одно действие: свежее распознавание → проверка ввода → нажатие → отдельное наблюдение эффекта с ограничением времени.</summary>
 public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock, IGameUiTrace? trace = null)
 {
-    private static readonly TimeSpan PostconditionInterval = TimeSpan.FromMilliseconds(150);
+    /// <summary>Период start→start наблюдения постусловия по умолчанию (<c>screenshot.normalIntervalMs</c>).</summary>
+    public static readonly TimeSpan DefaultPostconditionInterval = TimeSpan.FromMilliseconds(150);
     private readonly TimeProvider _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     private GameUiMeter? _meter;
 
@@ -15,6 +16,14 @@ public sealed class GameUiActionRunner(IGameUiHost host, TimeProvider clock, IGa
     {
         _meter = meter;
     }
+
+    /// <summary>Период start→start наблюдения постусловия; задаётся настройкой обычного интервала снимков.</summary>
+    public TimeSpan PostconditionInterval
+    {
+        get;
+        init => field = value > TimeSpan.Zero ? value
+            : throw new ArgumentOutOfRangeException(nameof(value), value, "Интервал наблюдения должен быть положительным.");
+    } = DefaultPostconditionInterval;
 
     /// <summary>Выполняет переход под арендой вызывающего операторского сервиса.</summary>
     public Task<GameActionOutcome> RunAsync(MuMuInstanceId instanceId, AndroidEndpoint endpoint,

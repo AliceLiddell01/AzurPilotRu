@@ -5,7 +5,7 @@ using AzurPilot.Core.MuMu;
 
 namespace AzurPilot.App.Agent;
 
-internal sealed class AgentContext(AzurPilotOperatorService? service)
+internal sealed partial class AgentContext(AzurPilotOperatorService? service)
 {
     internal AzurPilotOperatorService Service => service
         ?? throw new InvalidOperationException("Discovery не имеет runtime services.");

@@ -89,6 +89,9 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
     Func<string, GameUiAction> getAction, TimeProvider clock, IGameUiTrace? trace = null)
 {
     private static readonly TimeSpan MaximumAge = TimeSpan.FromSeconds(12);
+
+    /// <summary>Период наблюдения постусловия переходов, выполняемых при ensure.</summary>
+    public TimeSpan ActionPostconditionInterval { get; init; } = GameUiActionRunner.DefaultPostconditionInterval;
     private static readonly TimeSpan Stability = TimeSpan.FromSeconds(1.5);
     // Минимальный интервал между началами захватов: медленный захват не дополняется лишней паузой.
     private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(500);
@@ -340,7 +343,10 @@ public sealed class GameUiReadinessService(IGameUiHost host, GameUiReadinessPoli
                     }
 
                     meter.Enter(GameUiReadinessPolicy.ActionPhase(actionId), clock.GetTimestamp());
-                    GameActionOutcome action = await new GameUiActionRunner(meter, host).RunAsync(target, endpoint,
+                    GameActionOutcome action = await new GameUiActionRunner(meter, host)
+                    {
+                        PostconditionInterval = ActionPostconditionInterval,
+                    }.RunAsync(target, endpoint,
                         getAction(actionId), mutation, last, cancellationToken).ConfigureAwait(false);
                     actions.Add(action);
                     if (!action.ChangeProven)

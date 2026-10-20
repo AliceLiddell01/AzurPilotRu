@@ -38,7 +38,10 @@ public sealed class AndroidHostCompositionTests
         _ = Assert.IsType<AndroidWindowsHost>(androidHost);
         Assert.Same(androidHost, services.GetRequiredService<IAndroidHost>());
         Assert.Same(androidHost, services.GetRequiredService<AndroidWindowsHost>());
-        Assert.Same(androidHost, services.GetRequiredService<IAndroidScreenshotHost>());
+        // Захват снимков принадлежит одному маршрутизатору транспортов поверх того же Android host.
+        IAndroidScreenshotHost screenshots = services.GetRequiredService<IAndroidScreenshotHost>();
+        _ = Assert.IsType<AzurPilot.Windows.Capture.ScreenshotCaptureRouter>(screenshots);
+        Assert.Same(screenshots, services.GetRequiredService<IAndroidScreenshotHost>());
 
         // Граница запуска процесса остаётся одной реализацией, но у Android-возможности она подключена со
         // своей проекцией отказов: смысл отказов принадлежит владельцу возможности.

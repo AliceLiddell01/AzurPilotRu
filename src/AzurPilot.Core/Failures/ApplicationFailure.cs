@@ -87,6 +87,9 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
     /// <summary>Код отказа: exact-target screenshot не получен как полный допустимый PNG.</summary>
     public const string AndroidScreenshotCaptureFailed = "android_screenshot_capture_failed";
 
+    /// <summary>Код отказа: явно выбранный транспорт снимка неприменим к экземпляру по наблюдённому основанию.</summary>
+    public const string ScreenshotMethodUnsupported = "screenshot_method_unsupported";
+
     /// <summary>Код отказа: геометрию кадра нельзя отобразить для именованного региона.</summary>
     public const string DiagnosticRegionUnsupported = "diagnostic_region_unsupported";
 
@@ -180,6 +183,7 @@ public sealed record ApplicationFailure : IEquatable<ApplicationFailure>
             NativeIncompatible,
             NativeFrameInvalid,
             AndroidScreenshotCaptureFailed,
+            ScreenshotMethodUnsupported,
             DiagnosticRegionUnsupported,
             NativeFrameAnalysisFailed,
             GameUiActionRejected,

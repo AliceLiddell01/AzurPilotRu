@@ -47,7 +47,10 @@ public sealed class GameUiWindowsHost(IAndroidScreenshotHost screenshots, IAndro
 
             return ApplicationResult<GameUiObservation>.Success(observation with
             {
-                Cost = new(captureDuration, capture.Info.CommandDuration, _clock.GetElapsedTime(matchStarted)),
+                Cost = new(captureDuration, capture.Info.Timing.Acquisition, _clock.GetElapsedTime(matchStarted))
+                {
+                    CaptureMethod = Core.Capture.ScreenshotMethodNames.ToName(capture.Info.Method),
+                },
             });
         }
         catch (AzurPilotNativeBoundaryException exception)

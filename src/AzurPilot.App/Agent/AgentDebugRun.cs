@@ -392,7 +392,7 @@ internal sealed class AgentDebugRun : IDisposable
         });
     }
 
-    private static string? FindCheckoutRoot(string start)
+    internal static string? FindCheckoutRoot(string start)
     {
         for (DirectoryInfo? directory = new(Path.GetFullPath(start)); directory is not null; directory = directory.Parent)
         {
@@ -511,7 +511,7 @@ internal sealed class AgentDebugRun : IDisposable
         {
             formatVersion = FormatVersion,
             runId = RunId,
-            nesting = "observe включает capture, распознавание и создание превью; capture включает ADB-команду и decode/проверку; "
+            nesting = "observe включает capture, распознавание и создание превью; capture включает получение данных транспортом (для ADB — команду) и decode/проверку; "
                 + "превью — диагностическая работа внутри observe, но вне capture и match; рендер и запись JPEG выполняются в фоне.",
             production = new
             {
@@ -522,8 +522,10 @@ internal sealed class AgentDebugRun : IDisposable
                     failures = counters.CaptureFailures,
                     totalMs = Math.Round(frames.Sum(f => f.CaptureMs), 1),
                     maxMs = frames.Count == 0 ? 0 : frames.Max(f => f.CaptureMs),
-                    adbCommandMs = Math.Round(frames.Sum(f => f.CommandMs), 1),
+                    adbCommandMs = Math.Round(frames.Where(f => f.Method == "ADB").Sum(f => f.CommandMs), 1),
+                    acquisitionMs = Math.Round(frames.Sum(f => f.CommandMs), 1),
                     decodeAndValidateMs = Math.Round(frames.Sum(f => Math.Max(0, f.CaptureMs - f.CommandMs)), 1),
+                    methods = frames.GroupBy(f => f.Method).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal),
                 },
                 perCapture = frames.Select(f => new
                 {
@@ -532,9 +534,12 @@ internal sealed class AgentDebugRun : IDisposable
                     frameId = f.FrameId?.ToString("N"),
                     capturedAtMs = f.CapturedAtMs,
                     captureMs = f.CaptureMs,
-                    adbCommandMs = f.CommandMs,
+                    method = f.Method,
+                    adbCommandMs = f.Method == "ADB" ? f.CommandMs : (double?)null,
+                    acquisitionMs = f.CommandMs,
                     decodeAndValidateMs = Math.Round(Math.Max(0, f.CaptureMs - f.CommandMs), 1),
                     pngBytes = f.PngBytes,
+                    payloadBytes = f.PayloadBytes,
                     previewMs = f.PreviewMs,
                 }),
                 calls = metrics,
@@ -690,7 +695,7 @@ internal sealed class AgentDebugRun : IDisposable
         };
     }
 
-    private static object Build()
+    internal static object Build()
     {
         string baseDirectory = AppContext.BaseDirectory;
         uint? abi = null;
@@ -723,7 +728,7 @@ internal sealed class AgentDebugRun : IDisposable
         };
     }
 
-    private static (string? Head, string? Branch) GitHead(string root)
+    internal static (string? Head, string? Branch) GitHead(string root)
     {
         try
         {

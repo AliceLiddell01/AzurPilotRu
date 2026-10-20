@@ -34,6 +34,24 @@ internal static class AgentArgumentTypes
             {
                 MaximumLength = AgentDebugRun.MaximumSessionLength,
             },
+            ["screenshot-methods"] = new("string", "all либо список точных имён транспортов через запятую без пробелов: "
+                + string.Join(", ", Core.Capture.ScreenshotMethodNames.All.Select(Core.Capture.ScreenshotMethodNames.ToName)) + ".",
+                AgentCaptureArguments.IsValidMethods, Pattern: "^(all|[A-Za-z0-9_]+(,[A-Za-z0-9_]+)*)$"),
+            ["screenshot-method"] = new("string", "Ровно одно точное имя транспорта.",
+                value => Core.Capture.ScreenshotMethodNames.TryParse(value, out _), Pattern: "^[A-Za-z0-9_]+$"),
+            ["benchmark-profile"] = new("string", "short (20–30 снимков), full (100–300), stress (до 1000).",
+                value => value is "short" or "full" or "stress", Pattern: "^(short|full|stress)$"),
+            ["capture-scene"] = new("string", "normal — доказанный главный экран; combat — бой, открытый пользователем вручную.",
+                value => value is "normal" or "combat", Pattern: "^(normal|combat)$"),
+            ["sample-count"] = new("integer", "Число снимков серии: 1..1000.",
+                value => int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int parsed)
+                    && parsed is >= 1 and <= 1000, 1, 1000, "^[0-9]+$"),
+            ["boolean"] = new("string", "true или false.", value => value is "true" or "false", Pattern: "^(true|false)$"),
+            ["confirmation-code"] = new("string", "Одноразовый код подтверждения боевой фазы: 8 заглавных букв и цифр.",
+                value => value.Length == 8 && value.All(c => c is (>= 'A' and <= 'Z') or (>= '0' and <= '9')),
+                Pattern: "^[A-Z0-9]{8}$"),
+            ["interval-grid"] = new("string", "Список интервалов в миллисекундах через запятую (1..1000, до 16 значений).",
+                AgentCaptureArguments.IsValidGrid, Pattern: "^[0-9]+(\\.[0-9]+)?(,[0-9]+(\\.[0-9]+)?)*$"),
             ["absolute-path"] = new("string", "Полностью квалифицированный путь Windows: корень диска либо UNC; существование файла не требуется. Относительные пути и пути от текущего диска отклоняются.",
                 Path.IsPathFullyQualified, Platform: "windows", FullyQualified: true),
         };

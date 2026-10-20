@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "dependencies": [
+    {
+      "id": "scrcpy-server",
+      "version": "5.0.1",
+      "file": "scrcpy-server-v5.0.1",
+      "url": "https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-server-v5.0.1",
+      "sha256": "764EB6F79811D5211FE9DF341120882BA9994C7A61B897D7BF3FB662E53BC536",
+      "license": "Apache-2.0",
+      "source": "https://github.com/Genymobile/scrcpy"
+    },
+    {
+      "id": "uiautomator2-server",
+      "version": "0.4.0",
+      "file": "u2.jar",
+      "url": "https://github.com/openatx/android-uiautomator-server-jar/releases/download/0.4.0/u2.jar",
+      "sha256": "0B74E83C55F443539A9F76F5CE023A51466B764B1100E4097A897053FDFC0EB6",
+      "license": "MIT",
+      "source": "https://github.com/openatx/android-uiautomator-server-jar"
+    },
+    {
+      "id": "droidcast-raw",
+      "version": "1.1",
+      "file": "DroidCast_raw-release-1.1.apk",
+      "url": "https://github.com/Torther/DroidCast_raw/releases/download/v1.1/DroidCast_raw-release-1.1.apk",
+      "sha256": "DDFE8EF2DD79F7E2D5EB18C76EAE1437C270955DDF4BC2844B413F2A872F42CC",
+      "license": "Apache-2.0",
+      "source": "https://github.com/Torther/DroidCast_raw"
+    },
+    {
+      "id": "ascreencap-5-x86_64",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-5-x86_64",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/5/x86_64/ascreencap",
+      "sha256": "2DF34046AFF637FB3D066B76B1AFBC7A99EAFC5621DDD26FD76CA4B49FD4E528",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    },
+    {
+      "id": "ascreencap-5-arm64-v8a",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-5-arm64-v8a",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/5/arm64-v8a/ascreencap",
+      "sha256": "3622F8A05617CC615D7FD43F16B3E15898C980C7C21F848332C4E95C39272694",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    },
+    {
+      "id": "ascreencap-5-x86",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-5-x86",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/5/x86/ascreencap",
+      "sha256": "03F2292066C6BFF119ADCEB86E2530C530E74608C9771125226B3D081604868D",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    },
+    {
+      "id": "ascreencap-5-armeabi-v7a",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-5-armeabi-v7a",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/5/armeabi-v7a/ascreencap",
+      "sha256": "B3CE1AFBED680C25BB8385567287DB8F03D88888058F20E86B0D52A0D643834A",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    },
+    {
+      "id": "ascreencap-8-x86_64",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-8-x86_64",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/8/x86_64/ascreencap",
+      "sha256": "5D7EE8D6D2B5965DBE8F82D544002E0534D563F3FA296EAC46A76894A98029C2",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    },
+    {
+      "id": "ascreencap-8-arm64-v8a",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-8-arm64-v8a",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/8/arm64-v8a/ascreencap",
+      "sha256": "07DE65D443695EA1746ED50171CD3516AFE4119C312DEEECA0906EF7A256D8D9",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    },
+    {
+      "id": "ascreencap-8-x86",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-8-x86",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/8/x86/ascreencap",
+      "sha256": "48315C025E172387E0920BA8A8F16BAB160E2E9AB1B9CD686A2B1ACD9CB6714B",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    },
+    {
+      "id": "ascreencap-8-armeabi-v7a",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-8-armeabi-v7a",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/8/armeabi-v7a/ascreencap",
+      "sha256": "8279380FD1076264076B4F55F93F27C64F9A79EF0BB079677DC278659E5D9446",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    },
+    {
+      "id": "ascreencap-9-x86_64",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-9-x86_64",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/9/x86_64/ascreencap",
+      "sha256": "B782481D62D137A64C9C5D844F2E0D92353B63EE9CF74A8674CC5B9BD360BE95",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    },
+    {
+      "id": "ascreencap-9-arm64-v8a",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-9-arm64-v8a",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/9/arm64-v8a/ascreencap",
+      "sha256": "C1AFE696CEE8BC7C2DA9A5B99F2609E771E409AB9FFF473B2D68C9D86059D4E8",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    },
+    {
+      "id": "ascreencap-9-x86",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-9-x86",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/9/x86/ascreencap",
+      "sha256": "9915B910FC08F80EFEA9BAA88537161A3C1B16A5A92A2AC79DDC680DE4B6AAE7",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    },
+    {
+      "id": "ascreencap-9-armeabi-v7a",
+      "version": "680f701f5575cfca4cc6209d0e504fe073c1c3f5",
+      "file": "ascreencap-9-armeabi-v7a",
+      "url": "https://raw.githubusercontent.com/ClnViewer/Android-fast-screen-capture/680f701f5575cfca4cc6209d0e504fe073c1c3f5/dist/9/armeabi-v7a/ascreencap",
+      "sha256": "33BDE315E3DEEF0D9691FA15C0936DF40AD4EB23FF7FC7825C3F75EBD1F596CE",
+      "license": "MIT",
+      "source": "https://github.com/ClnViewer/Android-fast-screen-capture"
+    }
+  ]
+}

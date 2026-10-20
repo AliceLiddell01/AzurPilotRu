@@ -78,7 +78,12 @@ internal static class AgentRunner
                     ?? ((run, token) => AzurPilotHost.RunAgentAsync(run, request.ConfigurationPath, token, observed));
                 payload = await runHost(async (service, token) =>
                 {
-                    context = new AgentContext(service);
+                    context = new AgentContext(service)
+                    {
+                        Options = request.Options ?? new Dictionary<string, string>(StringComparer.Ordinal),
+                        TimeoutMilliseconds = request.TimeoutMilliseconds,
+                        ConfigurationPath = request.ConfigurationPath,
+                    };
                     token.ThrowIfCancellationRequested();
                     if (request.Command.Target)
                     {

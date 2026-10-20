@@ -55,6 +55,19 @@ internal static class AzurPilotConfigurationYamlWriter
         _ = document.Append("    enabled: ")
             .Append(configuration.Logging.Viewer.Enabled ? "true" : "false")
             .Append(NewLine);
+        // Секция необязательна: значения по умолчанию не дописываются, поэтому существующие профили и миграция
+        // не меняются только из-за появления настройки транспорта.
+        if (configuration.Screenshot != AzurPilotConfigurationDefaults.Create().Screenshot)
+        {
+            _ = document.Append("screenshot:").Append(NewLine);
+            _ = document.Append("  method: ").Append(Scalar(configuration.Screenshot.Method)).Append(NewLine);
+            _ = document.Append("  normalIntervalMs: ")
+                .Append(configuration.Screenshot.NormalIntervalMilliseconds.ToString(CultureInfo.InvariantCulture))
+                .Append(NewLine);
+            _ = document.Append("  combatIntervalMs: ")
+                .Append(configuration.Screenshot.CombatIntervalMilliseconds.ToString(CultureInfo.InvariantCulture))
+                .Append(NewLine);
+        }
 
         return document.ToString();
     }

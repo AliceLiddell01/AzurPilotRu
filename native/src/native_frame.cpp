@@ -274,6 +274,40 @@ AzurPilotNativeFrameOpaque::~AzurPilotNativeFrameOpaque() noexcept {
 
 namespace azurpilot::native::detail {
 
+bool rgb8_size_is_bounded(
+    std::uint32_t width,
+    std::uint32_t height,
+    std::uint32_t& stride_bytes,
+    std::uint32_t& byte_length) noexcept {
+    return decoded_size_is_bounded(width, height, stride_bytes, byte_length);
+}
+
+std::int32_t adopt_rgb_frame(cv::Mat rgb, AzurPilotNativeFrameOpaque** out_frame) {
+    if (out_frame == nullptr) {
+        return AZURPILOT_NATIVE_ERROR_INVALID_ARGUMENT;
+    }
+    *out_frame = nullptr;
+    if (rgb.empty() || rgb.cols <= 0 || rgb.rows <= 0) {
+        return AZURPILOT_NATIVE_ERROR_INTERNAL;
+    }
+
+    std::uint32_t stride = 0u;
+    std::uint32_t byte_length = 0u;
+    const auto width = static_cast<std::uint32_t>(rgb.cols);
+    const auto height = static_cast<std::uint32_t>(rgb.rows);
+    if (!decoded_size_is_bounded(width, height, stride, byte_length)) {
+        return AZURPILOT_NATIVE_ERROR_IMAGE_TOO_LARGE;
+    }
+    if (rgb.type() != CV_8UC3 || !rgb.isContinuous() || rgb.step[0] != stride
+        || rgb.total() * rgb.elemSize() != byte_length) {
+        return AZURPILOT_NATIVE_ERROR_INTERNAL;
+    }
+
+    auto frame = std::make_unique<AzurPilotNativeFrameOpaque>(std::move(rgb), width, height, stride, byte_length);
+    *out_frame = frame.release();
+    return AZURPILOT_NATIVE_OK;
+}
+
 std::int32_t decode_png_frame(
     const std::uint8_t* png_bytes,
     std::uint32_t png_size,

@@ -4,6 +4,7 @@
        автоматически; Content передаётся также проектам-потребителям Windows boundary. -->
   <PropertyGroup>
     <_AzurPilotRuntimeDirectory>$(MSBuildThisFileDirectory)artifacts/native/runtime/$(Configuration)</_AzurPilotRuntimeDirectory>
+    <_AzurPilotCaptureDirectory>$(MSBuildThisFileDirectory)artifacts/native/capture</_AzurPilotCaptureDirectory>
     <_AzurPilotAbiMismatchFixture>$(MSBuildThisFileDirectory)artifacts/native/abi-mismatch/$(Configuration)/AzurPilot.Native.dll</_AzurPilotAbiMismatchFixture>
     <_AzurPilotAbiV3MissingReleaseFixture>$(MSBuildThisFileDirectory)artifacts/native/abi-v3-missing-release/$(Configuration)/AzurPilot.Native.dll</_AzurPilotAbiV3MissingReleaseFixture>
     <_AzurPilotAbiV3MissingRoiFixture>$(MSBuildThisFileDirectory)artifacts/native/abi-v3-missing-roi/$(Configuration)/AzurPilot.Native.dll</_AzurPilotAbiV3MissingRoiFixture>
@@ -24,6 +25,16 @@
     <ItemGroup>
       <Content Include="$(_AzurPilotRuntimeDirectory)/*.dll;$(_AzurPilotRuntimeDirectory)/*.pdb"
                Link="%(Filename)%(Extension)"
+               CopyToOutputDirectory="PreserveNewest"
+               CopyToPublishDirectory="PreserveNewest"
+               Visible="false" />
+    </ItemGroup>
+    <!-- Закреплённые device-side зависимости транспортов снимков; runtime сверяет их SHA256 с manifest. -->
+    <Error Condition="!Exists('$(_AzurPilotCaptureDirectory)/capture-dependencies.json')"
+           Text="Не найдены зависимости транспортов снимков: $(_AzurPilotCaptureDirectory). Выполните CMake workflow preset native-x64-release или native-x64-debug из каталога native." />
+    <ItemGroup>
+      <Content Include="$(_AzurPilotCaptureDirectory)/*"
+               Link="capture/%(Filename)%(Extension)"
                CopyToOutputDirectory="PreserveNewest"
                CopyToPublishDirectory="PreserveNewest"
                Visible="false" />

@@ -52,7 +52,11 @@ internal static class AzurPilotYamlConfigurationReader
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
 
-    private static readonly string[] RootKeys = ["schemaVersion", "ui", "mumu", "diagnostics", "logging"];
+    private static readonly string[] RootKeys = ["schemaVersion", "ui", "mumu", "diagnostics", "logging", "screenshot"];
+
+    private static readonly string[] RequiredRootKeys = ["schemaVersion", "ui", "mumu", "diagnostics", "logging"];
+
+    private static readonly string[] ScreenshotKeys = ["method", "normalIntervalMs", "combatIntervalMs"];
 
     private static readonly string[] UiKeys = ["mode"];
 
@@ -365,7 +369,7 @@ internal static class AzurPilotYamlConfigurationReader
                     $"YAML-документ описывает только схему {AzurPilotConfiguration.CurrentSchemaVersion}"));
         }
 
-        ApplicationResult<bool> rootShape = ValidateKeys(root, RootKeys, RootKeys, RootLocation, path);
+        ApplicationResult<bool> rootShape = ValidateKeys(root, RootKeys, RequiredRootKeys, RootLocation, path);
         if (rootShape.IsFailure)
         {
             return ApplicationResult<AzurPilotConfiguration>.Failure(rootShape.FailureInfo!);
@@ -459,8 +463,21 @@ internal static class AzurPilotYamlConfigurationReader
             minimumLevel = readMinimumLevel.Value;
         }
 
+        ScreenshotConfiguration screenshot = defaults.Screenshot;
+        if (root.Contains("screenshot"))
+        {
+            ApplicationResult<ScreenshotConfiguration> readScreenshot = ReadScreenshot(root, defaults.Screenshot, path);
+            if (readScreenshot.IsFailure)
+            {
+                return ApplicationResult<AzurPilotConfiguration>.Failure(readScreenshot.FailureInfo!);
+            }
+
+            screenshot = readScreenshot.Value!;
+        }
+
         return ApplicationResult<AzurPilotConfiguration>.Success(defaults with
         {
+            Screenshot = screenshot,
             Ui = defaults.Ui with { Mode = mode.Value! },
             MuMu = defaults.MuMu with { Instance = instance },
             Diagnostics = defaults.Diagnostics with { MinimumLevel = minimumLevel },
@@ -577,6 +594,81 @@ internal static class AzurPilotYamlConfigurationReader
         }
 
         return ApplicationResult<bool>.Success(true);
+    }
+
+    /// <summary>Читает необязательную секцию <c>screenshot</c>; отсутствующие ключи берутся из defaults.</summary>
+    private static ApplicationResult<ScreenshotConfiguration> ReadScreenshot(YamlMapping root,
+        ScreenshotConfiguration defaults, string path)
+    {
+        ApplicationResult<YamlMapping> section = ReadSection(root, "screenshot", "screenshot", ScreenshotKeys,
+            NoRequiredKeys, path);
+        if (section.IsFailure)
+        {
+            return ApplicationResult<ScreenshotConfiguration>.Failure(section.FailureInfo!);
+        }
+
+        ScreenshotConfiguration result = defaults;
+        if (section.Value!.Contains("method"))
+        {
+            ApplicationResult<string> method = ReadString(section.Value!, "method", "screenshot.method", path);
+            if (method.IsFailure)
+            {
+                return ApplicationResult<ScreenshotConfiguration>.Failure(method.FailureInfo!);
+            }
+
+            if (!Capture.ScreenshotMethodNames.TryParseSetting(method.Value, out _))
+            {
+                return Invalid<ScreenshotConfiguration>(
+                    $"значение «screenshot.method» «{method.Value}» недопустимо; допустимы с точным регистром: "
+                    + Capture.ScreenshotMethodNames.DescribeAllowedSettings() + ".",
+                    path);
+            }
+
+            result = result with { Method = method.Value! };
+        }
+
+        foreach ((string key, int maximum) in new[]
+        {
+            ("normalIntervalMs", ScreenshotConfiguration.MaximumNormalIntervalMilliseconds),
+            ("combatIntervalMs", ScreenshotConfiguration.MaximumCombatIntervalMilliseconds),
+        })
+        {
+            if (!section.Value!.Contains(key))
+            {
+                continue;
+            }
+
+            ApplicationResult<int> value = ReadBoundedInteger(section.Value!, key, "screenshot." + key,
+                ScreenshotConfiguration.MinimumIntervalMilliseconds, maximum, path);
+            if (value.IsFailure)
+            {
+                return ApplicationResult<ScreenshotConfiguration>.Failure(value.FailureInfo!);
+            }
+
+            result = key == "normalIntervalMs"
+                ? result with { NormalIntervalMilliseconds = value.Value }
+                : result with { CombatIntervalMilliseconds = value.Value };
+        }
+
+        return ApplicationResult<ScreenshotConfiguration>.Success(result);
+    }
+
+    /// <summary>Читает целое без кавычек в заданных границах.</summary>
+    private static ApplicationResult<int> ReadBoundedInteger(YamlMapping mapping, string key, string location,
+        int minimum, int maximum, string path)
+    {
+        if (!mapping.TryGet(key, out YamlNode? node) || node is not YamlScalar { Style: ScalarStyle.Plain } scalar
+            || !int.TryParse(scalar.Value, NumberStyles.None, CultureInfo.InvariantCulture, out int value))
+        {
+            return Invalid<int>($"значение «{location}» должно быть целым числом миллисекунд без кавычек и знака.", path);
+        }
+
+        if (value < minimum || value > maximum)
+        {
+            return Invalid<int>($"значение «{location}» {value} вне диапазона {minimum}–{maximum} мс.", path);
+        }
+
+        return ApplicationResult<int>.Success(value);
     }
 
     /// <summary>Читает значение <c>ui.mode</c>.</summary>

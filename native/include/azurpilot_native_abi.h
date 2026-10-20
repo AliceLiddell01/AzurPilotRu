@@ -2,7 +2,7 @@
  * azurpilot_native_abi.h — замороженный C ABI между managed (C#) и native (C++) частями AzurPilot.
  *
  * НАЗНАЧЕНИЕ
- *   Единственный владелец формы C ABI версии 5. Managed сторона и native реализация обязаны
+ *   Единственный владелец формы C ABI версии 6. Managed сторона и native реализация обязаны
  *   совпадать побайтово: любое расхождение — ошибка совместимости, а не повод продолжать работу.
  *   Изменение формы (поля, порядок, типы, коды возврата, смысл битов) требует нового номера ABI
  *   и согласованного обновления обеих сторон; обратная совместимость формой не гарантируется.
@@ -44,8 +44,8 @@
 
 /* Версия ABI. Единственный нормативный владелец значения — этот заголовок.
  * Managed и native стороны проверяют совместимость границы до использования данных. */
-#define AZURPILOT_NATIVE_ABI_VERSION 5
-#define AZURPILOT_NATIVE_ABI_VERSION_STRING "5"
+#define AZURPILOT_NATIVE_ABI_VERSION 6
+#define AZURPILOT_NATIVE_ABI_VERSION_STRING "6"
 
 /* Бюджет одного bounded template search. Полный кадр не масштабируется. */
 #define AZURPILOT_NATIVE_MAX_TEMPLATE_PNG_BYTES UINT32_C(262144)
@@ -75,6 +75,15 @@
 #define AZURPILOT_NATIVE_ERROR_IMAGE_TOO_LARGE 7
 /* Не удалось выделить память для декодирования или native-кадра. */
 #define AZURPILOT_NATIVE_ERROR_OUT_OF_MEMORY 8
+/* ABI v6. Внешний поставщик кадра (библиотека эмулятора или системный декодер) недоступен:
+ * файл не загружен, нет обязательного экспорта или компонент Windows не создан. */
+#define AZURPILOT_NATIVE_ERROR_PROVIDER_UNAVAILABLE 9
+/* ABI v6. Внешний поставщик вернул собственный код ошибки; код сообщается отдельным out-параметром. */
+#define AZURPILOT_NATIVE_ERROR_PROVIDER_FAILURE 10
+/* ABI v6. Видеопоток ещё не дал ни одного декодированного кадра. */
+#define AZURPILOT_NATIVE_ERROR_NOT_READY 11
+/* ABI v6. Сырые данные кадра не соответствуют заявленному формату, размерам или сжатию. */
+#define AZURPILOT_NATIVE_ERROR_INVALID_DATA 12
 
 /* Защитные пределы PNG-кадра. Единственный нормативный владелец значений — этот ABI-заголовок.
  * Предел входного PNG ограничивает размер данных для разбора; предел стороны — габариты кадра;
@@ -119,6 +128,40 @@
 
 /* Идентификатор формата поля pixel_format в AzurPilotNativeFrameInfo. */
 #define AZURPILOT_NATIVE_PIXEL_FORMAT_RGB8 UINT32_C(1)
+
+/* Источники кадра захвата (ABI v6). Любой источник даёт тот же непрерывный RGB8-кадр DLL, что и PNG:
+ * одна геометрия, один порядок каналов и один release. Входные байты принадлежат вызывающей стороне
+ * только на время вызова. Альфа-канал сырых форматов отбрасывается: дисплейный буфер не композитится. */
+#define AZURPILOT_NATIVE_SOURCE_RGBA8888 UINT32_C(1)
+#define AZURPILOT_NATIVE_SOURCE_BGRA8888 UINT32_C(2)
+/* 16 бит little-endian: R5 G6 B5 от старшего бита; каналы расширяются повтором старших битов. */
+#define AZURPILOT_NATIVE_SOURCE_RGB565_LE UINT32_C(3)
+#define AZURPILOT_NATIVE_SOURCE_RGB888 UINT32_C(4)
+#define AZURPILOT_NATIVE_SOURCE_BGR888 UINT32_C(5)
+/* Строки источника идут снизу вверх: кадр переворачивается по вертикали. */
+#define AZURPILOT_NATIVE_SOURCE_FLAG_FLIP_VERTICAL UINT32_C(1)
+/* Предел сырого входа: максимум пикселей кадра по 4 байта. */
+#define AZURPILOT_NATIVE_MAX_RAW_INPUT_BYTES UINT32_C(67108864)
+/* Предел закодированного JPEG. */
+#define AZURPILOT_NATIVE_MAX_JPEG_INPUT_BYTES UINT32_C(16777216)
+/* Сигнатура aScreenCap BMZ1 (little-endian "BMZ1") и размер её заголовка из пяти uint32. */
+#define AZURPILOT_NATIVE_BMZ1_MAGIC UINT32_C(0x315A4D42)
+#define AZURPILOT_NATIVE_BMZ1_HEADER_BYTES UINT32_C(20)
+
+/* Видеодекодер (ABI v6): кодек и флаги пакета. */
+#define AZURPILOT_NATIVE_VIDEO_CODEC_H264 UINT32_C(1)
+/* Пакет конфигурации (SPS/PPS) без кадра. */
+#define AZURPILOT_NATIVE_VIDEO_PACKET_CONFIG UINT32_C(1)
+/* Пакет ключевого кадра. */
+#define AZURPILOT_NATIVE_VIDEO_PACKET_KEY_FRAME UINT32_C(2)
+/* Предел одного видеопакета. */
+#define AZURPILOT_NATIVE_MAX_VIDEO_PACKET_BYTES UINT32_C(16777216)
+/* Матрица YUV→RGB декодированного кадра. AUTO берёт матрицу и диапазон из сведений потока
+ * (MF_MT_YUV_MATRIX/MF_MT_VIDEO_NOMINAL_RANGE), без них — BT.601 limited range 16..235.
+ * Явные матрицы применяют сигнализированный потоком диапазон тем же правилом. */
+#define AZURPILOT_NATIVE_YUV_AUTO UINT32_C(0)
+#define AZURPILOT_NATIVE_YUV_BT601 UINT32_C(1)
+#define AZURPILOT_NATIVE_YUV_BT709 UINT32_C(2)
 
 /* Биты поля build_flags структуры AzurPilotNativeInfo. */
 /* Установлен, только если код OpenCV реально исполнился при заполнении структуры в этом вызове.
@@ -439,6 +482,88 @@ AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_encode_jpeg(
     AzurPilotNativeFrameHandle frame, uint32_t quality,
     const AzurPilotNativeAnnotation* annotations, uint32_t annotation_count,
     uint8_t* buffer, uint32_t buffer_size, uint32_t* written_size) AZURPILOT_NATIVE_NOEXCEPT;
+
+/* ---- ABI v6: источники кадров захвата. Экспорты проверяются лениво при первом использовании
+ * соответствующего транспорта и не влияют на readiness PNG-пути. ---- */
+
+/* Создаёт RGB8-кадр из сырых пикселей формата source_format (AZURPILOT_NATIVE_SOURCE_*).
+ * stride_bytes — шаг строк источника (не меньше width * bytes_per_pixel); size — длина буфера,
+ * не меньше stride_bytes * (height - 1) + width * bytes_per_pixel и не больше MAX_RAW_INPUT_BYTES.
+ * flags — комбинация AZURPILOT_NATIVE_SOURCE_FLAG_*; неизвестный бит — INVALID_ARGUMENT.
+ * Размеры вне пределов кадра — IMAGE_TOO_LARGE; несогласованные size/stride/формат — INVALID_DATA.
+ * При ненулевом out_frame он сначала обнуляется. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_create_from_pixels(
+    const uint8_t* pixels, uint32_t size, uint32_t width, uint32_t height, uint32_t stride_bytes,
+    uint32_t source_format, uint32_t flags, AzurPilotNativeFrameHandle* out_frame) AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Декодирует полный вывод aScreenCap BMZ1: заголовок из пяти uint32 (magic, распакованный размер,
+ * сжатый размер, ширина, высота; допускается обратный порядок байтов всего заголовка), затем блок LZ4
+ * ровно указанного сжатого размера. Распакованные данные — BGR888 снизу вверх. Мусор до сигнатуры не
+ * пропускается: вызывающая сторона передаёт данные начиная с magic. Несогласованные поля, неполный или
+ * повреждённый LZ4 — INVALID_DATA; превышение пределов — IMAGE_TOO_LARGE. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_decode_bmz1(
+    const uint8_t* data, uint32_t size, AzurPilotNativeFrameHandle* out_frame) AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Декодирует baseline/progressive JPEG (SOI..EOI) в RGB8. Не-JPEG, повреждённые и пустые данные —
+ * INVALID_DATA; превышение пределов — IMAGE_TOO_LARGE. JPEG — сжатие с потерями: точность каналов
+ * не равна исходному дисплейному буферу, и это свойство транспорта, а не декодера. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_frame_decode_jpeg(
+    const uint8_t* jpeg_bytes, uint32_t size, AzurPilotNativeFrameHandle* out_frame) AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Сессия nemu_ipc MuMu: DLL загружается только по полному пути из обнаруженной установки,
+ * поиск зависимостей ограничен её каталогом и System32. Строки — UTF-16 с завершающим NUL,
+ * не длиннее 32767 символов. instance_index — vmindex exact identity экземпляра. */
+typedef struct AzurPilotNativeNemuOpaque* AzurPilotNativeNemuHandle;
+
+/* Загружает DLL, проверяет экспорты nemu_connect/nemu_disconnect/nemu_capture_display и выполняет
+ * nemu_connect. DLL не загружена или нет экспорта — PROVIDER_UNAVAILABLE; нулевой connect id —
+ * PROVIDER_FAILURE. При ненулевом out_session он сначала обнуляется. Вызов может блокироваться
+ * внутри DLL эмулятора: вызывающая сторона ограничивает его временем на собственном потоке. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_nemu_open(
+    const uint16_t* dll_path, const uint16_t* install_folder, int32_t instance_index,
+    AzurPilotNativeNemuHandle* out_session) AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Захватывает текущий кадр display_id: запрос размера, затем пиксели в буфер DLL и преобразование
+ * source_format/flags в RGB8 без выхода пикселей за границу. *out_provider_status получает последний
+ * код nemu_capture_display (0 при успехе). Ненулевой код — PROVIDER_FAILURE. Захваты одной сессии
+ * сериализуются внутри DLL; конкурентный release с ними исключает вызывающая сторона. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_nemu_capture(
+    AzurPilotNativeNemuHandle session, uint32_t display_id, uint32_t source_format, uint32_t flags,
+    AzurPilotNativeFrameHandle* out_frame, int32_t* out_provider_status) AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Выполняет nemu_disconnect и освобождает сессию; библиотека эмулятора остаётся загруженной до
+ * завершения процесса, чтобы зависший поток не исполнял выгруженный код. NULL — INVALID_ARGUMENT. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_nemu_release(AzurPilotNativeNemuHandle session)
+    AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Видеодекодер потока захвата (Media Foundation H.264 MFT Windows). */
+typedef struct AzurPilotNativeVideoDecoderOpaque* AzurPilotNativeVideoDecoderHandle;
+
+/* Создаёт декодер кодека AZURPILOT_NATIVE_VIDEO_CODEC_*. Компонент Windows недоступен —
+ * PROVIDER_UNAVAILABLE. При ненулевом out_decoder он сначала обнуляется. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_video_decoder_create(
+    uint32_t codec, AzurPilotNativeVideoDecoderHandle* out_decoder) AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Передаёт один пакет Annex-B с PTS источника в микросекундах и флагами VIDEO_PACKET_*.
+ * *out_decoded получает число кадров, декодированных этим вызовом. Повреждённый поток — INVALID_DATA,
+ * отказ MFT — PROVIDER_FAILURE (*out_provider_status — HRESULT). */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_video_decoder_push(
+    AzurPilotNativeVideoDecoderHandle decoder, const uint8_t* data, uint32_t size, int64_t pts_us,
+    uint32_t flags, uint32_t* out_decoded, int32_t* out_provider_status) AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Создаёт новый RGB8-кадр из последнего декодированного кадра с порядковым номером больше
+ * after_sequence, обрезая его до display_width × display_height от левого верхнего угла и применяя
+ * матрицу yuv_matrix (AZURPILOT_NATIVE_YUV_*). Такого кадра ещё нет — NOT_READY. *out_pts_us и
+ * *out_sequence получают PTS и номер кадра; номер растёт на каждый декодированный кадр. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_video_decoder_latest_frame(
+    AzurPilotNativeVideoDecoderHandle decoder, uint64_t after_sequence, uint32_t display_width,
+    uint32_t display_height, uint32_t yuv_matrix, AzurPilotNativeFrameHandle* out_frame, int64_t* out_pts_us,
+    uint64_t* out_sequence) AZURPILOT_NATIVE_NOEXCEPT;
+
+/* Освобождает декодер. NULL — INVALID_ARGUMENT. push и latest_frame одного декодера сериализуются
+ * внутри DLL; конкурентный release с ними исключает вызывающая сторона. */
+AZURPILOT_NATIVE_API int32_t azurpilot_native_video_decoder_release(AzurPilotNativeVideoDecoderHandle decoder)
+    AZURPILOT_NATIVE_NOEXCEPT;
 
 /* Освобождает дескриптор через механизм выделения памяти native DLL. NULL-дескриптор возвращает INVALID_ARGUMENT.
  * Произвольный устаревший или чужой дескриптор недействителен и не обязан безопасно обнаруживаться;

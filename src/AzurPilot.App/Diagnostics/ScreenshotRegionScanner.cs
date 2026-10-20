@@ -53,7 +53,7 @@ public sealed record ScreenshotAnalysisSource
     /// <summary>UTC-момент capture; <see langword="null"/> для sample.</summary>
     public DateTimeOffset? CapturedAtUtc { get; }
 
-    /// <summary>Число байтов кодированного PNG, полученных источником.</summary>
+    /// <summary>Число байтов кодированного PNG, полученных источником; 0 — кадр получен не через PNG.</summary>
     public uint EncodedPngByteCount { get; }
 
     /// <summary>Метаданные кадра успешного Android capture; <see langword="null"/> для sample.</summary>
@@ -67,12 +67,12 @@ public sealed record ScreenshotAnalysisSource
     public static ScreenshotAnalysisSource ForCapture(AndroidScreenshotCaptureInfo captureInfo)
     {
         ArgumentNullException.ThrowIfNull(captureInfo);
-        if (captureInfo.EncodedPngByteCount <= 0)
+        if (captureInfo.AdbPng is { EncodedPngByteCount: <= 0 })
         {
             throw new ArgumentOutOfRangeException(
                 nameof(captureInfo),
-                captureInfo.EncodedPngByteCount,
-                "Успешный screenshot capture должен содержать PNG-байты.");
+                captureInfo.AdbPng.EncodedPngByteCount,
+                "Успешный ADB PNG capture должен содержать PNG-байты.");
         }
 
         return new ScreenshotAnalysisSource(
@@ -80,7 +80,7 @@ public sealed record ScreenshotAnalysisSource
             captureInfo.InstanceId,
             captureInfo.Endpoint,
             captureInfo.CapturedAtUtc.ToUniversalTime(),
-            checked((uint)captureInfo.EncodedPngByteCount),
+            checked((uint)(captureInfo.AdbPng?.EncodedPngByteCount ?? 0)),
             captureInfo.FrameInfo);
     }
 

@@ -142,6 +142,9 @@ public static class AzurPilotExitCode
     /// <summary>Запрошенный debug-отчёт Agent CLI нельзя создать; runtime не запускался.</summary>
     public const int DebugReportUnavailable = 36;
 
+    /// <summary>Явно выбранный транспорт снимка неприменим к экземпляру.</summary>
+    public const int ScreenshotMethodUnsupported = 37;
+
     /// <summary>Возвращает код выхода для application-level отказа.</summary>
     /// <param name="failure">Ожидаемый отказ application boundary.</param>
     /// <returns>Код выхода процесса, соответствующий коду отказа.</returns>
@@ -183,6 +186,7 @@ public static class AzurPilotExitCode
             ApplicationFailure.AzurLaneLifecyclePostconditionNotMet => AzurLaneLifecyclePostconditionNotMet,
             ApplicationFailure.AzurLaneLifecycleTimeout => AzurLaneLifecycleTimeout,
             ApplicationFailure.AndroidScreenshotCaptureFailed => AndroidScreenshotCaptureFailed,
+            ApplicationFailure.ScreenshotMethodUnsupported => ScreenshotMethodUnsupported,
             ApplicationFailure.DiagnosticRegionUnsupported => DiagnosticRegionUnsupported,
             ApplicationFailure.NativeFrameAnalysisFailed => NativeFrameAnalysisFailed,
             ApplicationFailure.NativeFrameInvalid => NativeFrameInvalid,

@@ -85,7 +85,10 @@ public sealed partial class AzurPilotOperatorService
 
             try
             {
-                GameUiActionRunner runner = new(_gameUi, _timeProvider, _gameUiTrace);
+                GameUiActionRunner runner = new(_gameUi, _timeProvider, _gameUiTrace)
+                {
+                    PostconditionInterval = NormalScreenshotInterval,
+                };
                 GameActionOutcome open = await runner.RunAsync(instanceId, target.Value!.Endpoint,
                     GameAssetCatalog.Default.GetAction("dock.open"), progress, cancellationToken).ConfigureAwait(false);
                 if (!open.ChangeProven)
@@ -105,6 +108,10 @@ public sealed partial class AzurPilotOperatorService
             }
         }, cancellationToken);
     }
+
+    /// <summary>Период наблюдения постусловия вне боя из <c>screenshot.normalIntervalMs</c>.</summary>
+    private TimeSpan NormalScreenshotInterval
+        => TimeSpan.FromMilliseconds(_configuration.Configuration.Screenshot.NormalIntervalMilliseconds);
 
     private double Milliseconds(long from, long to)
     {

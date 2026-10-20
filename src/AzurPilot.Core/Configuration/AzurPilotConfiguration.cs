@@ -67,4 +67,9 @@ public sealed record AzurPilotConfiguration
     /// <value>Обязательная секция <c>logging</c>.</value>
     [JsonPropertyName("logging")]
     public required LoggingConfiguration Logging { get; init; }
+
+    /// <summary>Настройки транспорта снимков экрана и интервалов наблюдения.</summary>
+    /// <value>Необязательная секция <c>screenshot</c>; без неё действуют встроенные значения.</value>
+    [JsonPropertyName("screenshot")]
+    public required ScreenshotConfiguration Screenshot { get; init; }
 }
