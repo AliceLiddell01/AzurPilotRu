@@ -28,7 +28,7 @@ jobs:
         with:
           persist-credentials: false
       - name: uv для repository tooling
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           version: latest-known
           enable-cache: false
@@ -52,7 +52,7 @@ jobs:
           global-json-file: global.json
 
       - name: uv для проверки генератора ассетов
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           version: latest-known
           enable-cache: false
