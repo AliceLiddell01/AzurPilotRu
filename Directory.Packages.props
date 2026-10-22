@@ -13,10 +13,10 @@
     <PackageVersion Include="Microsoft.Windows.Console.ConPTY" Version="1.25.260930003" />
     <!-- Строгая конфигурация приложения типизирует минимальный уровень логирования стандартным
          Microsoft.Extensions.Logging.LogLevel, а не собственной копией списка значений. -->
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
     <!-- Application host приложения: стандартный generic host (Host.CreateEmptyApplicationBuilder),
          на котором стоит composition root AzurPilot.App. -->
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
     <!-- Windows terminal operator surface; только AzurPilot.App владеет интерактивным UI. -->
     <PackageVersion Include="Terminal.Gui" Version="2.5.0" />
     <!-- Человекочитаемый YAML-формат пользовательской конфигурации: строгий разбор документа
