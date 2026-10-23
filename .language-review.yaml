@@ -28,8 +28,8 @@ profiles:
     analysis:
       mode: normal
       max_passes: 1
-      max_requests: 128
-      max_text_chars: 1000000
+      max_requests: 256
+      max_text_chars: 3000000
       max_context_chars: 10000
       timeout_seconds: 1800
       concurrency: 1
