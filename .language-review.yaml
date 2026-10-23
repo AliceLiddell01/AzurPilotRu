@@ -1,0 +1,40 @@
+schema_version: 1
+default_profile: technical
+prompts:
+  primary:
+    text: >-
+      Проверяй извлечённые фрагменты на доказуемые ошибки русского языка в документации, комментариях и человекочитаемых сообщениях. Обычную английскую прозу в собственных текстах проекта предлагай перевести на русский, сохраняя технические термины. Предлагай краткую правку только при ясном исходном смысле; при неоднозначности воздержись. Сохраняй без изменений идентификаторы, имена символов и API, namespace, C ABI, ключи JSON/YAML, протокольные строки, установившиеся английские технические термины, синтаксис кода, regex, форматы printf, interpolation, escape-последовательности и placeholders. Не трактуй машинные контракты, цитаты, сторонний или сгенерированный текст как редактируемую прозу; не предлагай исправлений, меняющих смысл или поведение.
+profiles:
+  technical:
+    engines: [languagetool, llm, vale]
+    analysis:
+      mode: normal
+      max_passes: 2
+      max_requests: 128
+      max_text_chars: 1000000
+      max_context_chars: 10000
+      timeout_seconds: 900
+      concurrency: 1
+      retries: 0
+    llm:
+      provider: llama_cpp
+      model: qwen3.5:4b
+      thinking: false
+      seed: 0
+      batch_items: 4
+      max_output_tokens: 4096
+  normal:
+    engines: [languagetool, llm, vale]
+    analysis:
+      mode: normal
+      max_passes: 1
+      max_requests: 256
+      max_text_chars: 3000000
+      max_context_chars: 10000
+      timeout_seconds: 1800
+      concurrency: 1
+      retries: 0
+    llm:
+      provider: chatgpt
+      model: gpt-6.1-sol
+      reasoning_effort: medium

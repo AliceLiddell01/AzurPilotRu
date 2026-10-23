@@ -96,7 +96,7 @@ if (!Console.IsInputRedirected && !Console.IsOutputRedirected)
 
 if (arguments.IsolatedUiRoot is not null)
 {
-    Console.Error.WriteLine("--isolated-ui требует интерактивную консоль; diagnostic fallback запрещён.");
+    Console.Error.WriteLine("--isolated-ui требует интерактивную консоль; диагностический fallback запрещён.");
     return AzurPilotExitCode.InvalidArgument;
 }
 
